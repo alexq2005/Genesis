@@ -18,10 +18,10 @@ Sin APIs externas, sin censura, con capacidad de auto-modificación.
 ## Arquitectura
 ```
 GENESIS/
-├── genesis.py              # Clase principal Genesis (~1,920 líneas)
+├── genesis.py              # Clase principal Genesis (~2,700+ líneas)
 ├── config.py               # Configuración central
 ├── web_ui.py               # Interfaz web Flask
-├── core/                   # 28 módulos del sistema
+├── core/                   # 37 módulos del sistema
 │   ├── brain.py            # Interfaz con LLM (multi-proveedor)
 │   ├── local_engine.py     # Motor ctransformers + CUDA
 │   ├── memory.py           # Memoria corto/largo plazo + TF-IDF
@@ -236,12 +236,36 @@ GENESIS/
 - **215 tests pasando (suite v1.9)**
 - **Total: 1246 tests, 55 archivos, ~26,000+ lineas**
 
-### v2.0.0 — (Pendiente)
+### v2.0.0 — Autonomous Genesis (2026-03-07)
+**Hito mayor:** Busqueda semantica, dashboard centralizado, y operacion autonoma.
+- EmbeddingsEngine: motor de embeddings local para busqueda semantica
+  - VectorStore con busqueda por similitud coseno y persistencia (JSON + numpy)
+  - sentence-transformers (GPU) como backend principal, TF-IDF fallback
+  - TFIDFEmbedder con hashing trick (MD5 -> dimension fija) como fallback
+  - add_text, add_texts_batch, search, get_similar
+  - Soporte batch encoding (eficiente en GPU con batch_size=32)
+- DashboardAPI: metricas centralizadas de todos los subsistemas
+  - MetricCollector pattern: lambdas registradas por subsistema/categoria
+  - MetricTimeline: series temporales para cada metrica con max_points
+  - collect_all() agrega snapshots globales con agrupacion por categoria
+  - generate_dashboard() para CLI, export_json() para Web UI
+  - get_timeline() para graficos temporales de metricas especificas
+- AutonomousMode: operacion sin input humano con SafetyGuard
+  - AutonomousAction con prioridades (1-10), cooldowns, y safe flag
+  - SafetyGuard: max ciclos, max duracion, max failures consecutivas, forbidden actions
+  - tick() cooperativo — ejecuta acciones elegibles por prioridad
+  - Auto-stop en limites de seguridad (ciclos, tiempo, fallas)
+  - Acciones prohibidas (delete_files, modify_core, send_network, execute_shell)
+  - Registro de violaciones de seguridad, log de actividad
+- **258 tests pasando (suite v2.0)**
+- **Total: 1504 tests, 58 archivos, ~29,000+ lineas**
+
+### v2.1.0 — (Pendiente)
 Candidatos:
-- [ ] Embeddings locales con sentence-transformers (upgrade RAG)
 - [ ] Multi-modal input (imagenes)
 - [ ] Web UI v2 con dashboard de metricas en tiempo real
-- [ ] Modo autonomo (Genesis opera sin input humano por periodos)
+- [ ] Sistema de memoria episodica (cuando + donde + con quien)
+- [ ] Federated learning entre instancias de Genesis
 
 ---
 
