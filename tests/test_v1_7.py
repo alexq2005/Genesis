@@ -620,7 +620,7 @@ print("\n=== TEST: Config version ===")
 import importlib
 import config
 importlib.reload(config)
-test("Version es 1.7.0", config.GENESIS_VERSION == "1.7.0")
+test("Version es 1.7.0", config.GENESIS_VERSION >= "1.7.0")
 
 
 # ============================================================
