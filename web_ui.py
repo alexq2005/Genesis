@@ -28,6 +28,7 @@ except ImportError:
     sys.exit(1)
 
 from genesis import Genesis
+from core.dashboard import get_dashboard_html
 
 # ============================================================
 # FLASK APP
@@ -655,6 +656,12 @@ def api_command():
         return jsonify({"result": result})
     except Exception as e:
         return jsonify({"error": str(e)})
+
+
+@app.route("/dashboard")
+def dashboard():
+    """Dashboard visual con graficos y metricas."""
+    return render_template_string(get_dashboard_html())
 
 
 # ============================================================

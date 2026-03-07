@@ -61,6 +61,9 @@ from core.knowledge_graph import KnowledgeGraph
 from core.prompt_templates import PromptTemplateSystem
 from core.proactive import ProactiveEngine
 from core.project_generator import ProjectGenerator
+from core.rag import RAGSystem
+from core.model_router import ModelRouter
+from core.voice import VoiceSystem
 
 
 class Genesis:
@@ -209,6 +212,21 @@ class Genesis:
 
         # Inicializar Project Generator
         self.project_generator = ProjectGenerator()
+
+        # Inicializar RAG System
+        self.rag = RAGSystem(base_dir=str(BASE_DIR))
+        rag_chunks = len(self.rag.chunks)
+        if rag_chunks > 0:
+            self.log.info(f"RAG: {rag_chunks} chunks indexados, {len(self.rag.indexed_files)} archivos")
+
+        # Inicializar Model Router
+        self.model_router = ModelRouter(models_dir=str(BASE_DIR / "models"))
+        models_count = len(self.model_router.profiles)
+        if models_count > 0:
+            self.log.info(f"ModelRouter: {models_count} modelos detectados, activo: {self.model_router.active_model}")
+
+        # Inicializar Voice System
+        self.voice = VoiceSystem()
 
         # Estado
         self.running = True
@@ -483,6 +501,13 @@ class Genesis:
             if extra_context:
                 system_prompt += extra_context
 
+        # RAG: inyectar contexto de documentos indexados
+        rag_context = self.rag.get_context(user_input, max_chars=1500, top_k=3)
+        if rag_context:
+            system_prompt += f"\n\n{rag_context}"
+            if self.show_thinking:
+                print(f"  [RAG: contexto inyectado ({len(rag_context)} chars)]")
+
         # Fase 0: Planificacion de tareas complejas
         if ((intent == "code" or self._is_coding_request(user_input))
                 and self.task_planner.needs_planning(user_input)
@@ -529,6 +554,11 @@ class Genesis:
         use_stream = self.streaming and stream_callback is not None
         # Temperatura del template (o default 0.7)
         temp = template_temp if template_extra else 0.7
+
+        # Model Router: obtener configuracion optima para esta tarea
+        route_config = self.model_router.route(user_input, template_name=template_name)
+        if route_config.get("model_name") and self.show_thinking:
+            print(f"  [ModelRouter: {route_config['model_name']} — {route_config['reason']}]")
         try:
             if debate_insights:
                 enriched_system = (
@@ -762,6 +792,10 @@ class Genesis:
             )
             if suggestion:
                 response += suggestion
+
+        # Fase 7: Voice TTS (hablar la respuesta si esta habilitado)
+        if self.voice.enabled and self.voice.tts.available:
+            self.voice.speak(response, block=False)
 
         return response
 
@@ -1153,6 +1187,56 @@ class Genesis:
         # === PROJECT GENERATOR ===
         elif cmd.startswith("/generate"):
             return self._cmd_generate(command.strip())
+        # === RAG SYSTEM ===
+        elif cmd == "/rag" or cmd == "/rag status":
+            return self.rag.status()
+        elif cmd.startswith("/rag add"):
+            arg = command.strip()[8:].strip()
+            if not arg:
+                return "Uso: /rag add <archivo_o_directorio>"
+            return self._cmd_rag_add(arg)
+        elif cmd.startswith("/rag search"):
+            arg = command.strip()[11:].strip()
+            if not arg:
+                return "Uso: /rag search <consulta>"
+            return self._cmd_rag_search(arg)
+        elif cmd == "/rag clear":
+            self.rag.clear()
+            return "Indice RAG limpiado completamente."
+        # === MODEL ROUTER ===
+        elif cmd == "/models":
+            return self.model_router.list_models()
+        elif cmd.startswith("/model "):
+            arg = command.strip()[7:].strip()
+            if arg == "auto":
+                return self.model_router.set_auto()
+            return self.model_router.set_model(arg)
+        # === VOICE ===
+        elif cmd == "/voice":
+            return self.voice.toggle()
+        elif cmd == "/voice status":
+            return self.voice.status()
+        elif cmd.startswith("/voice rate"):
+            try:
+                rate = int(command.strip()[11:].strip())
+                self.voice.tts.set_rate(rate)
+                return f"Velocidad de voz: {rate} wpm"
+            except ValueError:
+                return "Uso: /voice rate <numero> (ej: 175)"
+        elif cmd == "/voice voices":
+            voices = self.voice.tts.list_voices()
+            if not voices:
+                return "No hay voces disponibles (pyttsx3 no instalado)"
+            lines = ["Voces disponibles:"]
+            for v in voices:
+                lines.append(f"  [{v['id']}] {v['name']}")
+            return "\n".join(lines)
+        elif cmd.startswith("/voice set"):
+            try:
+                vid = int(command.strip()[10:].strip())
+                return self.voice.tts.set_voice(vid)
+            except ValueError:
+                return "Uso: /voice set <id>"
         elif cmd == "/help":
             return self._cmd_help()
         elif cmd in ("/exit", "/quit", "/salir"):
@@ -1249,6 +1333,15 @@ class Genesis:
             f"",
             f"GENERADOR DE PROYECTOS:",
             self.project_generator.status(),
+            f"",
+            f"RAG:",
+            f"  Archivos: {len(self.rag.indexed_files)} | Chunks: {len(self.rag.chunks)} | Queries: {self.rag.total_queries}",
+            f"",
+            f"MODEL ROUTER:",
+            self.model_router.status(),
+            f"",
+            f"VOZ:",
+            f"  TTS: {'disponible' if self.voice.tts.available else 'NO'} | STT: {'disponible' if self.voice.stt.available else 'NO'} | Estado: {'ON' if self.voice.enabled else 'OFF'}",
             f"",
             f"STREAMING: {'activado' if self.streaming else 'desactivado'}",
             f"TIMEOUT LLM: {self.llm_timeout}s",
@@ -1592,6 +1685,42 @@ class Genesis:
         result = self.project_generator.generate(last_response, base_dir)
         return self.project_generator.format_result(result)
 
+    def _cmd_rag_add(self, path: str) -> str:
+        """Indexa un archivo o directorio en el RAG."""
+        from pathlib import Path as P
+        target = P(path).resolve()
+
+        if target.is_file():
+            result = self.rag.index_file(str(target))
+            return f"RAG: {result['message']}"
+        elif target.is_dir():
+            result = self.rag.index_directory(str(target))
+            msg = f"RAG: {result['files_processed']} archivos indexados, {result['chunks_total']} chunks creados"
+            if result['errors']:
+                msg += f"\n  Errores: {len(result['errors'])}"
+                for err in result['errors'][:5]:
+                    msg += f"\n    - {err}"
+            return msg
+        else:
+            return f"Ruta no encontrada: {path}"
+
+    def _cmd_rag_search(self, query: str) -> str:
+        """Busca en el indice RAG."""
+        results = self.rag.search(query, top_k=5)
+        if not results:
+            return "RAG: Sin resultados. Indexa archivos con /rag add <ruta>"
+
+        lines = [f"RAG: {len(results)} resultados para '{query}':\n"]
+        for i, r in enumerate(results, 1):
+            from pathlib import Path as P
+            source_name = P(r['source']).name
+            score_pct = f"{r['score']:.0%}"
+            snippet = r['text'][:150].replace('\n', ' ')
+            lines.append(f"  [{i}] {source_name} ({score_pct})")
+            lines.append(f"      {snippet}...")
+            lines.append("")
+        return "\n".join(lines)
+
     def _cmd_help(self) -> str:
         """Muestra ayuda de comandos."""
         return """
@@ -1684,6 +1813,24 @@ class Genesis:
   GENERADOR DE PROYECTOS:
   /generate <ruta>   — Generar proyecto multi-archivo en ruta
                         (requiere que la ultima respuesta tenga archivos)
+
+  RAG (RETRIEVAL AUGMENTED GENERATION):
+  /rag               — Ver estado del sistema RAG
+  /rag add <ruta>    — Indexar archivo o directorio completo
+  /rag search <q>    — Buscar en documentos indexados
+  /rag clear         — Limpiar todo el indice RAG
+
+  MULTI-MODEL ROUTER:
+  /models            — Listar modelos disponibles con detalles
+  /model <nombre>    — Seleccionar modelo manualmente (dolphin/mistral/qwen)
+  /model auto        — Volver a seleccion automatica por tarea
+
+  VOZ:
+  /voice             — Activar/desactivar voz
+  /voice status      — Estado del sistema de voz
+  /voice voices      — Listar voces disponibles
+  /voice set <id>    — Cambiar voz por ID
+  /voice rate <num>  — Cambiar velocidad (default: 175 wpm)
 
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
