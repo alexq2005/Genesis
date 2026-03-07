@@ -73,6 +73,9 @@ from core.adaptive_prompts import AdaptivePrompts
 from core.health_monitor import HealthMonitor
 from core.rate_limiter import RateLimiter
 from core.plugin_marketplace import PluginMarketplace
+from core.task_scheduler import TaskScheduler
+from core.config_manager import ConfigManager
+from core.performance_profiler import PerformanceProfiler
 
 
 class Genesis:
@@ -275,6 +278,15 @@ class Genesis:
         mp_stats = self.marketplace.get_stats()
         if mp_stats["total"] > 0:
             self.log.info(f"Marketplace: {mp_stats['total']} plugins, {mp_stats['installed']} instalados")
+
+        # Inicializar Task Scheduler
+        self.scheduler = TaskScheduler(base_dir=str(BASE_DIR))
+
+        # Inicializar Config Manager
+        self.config_manager = ConfigManager(base_dir=str(BASE_DIR))
+
+        # Inicializar Performance Profiler
+        self.profiler = PerformanceProfiler()
 
         # Estado
         self.running = True
@@ -1506,6 +1518,84 @@ class Genesis:
                     return "  Uso: /marketplace rate <nombre> <1-5>"
             return "  Uso: /marketplace rate <nombre> <1-5>"
 
+        # --- v1.9 Task Scheduler ---
+        elif cmd == "/scheduler" or cmd == "/sched":
+            return self.scheduler.get_full_report()
+        elif cmd == "/scheduler tasks" or cmd == "/sched tasks":
+            return self.scheduler.get_task_list()
+        elif cmd == "/scheduler toggle" or cmd == "/sched toggle":
+            return self.scheduler.toggle()
+        elif cmd == "/scheduler pause" or cmd == "/sched pause":
+            return self.scheduler.pause()
+        elif cmd == "/scheduler resume" or cmd == "/sched resume":
+            return self.scheduler.resume()
+        elif cmd.startswith("/scheduler run ") or cmd.startswith("/sched run "):
+            arg = command.strip().split()[-1]
+            return self.scheduler.run_task_now(arg)
+        elif cmd.startswith("/scheduler toggle ") or cmd.startswith("/sched toggle "):
+            arg = command.strip().split()[-1]
+            return self.scheduler.toggle_task(arg)
+        elif cmd == "/scheduler log" or cmd == "/sched log":
+            return self.scheduler.get_log_report()
+
+        # --- v1.9 Config Manager ---
+        elif cmd == "/config" or cmd == "/config list":
+            return self.config_manager.list_profiles()
+        elif cmd.startswith("/config save "):
+            parts = command.strip().split(" ", 2)
+            name = parts[2] if len(parts) > 2 else "default"
+            return self.config_manager.save_profile(name)
+        elif cmd.startswith("/config load "):
+            arg = command.strip().split()[-1]
+            return self.config_manager.apply_profile(arg)
+        elif cmd.startswith("/config delete "):
+            arg = command.strip().split()[-1]
+            return self.config_manager.delete_profile(arg)
+        elif cmd.startswith("/config compare "):
+            parts = command.strip().split()
+            if len(parts) >= 4:
+                return self.config_manager.compare_profiles(parts[2], parts[3])
+            return "  Uso: /config compare <perfil_a> <perfil_b>"
+        elif cmd.startswith("/config export "):
+            parts = command.strip().split(" ", 3)
+            if len(parts) >= 4:
+                return self.config_manager.export_profile(parts[2], parts[3])
+            return "  Uso: /config export <nombre> <ruta>"
+        elif cmd.startswith("/config import "):
+            arg = command.strip()[14:].strip()
+            return self.config_manager.import_profile(arg)
+
+        # --- v1.9 Performance Profiler ---
+        elif cmd == "/profiler" or cmd == "/perf":
+            return self.profiler.generate_report()
+        elif cmd == "/profiler toggle" or cmd == "/perf toggle":
+            state = self.profiler.toggle()
+            return f"  Profiler: {'ACTIVADO' if state else 'DESACTIVADO'}"
+        elif cmd == "/profiler reset" or cmd == "/perf reset":
+            self.profiler.reset()
+            return "  Profiler reseteado."
+        elif cmd == "/profiler bottlenecks" or cmd == "/perf bottlenecks":
+            bottlenecks = self.profiler.get_bottlenecks(10)
+            if not bottlenecks:
+                return "  Sin datos de profiling."
+            lines = ["  TOP 10 BOTTLENECKS:"]
+            for b in bottlenecks:
+                lines.append(
+                    f"    {b['name']:30s} avg:{b['avg_ms']:8.1f}ms  "
+                    f"p95:{b['p95_ms']:8.1f}ms  calls:{b['total_calls']}"
+                )
+            return "\n".join(lines)
+        elif cmd == "/profiler slow" or cmd == "/perf slow":
+            slow = self.profiler.get_slow_operations()
+            if not slow:
+                return "  No hay operaciones lentas."
+            lines = ["  OPERACIONES LENTAS:"]
+            for s in slow:
+                lines.append(
+                    f"    {s['name']:30s} avg:{s['avg_ms']:.1f}ms  max:{s['max_ms']:.1f}ms"
+                )
+            return "\n".join(lines)
+
         elif cmd == "/help":
             return self._cmd_help()
         elif cmd in ("/exit", "/quit", "/salir"):
@@ -1638,6 +1728,15 @@ class Genesis:
             f"",
             f"MARKETPLACE:",
             self.marketplace.status(),
+            f"",
+            f"SCHEDULER:",
+            self.scheduler.status(),
+            f"",
+            f"CONFIG MANAGER:",
+            self.config_manager.status(),
+            f"",
+            f"PROFILER:",
+            self.profiler.status(),
             f"",
             f"STREAMING: {'activado' if self.streaming else 'desactivado'}",
             f"TIMEOUT LLM: {self.llm_timeout}s",
@@ -2183,6 +2282,34 @@ class Genesis:
   /marketplace uninstall <n> — Desinstalar plugin
   /marketplace create <n>    — Crear template de plugin nuevo
   /marketplace rate <n> <1-5> — Calificar plugin
+
+  TASK SCHEDULER:
+  /scheduler         — Reporte completo del scheduler
+  /sched             — Atajo para /scheduler
+  /scheduler tasks   — Listar tareas programadas
+  /scheduler toggle  — Activar/desactivar scheduler
+  /scheduler pause   — Pausar scheduler
+  /scheduler resume  — Reanudar scheduler
+  /scheduler run <n> — Ejecutar tarea inmediatamente
+  /scheduler toggle <n> — Activar/desactivar tarea especifica
+  /scheduler log     — Ver historial de ejecuciones
+
+  CONFIG MANAGER:
+  /config            — Listar perfiles guardados
+  /config save <n>   — Guardar perfil con nombre
+  /config load <n>   — Cargar y aplicar perfil
+  /config delete <n> — Eliminar perfil
+  /config compare <a> <b> — Comparar dos perfiles
+  /config export <n> <ruta> — Exportar perfil a ruta
+  /config import <ruta>     — Importar perfil desde ruta
+
+  PERFORMANCE PROFILER:
+  /profiler          — Reporte completo de performance
+  /perf              — Atajo para /profiler
+  /profiler toggle   — Activar/desactivar profiler
+  /profiler reset    — Resetear datos del profiler
+  /profiler bottlenecks — Ver top 10 subsistemas mas lentos
+  /profiler slow     — Ver operaciones que superan threshold
 
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
