@@ -67,6 +67,9 @@ from core.voice import VoiceSystem
 from core.agents import AgentSystem
 from core.workflows import WorkflowEngine
 from core.sessions import SessionManager
+from core.auto_learner import AutoLearner
+from core.conversation_analytics import ConversationAnalytics
+from core.adaptive_prompts import AdaptivePrompts
 
 
 class Genesis:
@@ -242,12 +245,27 @@ class Genesis:
         # Inicializar Session Manager
         self.session_manager = SessionManager(base_dir=str(BASE_DIR))
 
+        # Inicializar Auto Learner (aprendizaje adaptativo)
+        self.auto_learner = AutoLearner(base_dir=str(BASE_DIR))
+
+        # Inicializar Conversation Analytics
+        self.analytics = ConversationAnalytics(base_dir=str(BASE_DIR))
+
+        # Inicializar Adaptive Prompts (A/B testing)
+        self.adaptive_prompts = AdaptivePrompts(base_dir=str(BASE_DIR))
+
         # Estado
         self.running = True
         self.show_thinking = False  # Mostrar proceso de debate
         self.streaming = STREAMING_ENABLED  # Streaming de tokens
         self.auto_backup_counter = 0  # Contador para backup automatico
         self.llm_timeout = 180  # Timeout en segundos para llamadas al LLM
+
+        # Tracking de ultima interaccion (para feed al AutoLearner)
+        self._last_agent = ""       # Agente usado en ultima respuesta
+        self._last_template = ""    # Template usado en ultima respuesta
+        self._last_tags = []        # Tags de la ultima interaccion
+        self._last_response_time = 0.0  # Tiempo de respuesta
 
         # Restaurar sesion anterior si existe
         self._restore_session()
@@ -791,6 +809,14 @@ class Genesis:
         category = "codigo" if self._is_coding_request(user_input) else "general"
         self.feedback.set_last_interaction(user_input, response, category)
 
+        # Fase 4.5: Tracking para learning adaptativo
+        self._last_template = template_name if template_extra else ""
+        self._last_agent = ""  # Se llena si se uso /delegate
+        self._last_tags = [intent, category]
+        self._last_response_time = (time.time() - _start_time)
+        self.analytics.track_message("user", user_input, tags=[intent])
+        self.analytics.track_message("assistant", response)
+
         # Fase 5: Procesar aprendizaje
         self._post_process(user_input, response)
 
@@ -1054,9 +1080,29 @@ class Genesis:
 
         # Feedback rapido: + y - (sin /)
         if cmd in ("+", "👍"):
-            return self.feedback.rate(positive=True)
+            fb_result = self.feedback.rate(positive=True)
+            self.auto_learner.record_interaction(
+                agent=self._last_agent, template=self._last_template,
+                feedback=1, tags=self._last_tags,
+                response_time=self._last_response_time,
+            )
+            self.analytics.track_response(
+                agent=self._last_agent, feedback=1,
+                response_time=self._last_response_time,
+            )
+            return fb_result
         elif cmd in ("-", "👎"):
-            return self.feedback.rate(positive=False)
+            fb_result = self.feedback.rate(positive=False)
+            self.auto_learner.record_interaction(
+                agent=self._last_agent, template=self._last_template,
+                feedback=-1, tags=self._last_tags,
+                response_time=self._last_response_time,
+            )
+            self.analytics.track_response(
+                agent=self._last_agent, feedback=-1,
+                response_time=self._last_response_time,
+            )
+            return fb_result
 
         if cmd == "/status":
             return self._cmd_status()
@@ -1316,6 +1362,46 @@ class Genesis:
             if len(parts) < 2:
                 return "Uso: /session rename <id> <nuevo_nombre>"
             return self.session_manager.rename(parts[0], parts[1])
+        # === AUTO LEARNER ===
+        elif cmd == "/learn" or cmd == "/learning":
+            return self.auto_learner.get_insights()
+        elif cmd == "/learn rules":
+            return self.auto_learner.get_rules_summary()
+        elif cmd == "/learn adjustments":
+            adj = self.auto_learner.get_agent_adjustments()
+            if not adj:
+                return "Sin ajustes recomendados (se necesitan mas interacciones con feedback)."
+            lines = ["=== Ajustes Recomendados de Agentes ==="]
+            for agent, delta in adj.items():
+                direction = "subir" if delta > 0 else "bajar"
+                lines.append(f"  {agent}: {direction} prioridad en {abs(delta)}")
+            return "\n".join(lines)
+        # === CONVERSATION ANALYTICS ===
+        elif cmd == "/analytics":
+            return self.analytics.generate_report()
+        elif cmd == "/analytics gaps":
+            gaps = self.analytics.gaps.get_gaps(10)
+            if not gaps:
+                return "Sin gaps de conocimiento detectados."
+            lines = ["=== Knowledge Gaps ==="]
+            for gap in gaps:
+                lines.append(f"  - {gap['query'][:100]}")
+            return "\n".join(lines)
+        # === ADAPTIVE PROMPTS ===
+        elif cmd == "/experiments":
+            return self.adaptive_prompts.list_experiments()
+        elif cmd.startswith("/experiment create "):
+            arg = command.strip()[18:].strip()
+            parts = arg.split("|")
+            if len(parts) < 2:
+                return "Uso: /experiment create <nombre>|<prompt_base>|<variante1>|<variante2>"
+            name = parts[0].strip()
+            base = parts[1].strip()
+            variants = [p.strip() for p in parts[2:] if p.strip()]
+            return self.adaptive_prompts.create_experiment(name, base, variants)
+        elif cmd.startswith("/experiment delete "):
+            arg = command.strip()[18:].strip()
+            return self.adaptive_prompts.delete_experiment(arg)
         elif cmd == "/help":
             return self._cmd_help()
         elif cmd in ("/exit", "/quit", "/salir"):
@@ -1430,6 +1516,15 @@ class Genesis:
             f"",
             f"SESIONES:",
             self.session_manager.status(),
+            f"",
+            f"AUTO-LEARNER:",
+            self.auto_learner.status(),
+            f"",
+            f"ANALYTICS:",
+            self.analytics.status(),
+            f"",
+            f"ADAPTIVE PROMPTS:",
+            self.adaptive_prompts.status(),
             f"",
             f"STREAMING: {'activado' if self.streaming else 'desactivado'}",
             f"TIMEOUT LLM: {self.llm_timeout}s",
@@ -1939,6 +2034,20 @@ class Genesis:
   /session switch <id>         — Cambiar a otra sesion
   /session delete <id>         — Eliminar sesion
   /session rename <id> <name>  — Renombrar sesion
+
+  APRENDIZAJE ADAPTATIVO:
+  /learn             — Ver insights de aprendizaje (patrones de feedback)
+  /learn rules       — Ver reglas aprendidas
+  /learn adjustments — Ver ajustes recomendados para agentes
+
+  ANALYTICS:
+  /analytics         — Reporte completo de conversacion
+  /analytics gaps    — Ver gaps de conocimiento
+
+  EXPERIMENTOS A/B:
+  /experiments                — Listar experimentos de prompt
+  /experiment create <n>|<base>|<var1>|<var2> — Crear experimento
+  /experiment delete <nombre> — Eliminar experimento
 
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
