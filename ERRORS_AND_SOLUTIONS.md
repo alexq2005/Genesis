@@ -82,6 +82,26 @@
 
 ---
 
+## ERR-007: ModelRouter matchea "mistral" con dolphin por filename
+- **Fecha:** 2025-03-07
+- **Contexto:** `set_model("mistral")` para seleccionar manualmente el modelo Mistral Instruct.
+- **Error:** El router seleccionaba dolphin en vez de mistral.
+- **Análisis:** La búsqueda `name.lower() in profile.filename.lower()` matcheaba "mistral" en "dolphin-2.8-**mistral**-7b-v02-Q4_K_M.gguf" antes de llegar al perfil real de mistral. Iteración por dict hacía que dolphin apareciera primero.
+- **Solución:** Búsqueda en 3 pasos con prioridad: (1) match exacto por nombre de perfil, (2) match parcial por nombre, (3) match parcial por filename. El match exacto "mistral" == "mistral" se encuentra en paso 1.
+- **Prevención:** Siempre priorizar matches exactos sobre parciales en búsquedas por nombre. Los filenames pueden contener nombres de otros modelos (mistral aparece en dolphin, llama en muchos modelos).
+
+---
+
+## ERR-008: RAG search "fibonacci recursivo" no encuentra resultados
+- **Fecha:** 2025-03-07
+- **Contexto:** Test buscaba "fibonacci recursivo" en un archivo Python indexado con `calcular_fibonacci`.
+- **Error:** TF-IDF no encontraba match (score < 0.1).
+- **Análisis:** El tokenizador genera "calcular_fibonacci" como token compuesto (no lo divide). "recursivo" no aparece literalmente en el archivo. Con min_score=0.1, no había match suficiente.
+- **Solución:** Usar query con palabras que realmente aparecen en el documento: "calcular fibonacci script ejemplo" + min_score=0.05.
+- **Prevención:** En tests de búsqueda TF-IDF, usar palabras que realmente existen en los documentos indexados. TF-IDF es literal — no entiende sinónimos.
+
+---
+
 ## Plantilla para Nuevos Errores
 
 ```markdown

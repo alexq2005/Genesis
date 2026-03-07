@@ -109,12 +109,38 @@ GENESIS/
 
 ## Roadmap — Próximos Pasos
 
-### v1.5.0 — (Pendiente)
+### v1.5.0 — Conocimiento y Multi-Modelo (2025-03-07)
+**Hito:** RAG, multi-model routing, dashboard visual y voz.
+- RAGSystem: indexación de documentos locales con TF-IDF propio
+  - DocumentChunker: chunking por párrafos con overlap configurable
+  - RAGVectorizer: cosine similarity sin dependencias externas
+  - Soporta 25+ extensiones (.py, .md, .txt, .json, etc.)
+  - Persistencia en JSON, re-indexación incremental por hash MD5
+  - Inyección automática de contexto RAG en prompts
+- ModelRouter: routing automático de tareas a modelos óptimos
+  - 3 perfiles predefinidos: dolphin (general), mistral (formal), qwen (code/math)
+  - Scoring por fortalezas × template detectado
+  - Override manual con prioridad: exacto > nombre parcial > filename
+  - Toggle auto-routing on/off
+- Dashboard Visual: página `/dashboard` en Web UI
+  - Chart.js para gráficos (templates, feedback)
+  - vis-network para Knowledge Graph interactivo
+  - Mini-stats cards, sistema status, modelos info
+  - Auto-refresh cada 30 segundos
+- VoiceSystem: TTS local con pyttsx3 + STT con vosk
+  - TTS: limpieza de markdown/código para habla natural
+  - STT: reconocimiento offline con modelo vosk (opcional)
+  - Toggle on/off, configuración de velocidad y voz
+- Fix: ModelRouter match por nombre prioriza exacto sobre filename
+- **111 tests pasando (suite v1.5)**
+- **Total: 388 tests, 40 archivos, ~16,000+ líneas**
+
+### v1.6.0 — (Pendiente)
 Candidatos:
-- [ ] RAG con embeddings locales (sentence-transformers)
-- [ ] Multi-model routing (diferentes modelos por tarea)
-- [ ] Visual dashboard en Web UI (knowledge graph, métricas)
-- [ ] Voice I/O (entrada/salida por voz local)
+- [ ] Agent-to-Agent communication
+- [ ] Embeddings locales con sentence-transformers (upgrade RAG)
+- [ ] Plugin marketplace / repositorio
+- [ ] Multi-modal input (imágenes)
 
 ---
 
