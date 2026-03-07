@@ -1,0 +1,58 @@
+# ============================================================
+# GENESIS — .gitignore
+# ============================================================
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# --- Virtual Environment ---
+venv/
+.venv/
+env/
+
+# --- Modelos LLM (archivos de 4-8GB, NO commitear) ---
+models/*.gguf
+models/*.bin
+models/*.safetensors
+models/.cache/
+
+# --- Datos de runtime (se generan al ejecutar) ---
+memory_data/
+evolution_data/
+logs/
+backups/
+tools_custom/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+nul
+
+# --- Archivos temporales ---
+*.tmp
+*.bak
+*.log
+
+# --- Mantener directorios vacios con .gitkeep ---
+!models/.gitkeep
+!memory_data/.gitkeep
+!evolution_data/.gitkeep
+!logs/.gitkeep
+!backups/.gitkeep
+!tools_custom/.gitkeep
+!plugins/.gitkeep
