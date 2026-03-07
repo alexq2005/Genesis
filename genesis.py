@@ -76,6 +76,9 @@ from core.plugin_marketplace import PluginMarketplace
 from core.task_scheduler import TaskScheduler
 from core.config_manager import ConfigManager
 from core.performance_profiler import PerformanceProfiler
+from core.embeddings_engine import EmbeddingsEngine
+from core.dashboard_api import DashboardAPI
+from core.autonomous_mode import AutonomousMode
 
 
 class Genesis:
@@ -287,6 +290,17 @@ class Genesis:
 
         # Inicializar Performance Profiler
         self.profiler = PerformanceProfiler()
+
+        # Inicializar Embeddings Engine (busqueda semantica)
+        self.embeddings = EmbeddingsEngine(base_dir=str(BASE_DIR))
+        self.log.info(f"Embeddings: {self.embeddings.backend} | Docs: {self.embeddings.store.count()}")
+
+        # Inicializar Dashboard API (metricas centralizadas)
+        self.dashboard = DashboardAPI()
+        self._register_dashboard_collectors()
+
+        # Inicializar Autonomous Mode
+        self.autonomous = AutonomousMode()
 
         # Estado
         self.running = True
@@ -985,6 +999,50 @@ class Genesis:
     # SESSION PERSISTENCE — Guardar/restaurar estado
     # ============================================================
 
+    def _register_dashboard_collectors(self):
+        """Registra collectors de metricas para el Dashboard API."""
+        self.dashboard.register("brain", lambda: self.brain.get_stats(), "core")
+        self.dashboard.register("memory", lambda: {
+            "long_term": len(self.memory.long_term.memories),
+            "short_term": len(self.memory.short_term),
+        }, "memory")
+        self.dashboard.register("evolution", lambda: {
+            "generation": self.evolution.get_generation(),
+            "total_evolutions": self.evolution.state.get("total_evolutions", 0),
+            "interactions": self.evolution.interaction_count,
+        }, "core")
+        self.dashboard.register("embeddings", lambda: self.embeddings.get_stats(), "core")
+        self.dashboard.register("profiler", lambda: {
+            "operations": len(self.profiler.operations),
+            "enabled": self.profiler.enabled,
+        }, "monitoring")
+        self.dashboard.register("scheduler", lambda: {
+            "tasks": len(self.scheduler.tasks),
+            "total_runs": self.scheduler.total_runs,
+            "active": self.scheduler.active,
+        }, "monitoring")
+        self.dashboard.register("health", lambda: {
+            "status": self.health_monitor.get_overall_status(),
+            "alerts": len(self.health_monitor.get_active_alerts()),
+            "checks": len(self.health_monitor.checks),
+        }, "monitoring")
+        self.dashboard.register("rate_limiter", lambda: {
+            "enabled": self.rate_limiter.enabled,
+            "total_allowed": self.rate_limiter.total_allowed,
+            "total_denied": self.rate_limiter.total_denied,
+        }, "monitoring")
+        self.dashboard.register("autonomous", lambda: {
+            "active": self.autonomous.active,
+            "actions": len(self.autonomous.actions),
+            "cycles": self.autonomous.total_cycles,
+            "executed": self.autonomous.total_actions,
+        }, "core")
+        self.dashboard.register("marketplace", lambda: self.marketplace.get_stats(), "tools")
+        self.dashboard.register("plugins", lambda: {
+            "loaded": len(self.plugins.plugins),
+            "active": sum(1 for p in self.plugins.plugins.values() if p.get("enabled", True)),
+        }, "tools")
+
     def _save_session(self):
         """Guarda el estado completo de la sesion para restaurar despues."""
         # Guardar ultimos N mensajes de short-term (no todos para no crecer infinito)
@@ -1596,6 +1654,118 @@ class Genesis:
                 )
             return "\n".join(lines)
 
+        # --- v2.0 Embeddings Engine ---
+        elif cmd == "/embeddings" or cmd == "/emb":
+            return self.embeddings.generate_report()
+        elif cmd.startswith("/embeddings add ") or cmd.startswith("/emb add "):
+            parts = command.strip().split(" ", 3)
+            if len(parts) >= 4:
+                doc_id = parts[2]
+                text = parts[3]
+                ok = self.embeddings.add_text(doc_id, text, source="manual")
+                return f"  Documento '{doc_id}' {'agregado' if ok else 'ERROR al agregar'}."
+            return "  Uso: /embeddings add <id> <texto>"
+        elif cmd.startswith("/embeddings search ") or cmd.startswith("/emb search "):
+            query = command.strip().split(" ", 2)[2] if len(command.strip().split(" ", 2)) > 2 else ""
+            if not query:
+                return "  Uso: /embeddings search <query>"
+            results = self.embeddings.search(query, top_k=10)
+            if not results:
+                return "  Sin resultados."
+            lines = [f"  BUSQUEDA SEMANTICA: '{query}'", ""]
+            for r in results:
+                text_preview = r["metadata"].get("text", "")[:80]
+                lines.append(f"    [{r['score']:.3f}] {r['id']}: {text_preview}...")
+            return "\n".join(lines)
+        elif cmd.startswith("/embeddings similar ") or cmd.startswith("/emb similar "):
+            doc_id = command.strip().split(" ", 2)[2] if len(command.strip().split(" ", 2)) > 2 else ""
+            if not doc_id:
+                return "  Uso: /embeddings similar <doc_id>"
+            results = self.embeddings.get_similar(doc_id, top_k=5)
+            if not results:
+                return f"  Sin documentos similares a '{doc_id}'."
+            lines = [f"  SIMILARES A '{doc_id}':"]
+            for r in results:
+                lines.append(f"    [{r['score']:.3f}] {r['id']}")
+            return "\n".join(lines)
+        elif cmd == "/embeddings save" or cmd == "/emb save":
+            self.embeddings.save()
+            return "  Vector store guardado a disco."
+        elif cmd == "/embeddings clear" or cmd == "/emb clear":
+            self.embeddings.clear()
+            return "  Vector store limpiado."
+
+        # --- v2.0 Dashboard API ---
+        elif cmd == "/dashboard" or cmd == "/dash":
+            return self.dashboard.generate_dashboard()
+        elif cmd == "/dashboard json" or cmd == "/dash json":
+            return self.dashboard.export_json()
+        elif cmd == "/dashboard summary" or cmd == "/dash summary":
+            summary = self.dashboard.get_summary()
+            lines = ["  RESUMEN EJECUTIVO:"]
+            for k, v in summary.items():
+                lines.append(f"    {k}: {v}")
+            return "\n".join(lines)
+        elif cmd == "/dashboard categories" or cmd == "/dash categories":
+            cats = self.dashboard.get_categories()
+            lines = ["  CATEGORIAS:"]
+            for cat, info in cats.items():
+                desc = info.get("description", "")
+                subs = ", ".join(info.get("subsystems", []))
+                lines.append(f"    [{cat}] {desc}")
+                lines.append(f"      -> {subs}")
+            return "\n".join(lines)
+        elif cmd.startswith("/dashboard timeline ") or cmd.startswith("/dash timeline "):
+            parts = command.strip().split()
+            if len(parts) >= 4:
+                sub = parts[2]
+                metric = parts[3]
+                series = self.dashboard.get_timeline(sub, metric)
+                if not series:
+                    return f"  Sin datos para {sub}.{metric}"
+                lines = [f"  TIMELINE: {sub}.{metric} ({len(series)} puntos)"]
+                for p in series[-10:]:
+                    from datetime import datetime
+                    ts = datetime.fromtimestamp(p["timestamp"]).strftime("%H:%M:%S")
+                    lines.append(f"    [{ts}] {p['value']}")
+                return "\n".join(lines)
+            return "  Uso: /dashboard timeline <subsistema> <metrica>"
+
+        # --- v2.0 Autonomous Mode ---
+        elif cmd == "/autonomous" or cmd == "/auto":
+            return self.autonomous.generate_report()
+        elif cmd == "/autonomous start" or cmd == "/auto start":
+            return self.autonomous.start()
+        elif cmd.startswith("/autonomous start ") or cmd.startswith("/auto start "):
+            parts = command.strip().split()
+            cycles = 0
+            duration = 0
+            for p in parts[2:]:
+                if p.isdigit():
+                    cycles = int(p)
+                elif p.endswith("m") and p[:-1].isdigit():
+                    duration = float(p[:-1])
+            return self.autonomous.start(max_cycles=cycles, max_duration_minutes=duration)
+        elif cmd == "/autonomous stop" or cmd == "/auto stop":
+            return self.autonomous.stop()
+        elif cmd == "/autonomous pause" or cmd == "/auto pause":
+            return self.autonomous.pause()
+        elif cmd == "/autonomous resume" or cmd == "/auto resume":
+            return self.autonomous.resume()
+        elif cmd == "/autonomous actions" or cmd == "/auto actions":
+            return f"  ACCIONES REGISTRADAS:\n{self.autonomous.get_action_list()}"
+        elif cmd == "/autonomous log" or cmd == "/auto log":
+            return f"  LOG AUTONOMO:\n{self.autonomous.get_log_report(20)}"
+        elif cmd == "/autonomous tick" or cmd == "/auto tick":
+            results = self.autonomous.tick()
+            if not results:
+                return "  Tick: sin acciones ejecutadas."
+            lines = ["  TICK AUTONOMO:"]
+            for r in results:
+                status = "OK" if r.get("success") else "FAIL"
+                lines.append(f"    {r['action']}: {status} ({r.get('duration_ms', 0):.0f}ms)")
+            return "\n".join(lines)
+
         elif cmd == "/help":
             return self._cmd_help()
         elif cmd in ("/exit", "/quit", "/salir"):
@@ -1737,6 +1907,15 @@ class Genesis:
             f"",
             f"PROFILER:",
             self.profiler.status(),
+            f"",
+            f"EMBEDDINGS:",
+            self.embeddings.status(),
+            f"",
+            f"DASHBOARD:",
+            self.dashboard.status(),
+            f"",
+            f"AUTONOMOUS MODE:",
+            self.autonomous.status(),
             f"",
             f"STREAMING: {'activado' if self.streaming else 'desactivado'}",
             f"TIMEOUT LLM: {self.llm_timeout}s",
@@ -2310,6 +2489,34 @@ class Genesis:
   /profiler reset    — Resetear datos del profiler
   /profiler bottlenecks — Ver top 10 subsistemas mas lentos
   /profiler slow     — Ver operaciones que superan threshold
+
+  EMBEDDINGS ENGINE:
+  /embeddings            — Reporte del motor de embeddings
+  /emb                   — Atajo para /embeddings
+  /embeddings add <id> <texto> — Agregar texto al vector store
+  /embeddings search <query>   — Busqueda semantica
+  /embeddings similar <id>     — Encontrar documentos similares
+  /embeddings save             — Guardar vector store a disco
+  /embeddings clear            — Limpiar vector store
+
+  DASHBOARD API:
+  /dashboard             — Dashboard completo con metricas de todos los subsistemas
+  /dash                  — Atajo para /dashboard
+  /dashboard json        — Exportar snapshot como JSON
+  /dashboard summary     — Resumen ejecutivo del sistema
+  /dashboard categories  — Ver categorias y sus subsistemas
+  /dashboard timeline <sub> <metrica> — Serie temporal de una metrica
+
+  AUTONOMOUS MODE:
+  /autonomous            — Reporte del modo autonomo
+  /auto                  — Atajo para /autonomous
+  /autonomous start [ciclos] [Xm] — Iniciar modo autonomo
+  /autonomous stop       — Detener modo autonomo
+  /autonomous pause      — Pausar modo autonomo
+  /autonomous resume     — Reanudar modo autonomo
+  /autonomous actions    — Ver acciones registradas
+  /autonomous log        — Ver historial de acciones
+  /autonomous tick       — Ejecutar un ciclo manual
 
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
