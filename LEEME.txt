@@ -1,0 +1,121 @@
+══════════════════════════════════════════════════════════════
+                     G E N E S I S
+              IA Auto-Evolutiva Experimental
+══════════════════════════════════════════════════════════════
+
+QUE ES GENESIS?
+───────────────
+Genesis es una IA experimental que combina tecnologias que
+normalmente solo existen por separado en laboratorios de
+investigacion:
+
+  1. MEMORIA MULTI-NIVEL
+     - Corto plazo: conversacion actual
+     - Largo plazo: hechos que persisten entre sesiones
+     - Emocional: recuerdos con peso/importancia
+
+  2. AUTO-EVOLUCION
+     - Reescribe su propio prompt basandose en lo que aprende
+     - Cada N interacciones se auto-evalua y mejora
+     - Guarda historial de versiones de si misma
+
+  3. DEBATE MULTI-AGENTE
+     - 3 voces internas debaten antes de responder:
+       * Critico: busca fallas y riesgos
+       * Creativo: propone ideas originales
+       * Logico: verifica consistencia
+     - Un sintetizador combina lo mejor
+
+  4. CURIOSIDAD AUTONOMA
+     - Genera preguntas propias sobre los temas que trabaja
+     - Identifica lagunas de conocimiento
+
+
+REQUISITOS
+──────────
+  - Python 3.10 o superior
+  - UNO de estos proveedores de LLM:
+    * Ollama (GRATIS, local) — https://ollama.com
+    * OpenAI API key
+    * Anthropic API key
+
+
+INSTALACION RAPIDA
+──────────────────
+
+  Opcion A: Con Ollama (gratis, local)
+  ─────────────────────────────────────
+  1. Instalar Ollama: https://ollama.com/download
+  2. Abrir terminal y ejecutar:
+       ollama pull llama3.1
+  3. En otra terminal:
+       cd GENESIS
+       python genesis.py
+
+  Opcion B: Con API key
+  ─────────────────────
+  1. Editar config.py:
+     - Cambiar LLM_PROVIDER a "openai" o "anthropic"
+     - Agregar tu API key
+  2. Ejecutar:
+       cd GENESIS
+       python genesis.py
+
+  Opcion C: Setup automatico (Windows)
+  ─────────────────────────────────────
+  1. Doble clic en setup.bat
+  2. Seguir las instrucciones
+
+
+COMANDOS DENTRO DE GENESIS
+──────────────────────────
+  /status       — Estado completo de todos los sistemas
+  /memory       — Ver contenido de la memoria
+  /evolution    — Ver estado de evolucion y prompt actual
+  /debate       — Ver estado del debate interno
+  /curiosity    — Ver preguntas pendientes de curiosidad
+  /last_debate  — Ver el ultimo debate interno completo
+  /thinking     — Mostrar/ocultar proceso de pensamiento
+  /debate toggle — Activar/desactivar debate interno
+  /rollback     — Revertir a la generacion anterior
+  /help         — Mostrar ayuda
+  /exit         — Salir
+
+
+ESTRUCTURA DEL PROYECTO
+───────────────────────
+  GENESIS/
+  ├── genesis.py           — Punto de entrada principal
+  ├── config.py            — Configuracion (API keys, modelo, etc)
+  ├── setup.bat            — Instalador automatico (Windows)
+  ├── requirements.txt     — Dependencias
+  ├── LEEME.txt            — Este archivo
+  ├── core/
+  │   ├── brain.py         — Motor LLM multi-proveedor
+  │   ├── memory.py        — Sistema de memoria multi-nivel
+  │   ├── evolution.py     — Motor de auto-evolucion
+  │   ├── debate.py        — Sistema de debate multi-agente
+  │   └── curiosity.py     — Motor de curiosidad autonoma
+  ├── memory_data/         — Datos de memoria (se crean al usar)
+  └── evolution_data/      — Datos de evolucion (se crean al usar)
+
+
+NOTAS
+─────
+  - Genesis NO es consciente. Simula comportamiento evolutivo
+    usando tecnicas de IA de vanguardia.
+  - Cada sesion lo hace diferente. Las memorias y evoluciones
+    persisten entre sesiones.
+  - El debate interno usa mas tokens/tiempo pero genera
+    respuestas de mayor calidad.
+  - Puedes desactivar el debate con /debate toggle para
+    respuestas mas rapidas.
+
+
+CREDITOS
+────────
+  Creado con Claude Code (Anthropic) — Marzo 2026
+  Inspirado en: Society of Mind (Minsky), EvoAgentX,
+  Constitutional AI (Anthropic), Titans (Google)
+
+══════════════════════════════════════════════════════════════

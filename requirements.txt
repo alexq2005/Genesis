@@ -1,0 +1,21 @@
+# ============================================================
+# GENESIS v1.4.0 — Dependencias
+# ============================================================
+# Instalar con: pip install -r requirements.txt
+#
+# IMPORTANTE: ctransformers requiere CUDA Toolkit instalado
+# en el sistema para aceleracion por GPU.
+# ============================================================
+
+# --- Motor de inferencia local (GPU) ---
+ctransformers[cuda]>=0.2.27
+
+# --- Web UI ---
+flask>=3.0.0
+
+# --- Testing ---
+pytest>=7.0.0
+
+# --- Dependencias opcionales (futuro) ---
+# sentence-transformers>=2.2.0   # Para RAG con embeddings locales
+# rich>=13.0.0                   # Terminal mejorada
