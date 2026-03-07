@@ -1,5 +1,5 @@
 # ============================================================
-# GENESIS v1.4.0 — Dependencias
+# GENESIS v1.5.0 — Dependencias
 # ============================================================
 # Instalar con: pip install -r requirements.txt
 #
@@ -16,6 +16,9 @@ flask>=3.0.0
 # --- Testing ---
 pytest>=7.0.0
 
-# --- Dependencias opcionales (futuro) ---
-# sentence-transformers>=2.2.0   # Para RAG con embeddings locales
+# --- Dependencias opcionales (instalar manualmente si se desea) ---
+# pyttsx3>=2.90                  # Voice TTS (texto a voz local)
+# vosk>=0.3.45                   # Voice STT (reconocimiento de voz offline)
+# sounddevice>=0.4.6             # Captura de audio para STT
+# sentence-transformers>=2.2.0   # RAG con embeddings neurales (upgrade futuro)
 # rich>=13.0.0                   # Terminal mejorada
