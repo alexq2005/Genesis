@@ -1,0 +1,129 @@
+# GENESIS — Evolución del Proyecto
+
+## Objetivo Principal
+Sistema de IA auto-evolutivo que corre 100% local en GPU (RTX 3060 Ti, 8GB VRAM).
+Usa modelos open-source (Dolphin 2.8 Mistral 7B) via ctransformers con CUDA.
+Sin APIs externas, sin censura, con capacidad de auto-modificación.
+
+## Stack Tecnológico
+| Componente | Tecnología | Razón |
+|---|---|---|
+| Lenguaje | Python 3.11+ | Ecosistema ML/AI maduro |
+| Motor LLM | ctransformers[cuda] | Inferencia directa en GPU sin servidor |
+| Modelo principal | dolphin-2.8-mistral-7b-v02 Q4_K_M | 7B parámetros, sin censura, GGUF optimizado |
+| Web UI | Flask + SSE | Ligero, sin dependencias pesadas |
+| Tests | pytest | Estándar de la industria |
+| Hardware | RTX 3060 Ti (8GB VRAM), 16GB RAM | GPU consumer accesible |
+
+## Arquitectura
+```
+GENESIS/
+├── genesis.py              # Clase principal Genesis (~1,920 líneas)
+├── config.py               # Configuración central
+├── web_ui.py               # Interfaz web Flask
+├── core/                   # 28 módulos del sistema
+│   ├── brain.py            # Interfaz con LLM (multi-proveedor)
+│   ├── local_engine.py     # Motor ctransformers + CUDA
+│   ├── memory.py           # Memoria corto/largo plazo + TF-IDF
+│   ├── evolution.py        # Auto-evolución con fitness tracking
+│   ├── knowledge_graph.py  # Grafo de conocimiento con PageRank
+│   ├── tool_creator.py     # Creador dinámico de herramientas
+│   ├── self_modifier.py    # Auto-modificación de código
+│   ├── prompt_templates.py # Templates auto-detectados por tags
+│   ├── proactive.py        # Motor de sugerencias proactivas
+│   ├── project_generator.py# Generador multi-archivo
+│   └── ... (18 módulos más)
+├── tests/                  # 4 suites, 277 tests
+├── models/                 # Modelos .gguf (excluidos de git)
+└── plugins/                # Sistema de plugins extensible
+```
+
+---
+
+## Historial de Versiones
+
+### v1.0.0 — Fundación (2025-03-04)
+**Hito:** Sistema base funcional con arquitectura modular.
+- Clase Genesis principal con loop interactivo
+- Brain: interfaz multi-proveedor (local, ollama, openai, anthropic)
+- LocalEngine: inferencia directa con ctransformers + CUDA
+- MemorySystem: corto plazo (lista) + largo plazo (JSON) + emocional
+- EvolutionEngine: auto-evaluación con fitness scoring
+- DebateSystem: multi-agente interno (crítico, creativo, lógico)
+- CuriosityEngine: tracking de preguntas pendientes
+- Heartbeat: despertar periódico para investigación autónoma
+- Config centralizado con variables de entorno
+- **51 tests pasando**
+
+### v1.1.0 — Robustez (2025-03-04)
+**Hito:** Sistema hardened para producción.
+- GenesisLogger: sistema de logging thread-safe con rotación
+- safe_io: lectura/escritura JSON atómica con locks
+- BackupManager: backups automáticos cada N interacciones
+- PathValidator + CodeSandbox: ejecución segura de código
+- ShellExecutor: ejecución de comandos con timeout
+- TF-IDF search en memoria largo plazo
+- EmotionalMemory: scoring de importancia emocional
+- Persistencia de sesión entre reinicios
+- **51 tests pasando (suite v1.1)**
+
+### v1.2.0 — Extensibilidad (2025-03-05)
+**Hito:** Sistema extensible con plugins y auto-modificación.
+- TimeoutExecutor: ejecución con límite de tiempo configurable
+- Spinner + ProgressBar: indicadores visuales Unicode en terminal
+- PluginSystem: carga dinámica de plugins desde directorio
+- SelfModifier: auto-modificación de código con validación AST
+- Mejoras de streaming para respuesta token-by-token
+- **77 tests pasando (suite v1.2)**
+
+### v1.3.0 — Inteligencia (2025-03-06)
+**Hito:** Sistema con creación de herramientas y grafo de conocimiento.
+- ToolCreator: creación dinámica de herramientas por el LLM
+- KnowledgeGraph: grafo de conceptos con relaciones y PageRank
+- CodeMemory: indexación semántica de código con TF-IDF
+- ContextBudgetManager: gestión de tokens por prioridad
+- ConversationSummarizer: resumen automático de conversaciones
+- IntentRouter: clasificación de intención del usuario
+- MetricsTracker: métricas de rendimiento
+- TaskPlanner: planificación de tareas multi-paso
+- Workspace: gestión de directorio de trabajo
+- FeedbackSystem: sistema de retroalimentación positiva/negativa
+- ErrorMemory: memoria de errores con pattern matching
+- Brain refactorizado con soporte multi-proveedor real
+- **59 tests pasando (suite v1.3)**
+
+### v1.4.0 — Proactividad (2025-03-07)
+**Hito:** Sistema proactivo con templates y generación de proyectos.
+- PromptTemplateSystem: 8 templates auto-detectados por tags
+  - code (temp=0.3), debug (0.2), explain (0.5), creative (0.9)
+  - analysis (0.4), research (0.4), summarize (0.3), security (0.4)
+- ProactiveEngine: sugerencias inteligentes con cooldown y prioridad
+- ProjectGenerator: parseo multi-formato y generación de proyectos
+- Web UI: Flask + SSE con tema cyberpunk oscuro
+- Fix: encoding UTF-8 para Windows (cp1252 → utf-8)
+- Fix: GenesisLogger no tiene .warning(), usar .info()
+- **90 tests pasando (suite v1.4)**
+- **Total: 277 tests, 36 archivos, ~13,767 líneas**
+
+---
+
+## Roadmap — Próximos Pasos
+
+### v1.5.0 — (Pendiente)
+Candidatos:
+- [ ] RAG con embeddings locales (sentence-transformers)
+- [ ] Multi-model routing (diferentes modelos por tarea)
+- [ ] Visual dashboard en Web UI (knowledge graph, métricas)
+- [ ] Voice I/O (entrada/salida por voz local)
+
+---
+
+## Decisiones Técnicas Clave
+
+| Decisión | Alternativa descartada | Razón |
+|---|---|---|
+| ctransformers sobre llama-cpp-python | llama-cpp-python | Mejor soporte CUDA directo en el momento de inicio |
+| Flask sobre FastAPI | FastAPI | Más ligero, sin necesidad de async para SSE simple |
+| JSON files sobre SQLite | SQLite | Simplicidad para datos pequeños, sin ORM |
+| TF-IDF propio sobre sklearn | sklearn | Cero dependencias adicionales para búsqueda |
+| Unittest sobre pytest | unittest incluido | pytest más expresivo, mejor output |

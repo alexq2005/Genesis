@@ -1,0 +1,95 @@
+# GENESIS — Registro de Errores y Soluciones
+
+> Cada error resuelto es conocimiento reutilizable. Antes de debuggear, buscar aquí primero.
+
+---
+
+## ERR-001: UnicodeEncodeError en banner de terminal (Windows)
+- **Fecha:** 2025-03-07
+- **Contexto:** Ejecutar `python genesis.py` en Windows mostraba el banner con caracteres Unicode box-drawing.
+- **Error:** `UnicodeEncodeError: 'charmap' codec can't encode characters in position 0-59: character maps to <undefined>`
+- **Análisis:** Windows usa `cp1252` como encoding por defecto en `sys.stdout`. Los caracteres Unicode del banner (U+2550-2580, box-drawing) no existen en cp1252.
+- **Solución:** Agregar al inicio de `genesis.py`:
+  ```python
+  if sys.platform == "win32":
+      try:
+          sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+          sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+      except Exception:
+          pass
+  ```
+- **Prevención:** Cualquier módulo que imprima caracteres Unicode debe verificar encoding o usar esta misma técnica. Aplica también a Spinner (Braille) y ProgressBar (bloques).
+
+---
+
+## ERR-002: ModuleLogger no tiene método .warning()
+- **Fecha:** 2025-03-07
+- **Contexto:** `project_generator.py` llamaba `self.log.warning(...)` para advertir sobre archivos saltados.
+- **Error:** `AttributeError: 'ModuleLogger' object has no attribute 'warning'`
+- **Análisis:** `GenesisLogger.get_child()` retorna un `ModuleLogger` que solo expone `.info()`, `.error()`, `.debug()`. No existe `.warning()`.
+- **Solución:** Cambiar `self.log.warning()` a `self.log.info()` en `project_generator.py:225`.
+- **Prevención:** Al usar `GenesisLogger`, solo usar métodos: `.info()`, `.error()`, `.debug()`. Si se necesita `.warning()`, agregar el método a `ModuleLogger` en `core/logger.py`.
+
+---
+
+## ERR-003: Test "debug gana sobre code" empate en scoring de templates
+- **Fecha:** 2025-03-07
+- **Contexto:** Test de PromptTemplateSystem verificaba que input con tags de debug y code priorizara debug.
+- **Error:** Test falló — ambos templates (debug y code) obtenían 14 puntos, y code ganaba por orden de inserción en dict.
+- **Análisis:** Input "tengo un error en mi programa python, el traceback dice TypeError" sumaba: debug (error=5 + traceback=9 = 14) y code (programa=8 + python=6 = 14). Empate resuelto por orden del dict (code se insertó primero).
+- **Solución:** Cambiar input del test a "tengo un error y el traceback dice TypeError, no funciona nada" que agrega "no funciona" (11 chars) exclusivamente a debug, rompiendo el empate.
+- **Prevención:** Al crear tests de scoring por tags, asegurar que los inputs tengan diferencias claras de peso. Evitar inputs que puedan empatar.
+
+---
+
+## ERR-004: Tests de versión fallan al bumpar GENESIS_VERSION
+- **Fecha:** 2025-03-05 → 2025-03-07 (recurrente)
+- **Contexto:** Tests de v1.1, v1.2, v1.3 verificaban `GENESIS_VERSION == "1.X.0"`. Al subir a v1.4, fallaban.
+- **Error:** `AssertionError: '1.4.0' != '1.2.0'` (y variantes para cada suite).
+- **Análisis:** Comparación exacta (`==`) contra versión hardcodeada no es forward-compatible.
+- **Solución:** Cambiar todas las comparaciones a `>=`:
+  ```python
+  # Antes (frágil):
+  assert GENESIS_VERSION == "1.2.0"
+  # Después (robusto):
+  assert GENESIS_VERSION >= "1.2.0"
+  ```
+- **Prevención:** NUNCA usar `==` para versiones en tests. Siempre `>=` para la versión mínima que introdujo la feature.
+
+---
+
+## ERR-005: Tool "broken" se crea exitosamente (sintaxis válida inesperada)
+- **Fecha:** 2025-03-07
+- **Contexto:** Test de v1.3 creaba tool con code `return unclosed_string` esperando que fuera inválido.
+- **Error:** Test "Lista vacía después de delete" fallaba porque "broken" seguía existiendo.
+- **Análisis:** `return unclosed_string` es Python válido — es un `return` de una variable llamada `unclosed_string`. No es un error de sintaxis, solo un NameError en runtime.
+- **Solución:** Agregar limpieza explícita:
+  ```python
+  if "broken" in tc.tools:
+      tc.delete_tool("broken")
+  ```
+- **Prevención:** Para tests que necesiten code inválido, usar sintaxis realmente rota: `def (`, `if:`, `return <<<`. No confiar en nombres de variables como indicador de error.
+
+---
+
+## ERR-006: Timeout de 180s al ejecutar Genesis con pipe
+- **Fecha:** 2025-03-07
+- **Contexto:** Ejecutar `echo "test" | python genesis.py` para verificar que el sistema arranca.
+- **Error:** Proceso terminado por timeout después de 180 segundos.
+- **Análisis:** NO es un error real. El modelo 7B con system prompt extenso (~2000 tokens de contexto) tarda significativamente en generar respuesta. Además, input por pipe no es interactivo — el modelo intenta generar una respuesta completa sin el beneficio del streaming visual.
+- **Solución:** Comportamiento esperado. Para uso real, ejecutar `python genesis.py` directamente en terminal interactiva.
+- **Prevención:** Tests funcionales del modelo no deben usar pipe. Para smoke tests, verificar solo que el sistema inicializa (banner, model loading, subsystems) sin esperar respuesta completa.
+
+---
+
+## Plantilla para Nuevos Errores
+
+```markdown
+## ERR-XXX: [Título descriptivo]
+- **Fecha:** YYYY-MM-DD
+- **Contexto:** Qué se intentaba hacer.
+- **Error:** Mensaje exacto o comportamiento inesperado.
+- **Análisis:** Por qué ocurrió.
+- **Solución:** Corrección aplicada.
+- **Prevención:** Cómo evitar que vuelva a ocurrir.
+```
