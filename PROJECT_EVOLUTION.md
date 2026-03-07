@@ -213,12 +213,35 @@ GENESIS/
 - **245 tests pasando (suite v1.8)**
 - **Total: 1031 tests, 52 archivos, ~23,000+ líneas**
 
-### v1.9.0 — (Pendiente)
+### v1.9.0 — Automatizacion & Configuracion (2026-03-07)
+**Hito:** Scheduler, perfiles de configuracion, y profiling de rendimiento.
+- TaskScheduler: programacion de tareas periodicas tipo cron
+  - ScheduledTask con intervalos configurables y ejecucion automatica
+  - ExecutionLog con historial, queries por tarea y por fallas
+  - tick() cooperativo (sin threads), pause/resume, toggle por tarea
+  - run_task_now() para ejecucion inmediata
+  - Reportes con proximas ejecuciones y stats de exito/fallo
+- ConfigManager: export/import de configuraciones completas
+  - ConfigProfile con secciones serializables a JSON
+  - Collector/Applier pattern para capture y restore de subsistemas
+  - save/load/delete/apply profiles con persistencia en disco
+  - compare_profiles con diff recursivo de dicts
+  - export/import a rutas externas para portabilidad
+- PerformanceProfiler: profiling de subsistemas con deteccion de bottlenecks
+  - TimingRecord con percentiles (p50, p95), min/max, trend detection
+  - Context manager (with profiler.measure()) y start/stop manual
+  - Deteccion automatica de degradacion (primera vs segunda mitad de muestras)
+  - Bottlenecks, slow operations, most called, highest error rate
+  - Thresholds configurables para alertas de lentitud
+- **215 tests pasando (suite v1.9)**
+- **Total: 1246 tests, 55 archivos, ~26,000+ lineas**
+
+### v2.0.0 — (Pendiente)
 Candidatos:
 - [ ] Embeddings locales con sentence-transformers (upgrade RAG)
-- [ ] Multi-modal input (imágenes)
-- [ ] Scheduler / cron de tareas automaticas
-- [ ] Export/Import de configuraciones completas
+- [ ] Multi-modal input (imagenes)
+- [ ] Web UI v2 con dashboard de metricas en tiempo real
+- [ ] Modo autonomo (Genesis opera sin input humano por periodos)
 
 ---
 
