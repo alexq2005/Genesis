@@ -40,19 +40,22 @@ web:
 	$(PYTHON_VENV) web_ui.py
 
 test:
-	$(PYTEST) tests/ -v --tb=short
+	$(PYTHON_VENV) tests/test_all_improvements.py
+	$(PYTHON_VENV) tests/test_v1_2.py
+	$(PYTHON_VENV) tests/test_v1_3.py
+	$(PYTHON_VENV) tests/test_v1_4.py
 
 test-v11:
-	$(PYTEST) tests/test_all_improvements.py -v --tb=short
+	$(PYTHON_VENV) tests/test_all_improvements.py
 
 test-v12:
-	$(PYTEST) tests/test_v1_2.py -v --tb=short
+	$(PYTHON_VENV) tests/test_v1_2.py
 
 test-v13:
-	$(PYTEST) tests/test_v1_3.py -v --tb=short
+	$(PYTHON_VENV) tests/test_v1_3.py
 
 test-v14:
-	$(PYTEST) tests/test_v1_4.py -v --tb=short
+	$(PYTHON_VENV) tests/test_v1_4.py
 
 clean:
 	@echo "Limpiando __pycache__..."
