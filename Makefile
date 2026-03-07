@@ -16,7 +16,7 @@ PIP = $(VENV)/Scripts/pip
 PYTEST = $(VENV)/Scripts/pytest
 PYTHON_VENV = $(VENV)/Scripts/python
 
-.PHONY: setup run web test test-v11 test-v12 test-v13 test-v14 test-v15 clean help
+.PHONY: setup run web test test-v11 test-v12 test-v13 test-v14 test-v15 test-v16 clean help
 
 help:
 	@echo "=== GENESIS Makefile ==="
@@ -45,6 +45,7 @@ test:
 	$(PYTHON_VENV) tests/test_v1_3.py
 	$(PYTHON_VENV) tests/test_v1_4.py
 	$(PYTHON_VENV) tests/test_v1_5.py
+	$(PYTHON_VENV) tests/test_v1_6.py
 
 test-v11:
 	$(PYTHON_VENV) tests/test_all_improvements.py
@@ -60,6 +61,9 @@ test-v14:
 
 test-v15:
 	$(PYTHON_VENV) tests/test_v1_5.py
+
+test-v16:
+	$(PYTHON_VENV) tests/test_v1_6.py
 
 clean:
 	@echo "Limpiando __pycache__..."
