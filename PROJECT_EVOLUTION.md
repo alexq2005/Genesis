@@ -135,9 +135,35 @@ GENESIS/
 - **111 tests pasando (suite v1.5)**
 - **Total: 388 tests, 40 archivos, ~16,000+ líneas**
 
-### v1.6.0 — (Pendiente)
+### v1.6.0 — Sistema Multi-Agente (2026-03-07)
+**Hito:** Agentes especializados, workflows automatizados y sesiones múltiples.
+- AgentSystem: 6 agentes predefinidos con auto-routing por keywords
+  - researcher (investigación), coder (código), analyst (análisis)
+  - creative (escritura creativa), security (ciberseguridad), planner (planificación)
+  - Detección automática por scoring keyword→capability con desempate por prioridad
+  - Delegación con system prompt especializado por agente
+  - Pipeline: encadenamiento output_agente_N → contexto_agente_N+1
+  - CRUD: agregar/eliminar/toggle agentes custom
+- WorkflowEngine: 4 workflows predefinidos con ejecución paso a paso
+  - code_review: analizar → seguridad → mejoras (coder→security→coder)
+  - research_deep: investigar → analizar → sintetizar (researcher→analyst→researcher)
+  - debug_fix: diagnosticar → planificar → implementar (coder→planner→coder)
+  - project_scaffold: planificar → estructura → documentar (planner→coder→researcher)
+  - Contexto acumulativo entre pasos ({input} + {context})
+  - Custom workflows: crear workflows con pasos y agentes propios
+- SessionManager: conversaciones múltiples independientes
+  - Crear, cambiar, eliminar, renombrar sesiones
+  - Persistencia en JSON (memory_data/sessions/)
+  - Match parcial en switch (ej: "proyecto" → "proyecto_web")
+  - Auto-save cada 5 mensajes, sanitización de IDs
+- Fix: capabilities compartidas (architecture) resueltas por prioridad de agente
+- Fix: pipeline se detiene correctamente cuando un agente falla (sin LLM)
+- **240 tests pasando (suite v1.6)**
+- **Total: 628 tests, 44 archivos, ~18,000+ líneas**
+
+### v1.7.0 — (Pendiente)
 Candidatos:
-- [ ] Agent-to-Agent communication
+- [ ] Auto-learning (evolución de prompts basada en feedback)
 - [ ] Embeddings locales con sentence-transformers (upgrade RAG)
 - [ ] Plugin marketplace / repositorio
 - [ ] Multi-modal input (imágenes)

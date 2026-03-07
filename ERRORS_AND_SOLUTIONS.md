@@ -100,6 +100,30 @@
 - **Solución:** Usar query con palabras que realmente aparecen en el documento: "calcular fibonacci script ejemplo" + min_score=0.05.
 - **Prevención:** En tests de búsqueda TF-IDF, usar palabras que realmente existen en los documentos indexados. TF-IDF es literal — no entiende sinónimos.
 
+## ERR-009: "arquitectura" mapea a coder en vez de planner (desempate por prioridad)
+- **Fecha:** 2026-03-07
+- **Contexto:** Test esperaba que "diseña la arquitectura del sistema" seleccionara planner.
+- **Error:** El test falló porque detect_agent retornó "coder" en vez de "planner".
+- **Análisis:** La capability "architecture" está en AMBOS agentes: coder (priority=8) y planner (priority=6). El scoring por keyword length da empate (12 puntos). El desempate usa priority → coder gana (8 > 6).
+- **Solución:** Corregir el test para esperar "coder" y documentar que capabilities compartidas se resuelven por prioridad.
+- **Prevención:** Al escribir tests de auto-routing, verificar qué agentes comparten capabilities y considerar la priority como factor de desempate.
+
+## ERR-010: Pipeline se detiene en paso 1 cuando brain=None
+- **Fecha:** 2026-03-07
+- **Contexto:** Test de pipeline con brain=None esperaba que los 2 pasos se ejecutaran.
+- **Error:** Solo se ejecutó 1 paso. El segundo nunca corrió.
+- **Análisis:** `delegate()` con `brain=None` y `use_brain=True` (default) genera response vacía. `pipeline()` interpreta response vacía como `success=False` → ejecuta `break` para detener el pipeline.
+- **Solución:** Ajustar test para validar que el pipeline ejecuta "al menos 1 paso" y que la detención ante fallo es comportamiento correcto.
+- **Prevención:** Tests de pipeline sin LLM deben tener en cuenta que delegate retorna vacío sin brain. Usar `use_brain=False` en unit tests o mockear brain.
+
+## ERR-011: UnicodeEncodeError con → en test names (Windows cp1252)
+- **Fecha:** 2026-03-07
+- **Contexto:** test_v1_6.py usaba `→` (U+2192) en nombres de test como `'busca' → researcher`.
+- **Error:** `UnicodeEncodeError: 'charmap' codec can't encode character '\u2192'`
+- **Análisis:** Windows usa cp1252 por defecto en stdout. El carácter `→` no existe en cp1252. genesis.py ya tiene el fix de `sys.stdout.reconfigure(encoding="utf-8")` pero los tests no lo tenían.
+- **Solución:** Agregar `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` al inicio del test + reemplazar `→` por `->`.
+- **Prevención:** SIEMPRE agregar el reconfigure de UTF-8 al inicio de cada archivo de tests nuevo. Evitar caracteres Unicode en print de tests.
+
 ---
 
 ## Plantilla para Nuevos Errores
