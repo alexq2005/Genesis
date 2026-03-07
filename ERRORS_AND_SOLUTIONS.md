@@ -140,6 +140,14 @@
 - **Solución:** Cambiar a `GENESIS_VERSION >= "1.6.0"` para forward compatibility.
 - **Prevención:** Tests de versión deben usar `>=` en vez de `==` para no romperse con cada bump.
 
+## ERR-014: test_v1_7 falla al bumpar a v1.8.0 (version check exacto, recurrente)
+- **Fecha:** 2026-03-07
+- **Contexto:** test_v1_7.py tenia `GENESIS_VERSION == "1.7.0"`. Al bumpar config.py a "1.8.0", este test fallo.
+- **Error:** `[FAIL] Version es 1.7.0` porque ahora es "1.8.0".
+- **Analisis:** Pattern recurrente: tests de version usan `==` en vez de `>=`. Cada bump rompe el test de la version anterior. Ya documentado en ERR-004 y ERR-013 pero sigue ocurriendo.
+- **Solucion:** Cambiar a `GENESIS_VERSION >= "1.7.0"`.
+- **Prevencion:** REGLA ABSOLUTA: NUNCA usar `==` para version en tests. Siempre `>=`. Esto aplica a TODOS los futuros test files.
+
 ---
 
 ## Plantilla para Nuevos Errores

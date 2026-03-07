@@ -187,12 +187,38 @@ GENESIS/
 - **158 tests pasando (suite v1.7)**
 - **Total: 786 tests, 48 archivos, ~20,000+ líneas**
 
-### v1.8.0 — (Pendiente)
+### v1.8.0 — Production Hardening (2026-03-07)
+**Hito:** Monitoreo de salud, control de recursos y ecosistema de plugins.
+- HealthMonitor: monitoreo de salud del sistema con checks extensibles
+  - HealthCheck, Alert, ResourceMetrics (CPU, RAM, disco via psutil)
+  - Checks built-in: resources, data_dirs, disk_space
+  - Factory methods para checks de brain y memory
+  - Sistema de alertas con acknowledge individual/global
+  - Reportes completos y thresholds configurables
+- RateLimiter: control de uso de recursos con Token Bucket
+  - TokenBucket: algoritmo clasico con refill por tiempo
+  - 5 buckets predefinidos: inference, tools, self_modify, disk_write, api_external
+  - CooldownTracker: cooldowns por accion (evolucion, backup, health_check, rag_reindex)
+  - UsageTracker: analytics de uso por recurso (tasas/min, /hora)
+  - Toggle on/off, reset individual/global
+- PluginMarketplace: ecosistema de plugins con discovery e instalacion
+  - Registry local (plugin_registry/available/) con manifests JSON
+  - Search por nombre, descripcion, tags, autor
+  - Install/uninstall/update con verificacion de dependencias
+  - Sistema de ratings (1-5 estrellas, promedio incremental)
+  - Generador de templates para nuevos plugins
+  - Persistencia de indice en manifest.json
+- Fix: test_v1_7 version check cambiado a >= para forward compatibility
+- Dependencia agregada: psutil>=5.9.0 para monitoreo de recursos
+- **245 tests pasando (suite v1.8)**
+- **Total: 1031 tests, 52 archivos, ~23,000+ líneas**
+
+### v1.9.0 — (Pendiente)
 Candidatos:
 - [ ] Embeddings locales con sentence-transformers (upgrade RAG)
-- [ ] Plugin marketplace / repositorio
 - [ ] Multi-modal input (imágenes)
-- [ ] Production hardening (rate limiting, monitoring, health checks)
+- [ ] Scheduler / cron de tareas automaticas
+- [ ] Export/Import de configuraciones completas
 
 ---
 
