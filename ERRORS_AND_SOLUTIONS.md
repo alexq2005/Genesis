@@ -124,6 +124,22 @@
 - **Solución:** Agregar `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` al inicio del test + reemplazar `→` por `->`.
 - **Prevención:** SIEMPRE agregar el reconfigure de UTF-8 al inicio de cada archivo de tests nuevo. Evitar caracteres Unicode en print de tests.
 
+## ERR-012: A/B test no concluye con variantes empatadas al 100%
+- **Fecha:** 2026-03-07
+- **Contexto:** Test de PromptExperiment con 3 variantes: original 100%, amable 0%, conciso 100%.
+- **Error:** El test esperaba `state=="concluded"` pero seguía en `"running"`.
+- **Análisis:** `_check_conclusion()` requiere ≥15% de diferencia entre 1er y 2do lugar. Con original=100% y conciso=100%, la diferencia es 0% → no concluye. Esto es CORRECTO: no debería declarar ganador entre empates.
+- **Solución:** Cambiar test para que conciso tenga 50% (2/4), creando diferencia clara de 50% entre original y conciso.
+- **Prevención:** En tests de A/B, asegurar que haya un ganador estadísticamente claro, no empates.
+
+## ERR-013: test_v1_6 falla al bumpar a v1.7.0 (version check exacto)
+- **Fecha:** 2026-03-07
+- **Contexto:** test_v1_6.py tenía `GENESIS_VERSION == "1.6.0"`. Al bumpar config.py a "1.7.0", este test falló.
+- **Error:** `[FAIL] Version es 1.6.0` porque ahora es "1.7.0".
+- **Análisis:** Los tests de versión anteriores hacen check exacto en vez de ≥. Cada bump rompe tests de versiones anteriores.
+- **Solución:** Cambiar a `GENESIS_VERSION >= "1.6.0"` para forward compatibility.
+- **Prevención:** Tests de versión deben usar `>=` en vez de `==` para no romperse con cada bump.
+
 ---
 
 ## Plantilla para Nuevos Errores

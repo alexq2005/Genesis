@@ -161,12 +161,38 @@ GENESIS/
 - **240 tests pasando (suite v1.6)**
 - **Total: 628 tests, 44 archivos, ~18,000+ líneas**
 
-### v1.7.0 — (Pendiente)
+### v1.7.0 — Aprendizaje Adaptativo (2026-03-07)
+**Hito:** Genesis aprende de cada interacción para mejorar automáticamente.
+- AutoLearner: aprendizaje por patrones multi-dimensional
+  - PatternTracker para agentes, templates, tags y combinaciones
+  - Generación automática de reglas cada 10 feedbacks
+  - Ajustes de prioridad de agentes basados en tasa de éxito
+  - get_best_agent_for_template() sugiere combos óptimos
+  - Persistencia completa en JSON
+- ConversationAnalytics: analytics profundos de conversación
+  - TopicTracker: 8 categorías (programación, seguridad, datos, ia_ml, web, sistema, creative, general)
+  - EngagementMetrics: distribución horaria/diaria, tiempos de respuesta, largo de queries
+  - KnowledgeGapDetector: detecta preguntas con feedback negativo, resuelve cuando mejora
+  - Reporte completo con tendencias y gaps
+- AdaptivePrompts: A/B testing de prompts con epsilon-greedy
+  - PromptExperiment con múltiples PromptVariant
+  - Selección epsilon-greedy (80% exploit, 20% explore)
+  - Conclusión automática cuando ganador tiene ≥15% ventaja con ≥N muestras
+  - CRUD completo de experimentos con persistencia
+- Integración: feedback (+/-) alimenta AutoLearner + Analytics automáticamente
+  - _last_agent, _last_template, _last_response_time trackeados
+  - analytics.track_message() en process_input para cada interacción
+- Fix: test_v1_6 version check cambiado a >= para forward compatibility
+- Fix: A/B test con variantes empatadas (100% vs 100%) no concluye prematuramente
+- **158 tests pasando (suite v1.7)**
+- **Total: 786 tests, 48 archivos, ~20,000+ líneas**
+
+### v1.8.0 — (Pendiente)
 Candidatos:
-- [ ] Auto-learning (evolución de prompts basada en feedback)
 - [ ] Embeddings locales con sentence-transformers (upgrade RAG)
 - [ ] Plugin marketplace / repositorio
 - [ ] Multi-modal input (imágenes)
+- [ ] Production hardening (rate limiting, monitoring, health checks)
 
 ---
 
