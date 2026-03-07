@@ -70,6 +70,9 @@ from core.sessions import SessionManager
 from core.auto_learner import AutoLearner
 from core.conversation_analytics import ConversationAnalytics
 from core.adaptive_prompts import AdaptivePrompts
+from core.health_monitor import HealthMonitor
+from core.rate_limiter import RateLimiter
+from core.plugin_marketplace import PluginMarketplace
 
 
 class Genesis:
@@ -253,6 +256,25 @@ class Genesis:
 
         # Inicializar Adaptive Prompts (A/B testing)
         self.adaptive_prompts = AdaptivePrompts(base_dir=str(BASE_DIR))
+
+        # Inicializar Health Monitor (monitoreo de salud)
+        self.health_monitor = HealthMonitor(base_dir=str(BASE_DIR))
+        # Registrar checks de subsistemas
+        self.health_monitor.register_check(
+            "brain", self.health_monitor.create_brain_check(self.brain)
+        )
+        self.health_monitor.register_check(
+            "memory", self.health_monitor.create_memory_check(self.memory)
+        )
+
+        # Inicializar Rate Limiter
+        self.rate_limiter = RateLimiter()
+
+        # Inicializar Plugin Marketplace
+        self.marketplace = PluginMarketplace(base_dir=str(BASE_DIR))
+        mp_stats = self.marketplace.get_stats()
+        if mp_stats["total"] > 0:
+            self.log.info(f"Marketplace: {mp_stats['total']} plugins, {mp_stats['installed']} instalados")
 
         # Estado
         self.running = True
@@ -1402,6 +1424,88 @@ class Genesis:
         elif cmd.startswith("/experiment delete "):
             arg = command.strip()[18:].strip()
             return self.adaptive_prompts.delete_experiment(arg)
+
+        # --- v1.8 Health Monitor ---
+        elif cmd == "/health":
+            return self.health_monitor.generate_report()
+        elif cmd == "/health check":
+            self.health_monitor.run_all_checks()
+            return self.health_monitor.generate_report()
+        elif cmd == "/health alerts":
+            alerts = self.health_monitor.get_active_alerts()
+            if not alerts:
+                return "  No hay alertas activas."
+            lines = [f"  ALERTAS ACTIVAS ({len(alerts)}):"]
+            for i, a in enumerate(alerts):
+                lines.append(f"    [{i}] [{a.level.upper()}] {a.source}: {a.message}")
+            return "\n".join(lines)
+        elif cmd.startswith("/health ack"):
+            arg = command.strip()[11:].strip()
+            if arg == "all":
+                n = self.health_monitor.acknowledge_all()
+                return f"  {n} alertas reconocidas."
+            try:
+                idx = int(arg)
+                if self.health_monitor.acknowledge_alert(idx):
+                    return f"  Alerta [{idx}] reconocida."
+                return f"  Indice invalido: {idx}"
+            except ValueError:
+                return "  Uso: /health ack <indice> o /health ack all"
+
+        # --- v1.8 Rate Limiter ---
+        elif cmd == "/ratelimit" or cmd == "/rate":
+            return self.rate_limiter.get_usage_report()
+        elif cmd == "/ratelimit toggle" or cmd == "/rate toggle":
+            state = self.rate_limiter.toggle()
+            return f"  Rate Limiter: {'ACTIVADO' if state else 'DESACTIVADO'}"
+        elif cmd == "/ratelimit reset" or cmd == "/rate reset":
+            self.rate_limiter.reset()
+            return "  Todos los buckets reseteados a capacidad completa."
+
+        # --- v1.8 Plugin Marketplace ---
+        elif cmd == "/marketplace" or cmd == "/market":
+            return self.marketplace.format_marketplace()
+        elif cmd.startswith("/marketplace search ") or cmd.startswith("/market search "):
+            arg = command.strip().split(" ", 2)[-1].strip()
+            results = self.marketplace.search(arg)
+            if not results:
+                return f"  No se encontraron plugins para '{arg}'."
+            lines = [f"  Resultados para '{arg}':"]
+            for m in results:
+                lines.append(m.format_card())
+            return "\n".join(lines)
+        elif cmd.startswith("/marketplace install ") or cmd.startswith("/market install "):
+            arg = command.strip().split(" ", 2)[-1].strip()
+            result = self.marketplace.install_plugin(arg)
+            # Recargar plugins despues de instalar
+            if "exitosamente" in result:
+                self.plugins.load_all(genesis=self)
+            return result
+        elif cmd.startswith("/marketplace uninstall ") or cmd.startswith("/market uninstall "):
+            arg = command.strip().split(" ", 2)[-1].strip()
+            result = self.marketplace.uninstall_plugin(arg)
+            if "desinstalado" in result.lower():
+                self.plugins.unload_plugin(arg)
+            return result
+        elif cmd.startswith("/marketplace create ") or cmd.startswith("/market create "):
+            parts = command.strip().split(" ", 2)
+            arg = parts[-1].strip() if len(parts) > 2 else ""
+            # Separar nombre y descripcion por |
+            if "|" in arg:
+                name, desc = arg.split("|", 1)
+                return self.marketplace.create_template(name.strip(), desc.strip())
+            return self.marketplace.create_template(arg)
+        elif cmd.startswith("/marketplace rate ") or cmd.startswith("/market rate "):
+            parts = command.strip().split()
+            if len(parts) >= 4:
+                name = parts[2]
+                try:
+                    stars = int(parts[3])
+                    return self.marketplace.rate_plugin(name, stars)
+                except ValueError:
+                    return "  Uso: /marketplace rate <nombre> <1-5>"
+            return "  Uso: /marketplace rate <nombre> <1-5>"
+
         elif cmd == "/help":
             return self._cmd_help()
         elif cmd in ("/exit", "/quit", "/salir"):
@@ -1525,6 +1629,15 @@ class Genesis:
             f"",
             f"ADAPTIVE PROMPTS:",
             self.adaptive_prompts.status(),
+            f"",
+            f"HEALTH MONITOR:",
+            self.health_monitor.status(),
+            f"",
+            f"RATE LIMITER:",
+            self.rate_limiter.status(),
+            f"",
+            f"MARKETPLACE:",
+            self.marketplace.status(),
             f"",
             f"STREAMING: {'activado' if self.streaming else 'desactivado'}",
             f"TIMEOUT LLM: {self.llm_timeout}s",
@@ -2048,6 +2161,28 @@ class Genesis:
   /experiments                — Listar experimentos de prompt
   /experiment create <n>|<base>|<var1>|<var2> — Crear experimento
   /experiment delete <nombre> — Eliminar experimento
+
+  HEALTH MONITOR:
+  /health            — Reporte de salud completo del sistema
+  /health check      — Ejecutar todos los checks y mostrar reporte
+  /health alerts     — Ver alertas activas
+  /health ack <i>    — Reconocer alerta por indice
+  /health ack all    — Reconocer todas las alertas
+
+  RATE LIMITER:
+  /ratelimit         — Reporte de uso de recursos y buckets
+  /rate              — Atajo para /ratelimit
+  /ratelimit toggle  — Activar/desactivar rate limiting
+  /ratelimit reset   — Resetear todos los buckets
+
+  PLUGIN MARKETPLACE:
+  /marketplace               — Ver plugins disponibles
+  /market                    — Atajo para /marketplace
+  /marketplace search <q>    — Buscar plugins por nombre/tag
+  /marketplace install <n>   — Instalar plugin del registry
+  /marketplace uninstall <n> — Desinstalar plugin
+  /marketplace create <n>    — Crear template de plugin nuevo
+  /marketplace rate <n> <1-5> — Calificar plugin
 
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda

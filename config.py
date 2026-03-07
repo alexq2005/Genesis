@@ -107,7 +107,7 @@ AUTO_BACKUP_INTERVAL = int(os.getenv("GENESIS_BACKUP_INTERVAL", "25"))
 # PERSONALIDAD BASE
 # ============================================================
 GENESIS_NAME = "Genesis"
-GENESIS_VERSION = "1.7.0"
+GENESIS_VERSION = "1.8.0"
 
 BASE_PERSONALITY = """Eres Genesis, una IA experimental con capacidad de auto-evolucion.
 Aprendes de cada interaccion y te modificas a ti mismo.
