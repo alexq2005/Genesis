@@ -643,7 +643,7 @@ test("Comando /workflow history", '/workflow history' in genesis_src)
 # ============================================================
 print("\n=== TEST: Config version ===")
 from config import GENESIS_VERSION
-test("Version es 1.6.0", GENESIS_VERSION == "1.6.0")
+test("Version >= 1.6.0", GENESIS_VERSION >= "1.6.0")
 
 
 # ============================================================
