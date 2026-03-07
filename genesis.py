@@ -64,6 +64,9 @@ from core.project_generator import ProjectGenerator
 from core.rag import RAGSystem
 from core.model_router import ModelRouter
 from core.voice import VoiceSystem
+from core.agents import AgentSystem
+from core.workflows import WorkflowEngine
+from core.sessions import SessionManager
 
 
 class Genesis:
@@ -227,6 +230,17 @@ class Genesis:
 
         # Inicializar Voice System
         self.voice = VoiceSystem()
+
+        # Inicializar Agent System
+        self.agent_system = AgentSystem(brain=self.brain)
+        self.log.info(f"AgentSystem: {len(self.agent_system.agents)} agentes cargados")
+
+        # Inicializar Workflow Engine
+        self.workflow_engine = WorkflowEngine(agent_system=self.agent_system)
+        self.log.info(f"WorkflowEngine: {len(self.workflow_engine.workflows)} workflows disponibles")
+
+        # Inicializar Session Manager
+        self.session_manager = SessionManager(base_dir=str(BASE_DIR))
 
         # Estado
         self.running = True
@@ -1237,6 +1251,71 @@ class Genesis:
                 return self.voice.tts.set_voice(vid)
             except ValueError:
                 return "Uso: /voice set <id>"
+        # === AGENT SYSTEM ===
+        elif cmd == "/agents":
+            return self.agent_system.list_agents()
+        elif cmd == "/agent toggle":
+            return self.agent_system.toggle()
+        elif cmd.startswith("/agent toggle "):
+            arg = command.strip()[14:].strip()
+            return self.agent_system.toggle_agent(arg)
+        elif cmd.startswith("/delegate"):
+            arg = command.strip()[9:].strip()
+            if not arg:
+                return "Uso: /delegate <tarea> o /delegate <agente> <tarea>"
+            # Verificar si el primer argumento es un agente
+            parts = arg.split(maxsplit=1)
+            if parts[0].lower() in self.agent_system.agents and len(parts) > 1:
+                result = self.agent_system.delegate(parts[1], agent_name=parts[0].lower())
+            else:
+                result = self.agent_system.delegate(arg)
+            agent_name = result.get("agent", "?")
+            role = result.get("role", "?")
+            response = result.get("response", "Sin respuesta")
+            return f"[Agente: {agent_name} ({role})]\n\n{response}"
+        elif cmd == "/agent history":
+            return self.agent_system.get_history()
+        # === WORKFLOW ENGINE ===
+        elif cmd == "/workflows":
+            return self.workflow_engine.list_workflows()
+        elif cmd.startswith("/workflow run "):
+            arg = command.strip()[13:].strip()
+            parts = arg.split(maxsplit=1)
+            if len(parts) < 2:
+                return "Uso: /workflow run <nombre_workflow> <input>"
+            wf_name = parts[0]
+            wf_input = parts[1]
+            result = self.workflow_engine.run(wf_name, wf_input)
+            lines = [f"Workflow: {result['workflow']} ({result['total_time']}s)"]
+            for step in result.get("steps", []):
+                status = "OK" if step["success"] else "FAIL"
+                lines.append(f"  [{status}] {step['name']} ({step['agent']}, {step['time']}s)")
+            if result.get("final_output"):
+                lines.append(f"\n{result['final_output'][:1000]}")
+            return "\n".join(lines)
+        elif cmd == "/workflow history":
+            return self.workflow_engine.get_history()
+        # === SESSION MANAGER ===
+        elif cmd == "/sessions":
+            return self.session_manager.list_sessions()
+        elif cmd.startswith("/session new "):
+            arg = command.strip()[13:].strip()
+            parts = arg.split(maxsplit=1)
+            sid = parts[0]
+            topic = parts[1] if len(parts) > 1 else ""
+            return self.session_manager.create(sid, topic)
+        elif cmd.startswith("/session switch "):
+            arg = command.strip()[16:].strip()
+            return self.session_manager.switch(arg)
+        elif cmd.startswith("/session delete "):
+            arg = command.strip()[16:].strip()
+            return self.session_manager.delete(arg)
+        elif cmd.startswith("/session rename "):
+            arg = command.strip()[16:].strip()
+            parts = arg.split(maxsplit=1)
+            if len(parts) < 2:
+                return "Uso: /session rename <id> <nuevo_nombre>"
+            return self.session_manager.rename(parts[0], parts[1])
         elif cmd == "/help":
             return self._cmd_help()
         elif cmd in ("/exit", "/quit", "/salir"):
@@ -1342,6 +1421,15 @@ class Genesis:
             f"",
             f"VOZ:",
             f"  TTS: {'disponible' if self.voice.tts.available else 'NO'} | STT: {'disponible' if self.voice.stt.available else 'NO'} | Estado: {'ON' if self.voice.enabled else 'OFF'}",
+            f"",
+            f"AGENTES:",
+            self.agent_system.status(),
+            f"",
+            f"WORKFLOWS:",
+            self.workflow_engine.status(),
+            f"",
+            f"SESIONES:",
+            self.session_manager.status(),
             f"",
             f"STREAMING: {'activado' if self.streaming else 'desactivado'}",
             f"TIMEOUT LLM: {self.llm_timeout}s",
@@ -1831,6 +1919,26 @@ class Genesis:
   /voice voices      — Listar voces disponibles
   /voice set <id>    — Cambiar voz por ID
   /voice rate <num>  — Cambiar velocidad (default: 175 wpm)
+
+  SISTEMA MULTI-AGENTE:
+  /agents            — Listar agentes disponibles con stats
+  /agent toggle      — Activar/desactivar sistema multi-agente completo
+  /agent toggle <n>  — Activar/desactivar agente especifico
+  /delegate <tarea>  — Delegar tarea al agente mas adecuado (auto-detect)
+  /delegate <agente> <tarea> — Delegar a agente especifico
+  /agent history     — Ver historial de delegaciones
+
+  WORKFLOWS:
+  /workflows              — Listar workflows disponibles
+  /workflow run <wf> <in> — Ejecutar workflow con input
+  /workflow history       — Ver historial de ejecuciones
+
+  SESIONES:
+  /sessions                    — Listar todas las sesiones
+  /session new <id> [tema]     — Crear nueva sesion
+  /session switch <id>         — Cambiar a otra sesion
+  /session delete <id>         — Eliminar sesion
+  /session rename <id> <name>  — Renombrar sesion
 
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
