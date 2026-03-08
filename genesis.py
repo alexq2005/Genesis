@@ -564,6 +564,10 @@ class Genesis:
         if self.show_thinking:
             print(f"  [Router: intent={intent}]")
 
+        # === DETECCION DE APRENDIZAJE AUTOMATICO ===
+        # Si el usuario pide aprender/especializarse, Genesis actua en vez de solo hablar
+        learn_context = self._detect_and_learn(user_input)
+
         # Construir prompt del sistema optimizado para esta intencion
         system_prompt = self.build_system_prompt(intent=intent)
 
@@ -597,6 +601,10 @@ class Genesis:
             system_prompt += f"\n\n{rag_context}"
             if self.show_thinking:
                 print(f"  [RAG: contexto inyectado ({len(rag_context)} chars)]")
+
+        # Inyectar conocimiento aprendido de la web si hay
+        if learn_context:
+            system_prompt += f"\n\n{learn_context}"
 
         # Fase 0: Planificacion de tareas complejas
         if ((intent == "code" or self._is_coding_request(user_input))
@@ -1008,6 +1016,94 @@ class Genesis:
     # ============================================================
     # SESSION PERSISTENCE — Guardar/restaurar estado
     # ============================================================
+
+    # ============================================================
+    # APRENDIZAJE AUTOMATICO — Detecta y aprende de la web
+    # ============================================================
+
+    # Patrones que indican que el usuario quiere que Genesis APRENDA
+    LEARN_TRIGGERS = [
+        "aprende sobre", "aprende de", "aprende acerca",
+        "especialízate en", "especializate en", "especializa en",
+        "estudia sobre", "estudia de",
+        "investiga y aprende", "investiga sobre", "investiga de",
+        "quiero que aprendas", "quiero que sepas",
+        "aprende todo sobre", "aprende mas sobre",
+        "capacítate en", "capacitate en",
+        "entrénate en", "entrenate en",
+        "enfócate en", "enfocate en",
+        "domina el tema", "domina sobre",
+        "conviértete en experto", "conviertete en experto",
+        "vuelvete experto", "se experto en",
+        "learn about", "specialize in", "study about",
+    ]
+
+    def _detect_and_learn(self, user_input: str) -> str:
+        """
+        Detecta si el usuario pide aprender y ejecuta busquedas web reales.
+
+        Retorna contexto aprendido para inyectar en el system prompt,
+        o string vacio si no es un pedido de aprendizaje.
+        """
+        text = user_input.lower().strip()
+
+        # Detectar si es un pedido de aprendizaje
+        topic = ""
+        for trigger in self.LEARN_TRIGGERS:
+            if trigger in text:
+                # Extraer el tema despues del trigger
+                idx = text.index(trigger) + len(trigger)
+                topic = user_input[idx:].strip().strip(".,;:!?")
+                break
+
+        if not topic:
+            return ""
+
+        # Verificar que el modulo web esta disponible
+        if not self.web.searcher.available:
+            self.log.info(f"Aprendizaje solicitado pero web no disponible: {topic}")
+            return ""
+
+        self.log.info(f"Aprendizaje automatico activado: {topic}")
+
+        # Buscar y aprender de la web
+        try:
+            report = self.web.search_and_learn(topic, max_results=5, max_pages=3)
+
+            # Agregar como curiosidad resuelta
+            self.curiosity.add_question(
+                f"Aprender sobre: {topic}", priority=1.0
+            )
+            for q in self.curiosity.questions:
+                if topic.lower() in q["question"].lower():
+                    q["explored"] = True
+                    q["exploration_result"] = f"Web: {report.get('pages_read', 0)} paginas leidas"
+                    break
+
+            # Recuperar conocimiento aprendido relevante
+            recall = self.web.recall(topic, top_k=5)
+
+            if recall:
+                context_parts = [
+                    f"[CONOCIMIENTO APRENDIDO sobre '{topic}' — {len(recall)} fragmentos de la web]"
+                ]
+                for i, item in enumerate(recall[:5], 1):
+                    text_snippet = item.get("text", "")[:500]
+                    source = item.get("source", "web")
+                    context_parts.append(f"\nFuente {i} ({source}):\n{text_snippet}")
+
+                context_parts.append(
+                    f"\n[Usa este conocimiento real para responder. "
+                    f"Total aprendido: {self.web.total_learned} paginas.]"
+                )
+                learn_ctx = "\n".join(context_parts)
+                self.log.info(f"Conocimiento inyectado: {len(learn_ctx)} chars sobre '{topic}'")
+                return learn_ctx
+
+        except Exception as e:
+            self.log.error(f"Error en aprendizaje automatico: {e}")
+
+        return ""
 
     def _setup_autonomous_evolution(self):
         """

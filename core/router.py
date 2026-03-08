@@ -47,6 +47,9 @@ class IntentRouter:
                 "search", "research", "find", "what is", "how does",
                 "noticias", "ultimo", "reciente", "pagina web",
                 "lee la pagina", "lee esta url", "traduce esta pagina",
+                "aprende sobre", "aprende de", "especialízate", "especializate",
+                "estudia sobre", "capacítate", "capacitate", "entrénate", "entrenate",
+                "quiero que aprendas", "vuelvete experto", "learn about",
             ],
             "sections": [
                 "personality", "core_rules", "tools", "self_awareness",
