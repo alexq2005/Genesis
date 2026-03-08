@@ -260,7 +260,22 @@ GENESIS/
 - **258 tests pasando (suite v2.0)**
 - **Total: 1504 tests, 58 archivos, ~29,000+ lineas**
 
-### v2.1.0 — (Pendiente)
+### v2.1.0 — Web Intelligence (2026-03-07)
+**Hito:** Genesis accede a internet. Busca, lee y aprende de la web.
+- WebIntelligence: modulo de acceso a internet con aprendizaje
+  - WebSearcher: busqueda via DuckDuckGo (sin API key, gratis)
+  - WebReader: extraccion de contenido con requests + BeautifulSoup
+  - LearnedItem: tracking de paginas aprendidas con persistencia
+  - search_and_learn(): flujo completo buscar -> leer -> indexar en embeddings
+  - recall(): busqueda semantica en conocimiento aprendido de la web
+  - Rate limiting integrado (min 2s entre busquedas DDG)
+  - Graceful degradation sin internet (no crashea)
+  - Chunking inteligente por parrafos para embeddings
+  - 9 comandos: /web search, /web read, /web learn, /web news, /web recall, etc.
+- **116 tests pasando (suite v2.1)**
+- **Total: 1620 tests, 59 archivos, ~30,000+ lineas**
+
+### v2.2.0 — (Pendiente)
 Candidatos:
 - [ ] Multi-modal input (imagenes)
 - [ ] Web UI v2 con dashboard de metricas en tiempo real
