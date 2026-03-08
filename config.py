@@ -95,7 +95,7 @@ HEARTBEAT_INTERVAL = int(os.getenv("GENESIS_HEARTBEAT_INTERVAL", "30"))
 # STREAMING
 # ============================================================
 # Mostrar tokens a medida que se generan (True = ver la respuesta en tiempo real)
-STREAMING_ENABLED = os.getenv("GENESIS_STREAMING", "false").lower() == "true"
+STREAMING_ENABLED = os.getenv("GENESIS_STREAMING", "true").lower() == "true"
 
 # ============================================================
 # BACKUPS AUTOMATICOS
