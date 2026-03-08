@@ -458,15 +458,18 @@ class LocalEngine:
                 return full_response.strip()
 
             else:
-                # ctransformers — usar tokens() para streaming
-                formatted = prompt
+                # ctransformers — streaming nativo via __call__(stream=True)
                 full_response = ""
-                for token in self.model.tokens():
-                    if len(full_response.split()) >= max_tokens:
-                        break
-                    text = self.model.detokenize([token])
+                for text in self.model(
+                    prompt,
+                    max_new_tokens=max_tokens,
+                    temperature=temperature,
+                    stop=stop_sequences,
+                    stream=True,
+                ):
                     full_response += text
                     callback(text)
+                    # Verificar stop sequences
                     for seq in stop_sequences:
                         if seq in full_response:
                             full_response = full_response.split(seq)[0]
