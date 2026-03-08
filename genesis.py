@@ -160,8 +160,8 @@ class Genesis:
             context_length = stats.get("context_length", 8192)
         self.context_manager = ContextBudgetManager(
             max_context_tokens=context_length,
-            response_reserve=1024,
-            system_ratio=0.45,
+            response_reserve=512,
+            system_ratio=0.35,
         )
 
         # Inicializar Smart Router (clasificacion de intenciones)
@@ -308,12 +308,16 @@ class Genesis:
         web_status = "ON" if self.web.searcher.available else "OFF"
         self.log.info(f"WebIntelligence: busqueda={web_status}, aprendido={self.web.total_learned}")
 
+        # Configurar evolucion autonoma (conecta web + curiosity + evolution)
+        self._setup_autonomous_evolution()
+        self.log.info(f"Evolucion autonoma: {len(self.autonomous.actions)} acciones registradas")
+
         # Estado
         self.running = True
         self.show_thinking = False  # Mostrar proceso de debate
         self.streaming = STREAMING_ENABLED  # Streaming de tokens
         self.auto_backup_counter = 0  # Contador para backup automatico
-        self.llm_timeout = 180  # Timeout en segundos para llamadas al LLM
+        self.llm_timeout = 300  # Timeout en segundos para llamadas al LLM
 
         # Tracking de ultima interaccion (para feed al AutoLearner)
         self._last_agent = ""       # Agente usado en ultima respuesta
@@ -1004,6 +1008,107 @@ class Genesis:
     # ============================================================
     # SESSION PERSISTENCE — Guardar/restaurar estado
     # ============================================================
+
+    def _setup_autonomous_evolution(self):
+        """
+        Configura acciones autonomas para que Genesis evolucione solo.
+        Conecta: WebIntelligence + Curiosity + Evolution + Embeddings.
+        """
+        # Accion 1: Investigar curiosidad en internet (prioridad maxima)
+        def action_research_curiosity():
+            pending = self.curiosity.get_pending_questions(3)
+            if not pending:
+                return "Sin preguntas pendientes"
+            q = pending[0]["question"]
+            report = self.web.search_and_learn(q, max_results=3, max_pages=2)
+            for pq in self.curiosity.questions:
+                if pq["question"] == q and not pq.get("explored"):
+                    pq["explored"] = True
+                    pq["exploration_result"] = f"Web: {self.web.total_learned} paginas"
+                    break
+            return f"Investigado: {q[:60]}"
+
+        self.autonomous.register_action(
+            "research_curiosity", action_research_curiosity,
+            priority=10, cooldown_seconds=30,
+            description="Investigar preguntas de curiosidad en internet", safe=True,
+        )
+
+        # Accion 2: Aprender temas relevantes del usuario
+        def action_learn_trending():
+            topics = []
+            if hasattr(self.analytics, 'topic_counts') and self.analytics.topic_counts:
+                topics = sorted(self.analytics.topic_counts.items(),
+                              key=lambda x: x[1], reverse=True)[:3]
+                topics = [t[0] for t in topics]
+            if not topics and self.knowledge_graph.nodes:
+                top_nodes = sorted(
+                    self.knowledge_graph.nodes.items(),
+                    key=lambda x: len(x[1].get("edges", [])), reverse=True
+                )[:3]
+                topics = [n[0] for n in top_nodes]
+            if not topics:
+                topics = ["inteligencia artificial avances 2026"]
+            report = self.web.search_and_learn(f"{topics[0]} novedades", max_results=3, max_pages=1)
+            return f"Aprendido: {topics[0]}"
+
+        self.autonomous.register_action(
+            "learn_trending", action_learn_trending,
+            priority=7, cooldown_seconds=60,
+            description="Aprender temas relevantes del usuario desde la web", safe=True,
+        )
+
+        # Accion 3: Auto-evaluar rendimiento
+        def action_self_evaluate():
+            feedback_fitness = self.feedback.get_fitness_from_feedback()
+            metrics_fitness = self.metrics.get_session_fitness()
+            combined = int(feedback_fitness * 0.5 + metrics_fitness * 0.5)
+            weaknesses = self.evolution.state.get("weaknesses", [])
+            if weaknesses:
+                for w in weaknesses[:2]:
+                    self.curiosity.add_question(f"Como mejorar en: {w}", priority=0.9)
+            return f"Fitness: {combined}/100, Debilidades: {len(weaknesses)}"
+
+        self.autonomous.register_action(
+            "self_evaluate", action_self_evaluate,
+            priority=5, cooldown_seconds=120,
+            description="Auto-evaluar rendimiento y detectar debilidades", safe=True,
+        )
+
+        # Accion 4: Intentar evolucionar prompt
+        def action_try_evolve():
+            if self.evolution.interaction_count < 5:
+                return "Pocas interacciones"
+            total_ratings = self.feedback.data["positive_count"] + self.feedback.data["negative_count"]
+            if total_ratings < 3:
+                return f"Poco feedback ({total_ratings})"
+            fitness = self.feedback.get_fitness_from_feedback()
+            if fitness < 40:
+                try:
+                    self.evolution.evaluate_and_evolve(self.brain, fitness)
+                    return f"Evolucion disparada (fitness={fitness})"
+                except Exception as e:
+                    return f"Error: {str(e)[:50]}"
+            return f"Fitness OK ({fitness})"
+
+        self.autonomous.register_action(
+            "try_evolve", action_try_evolve,
+            priority=3, cooldown_seconds=300,
+            description="Evolucionar prompt si el fitness es bajo", safe=True,
+        )
+
+        # Accion 5: Consolidar conocimiento a disco
+        def action_consolidate():
+            if self.embeddings.store.count() > 0:
+                self.embeddings.save()
+            self.web._save_state()
+            return f"Guardado: {self.embeddings.store.count()} embeddings, {self.web.total_learned} webs"
+
+        self.autonomous.register_action(
+            "consolidate_knowledge", action_consolidate,
+            priority=2, cooldown_seconds=180,
+            description="Guardar conocimiento a disco", safe=True,
+        )
 
     def _register_dashboard_collectors(self):
         """Registra collectors de metricas para el Dashboard API."""
@@ -1778,6 +1883,12 @@ class Genesis:
                 lines.append(f"    {r['action']}: {status} ({r.get('duration_ms', 0):.0f}ms)")
             return "\n".join(lines)
 
+        # --- v2.1 Evolucion Autonoma (atajo) ---
+        elif cmd == "/evolve":
+            return self._cmd_evolve(command.strip())
+        elif cmd.startswith("/evolve "):
+            return self._cmd_evolve(command.strip())
+
         # --- v2.1 Web Intelligence ---
         elif cmd == "/web" or cmd == "/internet":
             return self.web.generate_report()
@@ -2002,6 +2113,12 @@ class Genesis:
             f"",
             f"WEB INTELLIGENCE:",
             self.web.status(),
+            f"",
+            f"EVOLUCION AUTONOMA:",
+            f"  Estado: {'ACTIVA' if self.autonomous.active else 'inactiva'}",
+            f"  Acciones: {len(self.autonomous.actions)} registradas",
+            f"  Ciclos: {self.autonomous.total_cycles}",
+            f"  Ejecutadas: {self.autonomous.total_actions}",
             f"",
             f"STREAMING: {'activado' if self.streaming else 'desactivado'}",
             f"TIMEOUT LLM: {self.llm_timeout}s",
@@ -2289,6 +2406,134 @@ class Genesis:
             except ValueError:
                 pass
         return f"Timeout actual: {self.llm_timeout}s\n  Uso: /timeout <segundos>"
+
+    def _cmd_evolve(self, command: str) -> str:
+        """
+        Inicia la evolucion autonoma — Genesis busca, aprende y evoluciona solo.
+        /evolve          — Ejecutar un ciclo completo de evolucion
+        /evolve start    — Iniciar evolucion continua (N ciclos o Xm minutos)
+        /evolve stop     — Detener evolucion continua
+        /evolve status   — Ver estado de la evolucion autonoma
+        /evolve once     — Ejecutar un solo tick de evolucion
+        """
+        parts = command.split()
+        sub = parts[1] if len(parts) > 1 else ""
+
+        if sub == "status":
+            # Estado detallado de la evolucion autonoma
+            lines = [
+                f"  === EVOLUCION AUTONOMA ===",
+                f"  Estado: {'ACTIVA' if self.autonomous.active else 'DETENIDA'}",
+                f"  Generacion: {self.evolution.get_generation()}",
+                f"  Acciones registradas: {len(self.autonomous.actions)}",
+                f"  Ciclos completados: {self.autonomous.total_cycles}",
+                f"  Acciones ejecutadas: {self.autonomous.total_actions}",
+                f"  Fallos consecutivos: {self.autonomous.guard.consecutive_failures}",
+                f"",
+                f"  Subsistemas conectados:",
+                f"    Curiosidad: {len(self.curiosity.get_pending_questions(100))} preguntas pendientes",
+                f"    Web: {self.web.total_learned} paginas aprendidas",
+                f"    Embeddings: {self.embeddings.store.count()} documentos",
+                f"    Fitness: {self.feedback.get_fitness_from_feedback()}/100",
+            ]
+            return "\n".join(lines)
+
+        elif sub == "stop":
+            return self.autonomous.stop()
+
+        elif sub == "once":
+            # Un solo tick
+            results = self.autonomous.tick()
+            if not results:
+                return "  Tick de evolucion: sin acciones ejecutadas."
+            lines = ["  TICK DE EVOLUCION:"]
+            for r in results:
+                status = "OK" if r.get("success") else "FAIL"
+                lines.append(f"    {r['action']}: {status} — {r.get('result', '')[:80]}")
+            return "\n".join(lines)
+
+        elif sub == "start" or sub == "":
+            # Ejecutar ciclo completo de evolucion autonoma
+            if sub == "start":
+                # Parsear argumentos opcionales
+                cycles = 0
+                duration = 0
+                for p in parts[2:]:
+                    if p.isdigit():
+                        cycles = int(p)
+                    elif p.endswith("m") and p[:-1].isdigit():
+                        duration = float(p[:-1])
+                if cycles == 0 and duration == 0:
+                    cycles = 50  # Default: 50 ciclos
+                result = self.autonomous.start(max_cycles=cycles, max_duration_minutes=duration)
+
+                # Ejecutar los ticks inmediatamente
+                lines = [result, ""]
+                total_actions = 0
+                tick_count = 0
+                max_ticks = min(cycles if cycles > 0 else 10, 10)  # Max 10 ticks inline
+
+                for _ in range(max_ticks):
+                    if not self.autonomous.active:
+                        break
+                    tick_results = self.autonomous.tick()
+                    if not tick_results:
+                        break
+                    tick_count += 1
+                    for r in tick_results:
+                        total_actions += 1
+                        status = "OK" if r.get("success") else "FAIL"
+                        lines.append(f"    [{tick_count}] {r['action']}: {status} — {r.get('result', '')[:60]}")
+
+                lines.append(f"\n  Resumen: {tick_count} ticks, {total_actions} acciones ejecutadas")
+                lines.append(f"  Usa /evolve status para ver el estado")
+                return "\n".join(lines)
+
+            else:
+                # /evolve sin argumentos: ciclo completo rapido
+                lines = ["  === CICLO DE EVOLUCION ===", ""]
+
+                # 1. Investigar curiosidad
+                lines.append("  [1/5] Investigando curiosidad...")
+                r1 = self.autonomous.tick()
+                for r in (r1 or []):
+                    lines.append(f"    {r['action']}: {r.get('result', '')[:80]}")
+
+                # 2. Aprender trending
+                lines.append("  [2/5] Aprendiendo temas relevantes...")
+                r2 = self.autonomous.tick()
+                for r in (r2 or []):
+                    lines.append(f"    {r['action']}: {r.get('result', '')[:80]}")
+
+                # 3. Auto-evaluar
+                lines.append("  [3/5] Auto-evaluando rendimiento...")
+                r3 = self.autonomous.tick()
+                for r in (r3 or []):
+                    lines.append(f"    {r['action']}: {r.get('result', '')[:80]}")
+
+                # 4. Intentar evolucionar
+                lines.append("  [4/5] Evaluando evolucion de prompt...")
+                r4 = self.autonomous.tick()
+                for r in (r4 or []):
+                    lines.append(f"    {r['action']}: {r.get('result', '')[:80]}")
+
+                # 5. Consolidar
+                lines.append("  [5/5] Consolidando conocimiento...")
+                r5 = self.autonomous.tick()
+                for r in (r5 or []):
+                    lines.append(f"    {r['action']}: {r.get('result', '')[:80]}")
+
+                lines.append(f"\n  Ciclo completado. Gen {self.evolution.get_generation()}")
+                lines.append(f"  Web: {self.web.total_learned} paginas | "
+                           f"Embeddings: {self.embeddings.store.count()} docs")
+                return "\n".join(lines)
+
+        return ("  Uso:\n"
+                "    /evolve           — Ciclo completo de evolucion\n"
+                "    /evolve start [N] [Xm] — Iniciar evolucion continua\n"
+                "    /evolve stop      — Detener evolucion\n"
+                "    /evolve status    — Ver estado\n"
+                "    /evolve once      — Un solo tick")
 
     def _cmd_confirm_evolution(self) -> str:
         """Confirma y ejecuta la evolucion pendiente con datos reales."""
@@ -2604,6 +2849,13 @@ class Genesis:
   /autonomous log        — Ver historial de acciones
   /autonomous tick       — Ejecutar un ciclo manual
 
+  EVOLUCION AUTONOMA (Genesis evoluciona solo):
+  /evolve                — Ejecutar ciclo completo de evolucion
+  /evolve start [N] [Xm] — Iniciar evolucion continua (N ciclos o X minutos)
+  /evolve stop           — Detener evolucion continua
+  /evolve status         — Ver estado de la evolucion autonoma
+  /evolve once           — Ejecutar un solo tick de evolucion
+
   WEB INTELLIGENCE (acceso a internet):
   /web                   — Reporte del modulo web
   /internet              — Atajo para /web
@@ -2745,6 +2997,11 @@ def main():
     if n_custom > 0:
         print(f"  Custom tools: {n_custom} herramientas")
 
+    # Mostrar evolucion autonoma
+    n_auto_actions = len(genesis.autonomous.actions)
+    if n_auto_actions > 0:
+        print(f"  Evolucion autonoma: {n_auto_actions} acciones (usa /evolve para iniciar)")
+
     # Mostrar si hay sesion restaurada
     if genesis.summarizer.has_summary():
         print(f"  Sesion anterior: restaurada")
@@ -2758,6 +3015,14 @@ def main():
     # Loop principal
     while genesis.running:
         try:
+            # Tick autonomo: si la evolucion autonoma esta activa, ejecutar un ciclo
+            if genesis.autonomous.active:
+                tick_results = genesis.autonomous.tick()
+                if tick_results:
+                    for r in tick_results:
+                        status = "OK" if r.get("success") else "FAIL"
+                        print(f"  [Auto] {r['action']}: {status}")
+
             # Notificar si hay evolucion pendiente
             if genesis.heartbeat.has_pending_evolution():
                 print(f"\n  [Genesis quiere evolucionar! "
