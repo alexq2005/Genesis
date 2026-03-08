@@ -79,6 +79,7 @@ from core.performance_profiler import PerformanceProfiler
 from core.embeddings_engine import EmbeddingsEngine
 from core.dashboard_api import DashboardAPI
 from core.autonomous_mode import AutonomousMode
+from core.web_intelligence import WebIntelligence
 
 
 class Genesis:
@@ -301,6 +302,11 @@ class Genesis:
 
         # Inicializar Autonomous Mode
         self.autonomous = AutonomousMode()
+
+        # Inicializar Web Intelligence (acceso a internet)
+        self.web = WebIntelligence(base_dir=str(BASE_DIR), embeddings=self.embeddings)
+        web_status = "ON" if self.web.searcher.available else "OFF"
+        self.log.info(f"WebIntelligence: busqueda={web_status}, aprendido={self.web.total_learned}")
 
         # Estado
         self.running = True
@@ -1042,6 +1048,12 @@ class Genesis:
             "loaded": len(self.plugins.plugins),
             "active": sum(1 for p in self.plugins.plugins.values() if p.get("enabled", True)),
         }, "tools")
+        self.dashboard.register("web", lambda: {
+            "searches": self.web.total_searches,
+            "pages_read": self.web.total_reads,
+            "pages_learned": self.web.total_learned,
+            "search_available": self.web.searcher.available,
+        }, "core")
 
     def _save_session(self):
         """Guarda el estado completo de la sesion para restaurar despues."""
@@ -1766,6 +1778,77 @@ class Genesis:
                 lines.append(f"    {r['action']}: {status} ({r.get('duration_ms', 0):.0f}ms)")
             return "\n".join(lines)
 
+        # --- v2.1 Web Intelligence ---
+        elif cmd == "/web" or cmd == "/internet":
+            return self.web.generate_report()
+        elif cmd.startswith("/web search ") or cmd.startswith("/internet search "):
+            query = command.strip().split(" ", 2)[2] if len(command.strip().split(" ", 2)) > 2 else ""
+            if not query:
+                return "  Uso: /web search <query>"
+            results = self.web.search(query)
+            if not results:
+                return f"  Sin resultados para \"{query}\". Verificar conexion."
+            lines = [f"  RESULTADOS: \"{query}\"", ""]
+            for i, r in enumerate(results):
+                lines.append(f"    {i+1}. {r.title[:65]}")
+                lines.append(f"       {r.url}")
+                lines.append(f"       {r.snippet[:100]}")
+                lines.append("")
+            return "\n".join(lines)
+        elif cmd.startswith("/web read "):
+            url = command.strip().split(" ", 2)[2] if len(command.strip().split(" ", 2)) > 2 else ""
+            if not url:
+                return "  Uso: /web read <url>"
+            page = self.web.read(url)
+            if not page:
+                return f"  No se pudo leer: {url}"
+            lines = [
+                f"  PAGINA: {page.title}",
+                f"  URL: {page.url}",
+                f"  Palabras: {page.word_count} | Tiempo: {page.fetch_time_ms:.0f}ms",
+                f"  Links: {len(page.links)}",
+                "",
+                page.get_summary(1500),
+            ]
+            return "\n".join(lines)
+        elif cmd.startswith("/web learn "):
+            query = command.strip().split(" ", 2)[2] if len(command.strip().split(" ", 2)) > 2 else ""
+            if not query:
+                return "  Uso: /web learn <tema>"
+            return self.web.search_and_learn(query, max_results=5, max_pages=3)
+        elif cmd.startswith("/web news "):
+            query = command.strip().split(" ", 2)[2] if len(command.strip().split(" ", 2)) > 2 else ""
+            if not query:
+                return "  Uso: /web news <tema>"
+            results = self.web.search_news(query)
+            if not results:
+                return f"  Sin noticias para \"{query}\"."
+            lines = [f"  NOTICIAS: \"{query}\"", ""]
+            for i, r in enumerate(results):
+                lines.append(f"    {i+1}. {r.title[:65]}")
+                lines.append(f"       {r.url}")
+                lines.append("")
+            return "\n".join(lines)
+        elif cmd == "/web history":
+            return self.web.get_search_history(15)
+        elif cmd == "/web learned" or cmd == "/web memory":
+            return self.web.get_learned_summary(15)
+        elif cmd.startswith("/web recall "):
+            query = command.strip().split(" ", 2)[2] if len(command.strip().split(" ", 2)) > 2 else ""
+            if not query:
+                return "  Uso: /web recall <query>"
+            results = self.web.recall(query, top_k=10)
+            if not results:
+                return f"  Sin conocimiento aprendido sobre \"{query}\"."
+            lines = [f"  RECALL: \"{query}\"", ""]
+            for r in results:
+                source = r["metadata"].get("source", "")
+                text = r["metadata"].get("text", "")[:100]
+                lines.append(f"    [{r['score']:.3f}] {source}")
+                lines.append(f"      {text}...")
+                lines.append("")
+            return "\n".join(lines)
+
         elif cmd == "/help":
             return self._cmd_help()
         elif cmd in ("/exit", "/quit", "/salir"):
@@ -1916,6 +1999,9 @@ class Genesis:
             f"",
             f"AUTONOMOUS MODE:",
             self.autonomous.status(),
+            f"",
+            f"WEB INTELLIGENCE:",
+            self.web.status(),
             f"",
             f"STREAMING: {'activado' if self.streaming else 'desactivado'}",
             f"TIMEOUT LLM: {self.llm_timeout}s",
@@ -2517,6 +2603,17 @@ class Genesis:
   /autonomous actions    — Ver acciones registradas
   /autonomous log        — Ver historial de acciones
   /autonomous tick       — Ejecutar un ciclo manual
+
+  WEB INTELLIGENCE (acceso a internet):
+  /web                   — Reporte del modulo web
+  /internet              — Atajo para /web
+  /web search <query>    — Buscar en internet (DuckDuckGo)
+  /web news <tema>       — Buscar noticias recientes
+  /web read <url>        — Leer y extraer contenido de una URL
+  /web learn <tema>      — Buscar + leer + indexar automaticamente
+  /web recall <query>    — Buscar en conocimiento aprendido
+  /web history           — Historial de busquedas
+  /web learned           — Ver paginas aprendidas
 
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
