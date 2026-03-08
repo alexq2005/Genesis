@@ -80,6 +80,8 @@ from core.embeddings_engine import EmbeddingsEngine
 from core.dashboard_api import DashboardAPI
 from core.autonomous_mode import AutonomousMode
 from core.web_intelligence import WebIntelligence
+from core.semantic_memory import SemanticMemory
+from core.inference_optimizer import InferenceOptimizer
 
 
 class Genesis:
@@ -307,6 +309,16 @@ class Genesis:
         self.web = WebIntelligence(base_dir=str(BASE_DIR), embeddings=self.embeddings)
         web_status = "ON" if self.web.searcher.available else "OFF"
         self.log.info(f"WebIntelligence: busqueda={web_status}, aprendido={self.web.total_learned}")
+
+        # Inicializar Semantic Memory (memoria a largo plazo por significado)
+        self.semantic_memory = SemanticMemory(
+            embeddings_engine=self.embeddings,
+            base_dir=str(BASE_DIR),
+        )
+        self.log.info(f"SemanticMemory: {len(self.semantic_memory.entries)} entradas persistidas")
+
+        # Inicializar Inference Optimizer (reduce tiempo de respuesta)
+        self.optimizer = InferenceOptimizer()
 
         # Configurar evolucion autonoma (conecta web + curiosity + evolution)
         self._setup_autonomous_evolution()
@@ -606,6 +618,13 @@ class Genesis:
         if learn_context:
             system_prompt += f"\n\n{learn_context}"
 
+        # Semantic Memory: inyectar conversaciones pasadas relevantes
+        sem_context = self.semantic_memory.get_context_for_prompt(user_input, max_chars=1000)
+        if sem_context:
+            system_prompt += f"\n\n{sem_context}"
+            if self.show_thinking:
+                print(f"  [SemanticMemory: contexto inyectado]")
+
         # Fase 0: Planificacion de tareas complejas
         if ((intent == "code" or self._is_coding_request(user_input))
                 and self.task_planner.needs_planning(user_input)
@@ -628,6 +647,17 @@ class Genesis:
             raw_messages,
             summary=self.summarizer.get_summary(),
         )
+
+        # === INFERENCE OPTIMIZER ===
+        opt_result = self.optimizer.optimize(
+            system_prompt, messages, user_input, default_max_tokens=1024,
+        )
+        system_prompt = opt_result["system_prompt"]
+        messages = opt_result["messages"]
+        _opt_max_tokens = opt_result["max_tokens"]
+        if self.show_thinking:
+            print(f"  [Optimizer: {opt_result['chars_saved']} chars ahorrados, "
+                  f"max_tokens={_opt_max_tokens}, cache={'HIT' if opt_result['cache_hit'] else 'MISS'}]")
 
         # Fase 1: Debate interno (si esta habilitado)
         debate_insights = ""
@@ -665,15 +695,17 @@ class Genesis:
                     f"(NO menciones esto al usuario):\n{debate_insights}]"
                 )
                 if use_stream:
-                    # Streaming no necesita timeout (el usuario ve progreso)
                     response = self.brain.think(
                         enriched_system, messages,
-                        temperature=temp,
+                        temperature=temp, max_tokens=_opt_max_tokens,
                         stream=True, stream_callback=stream_callback,
                     )
                 else:
                     response = TimeoutExecutor.run(
-                        func=lambda: self.brain.think(enriched_system, messages, temperature=temp),
+                        func=lambda: self.brain.think(
+                            enriched_system, messages,
+                            temperature=temp, max_tokens=_opt_max_tokens,
+                        ),
                         timeout=self.llm_timeout,
                         description="Generando respuesta",
                         default_on_timeout=(
@@ -685,12 +717,15 @@ class Genesis:
                 if use_stream:
                     response = self.brain.think(
                         system_prompt, messages,
-                        temperature=temp,
+                        temperature=temp, max_tokens=_opt_max_tokens,
                         stream=True, stream_callback=stream_callback,
                     )
                 else:
                     response = TimeoutExecutor.run(
-                        func=lambda: self.brain.think(system_prompt, messages, temperature=temp),
+                        func=lambda: self.brain.think(
+                            system_prompt, messages,
+                            temperature=temp, max_tokens=_opt_max_tokens,
+                        ),
                         timeout=self.llm_timeout,
                         description="Generando respuesta",
                         default_on_timeout=(
@@ -946,6 +981,15 @@ class Genesis:
 
         # Ejecutar hooks de plugins
         self.plugins.run_on_message_hooks(user_input, response)
+
+        # Indexar en memoria semantica (auto-aprendizaje por significado)
+        intent = self.router.last_intent or "chat"
+        self.semantic_memory.index(
+            user_input=user_input,
+            response=response,
+            intent=intent,
+            quality=0.5,
+        )
 
         # Auto-detectar proyectos multi-archivo en la respuesta
         if self.project_generator.has_multiple_files(response):
@@ -1255,6 +1299,8 @@ class Genesis:
             "pages_learned": self.web.total_learned,
             "search_available": self.web.searcher.available,
         }, "core")
+        self.dashboard.register("semantic_memory", lambda: self.semantic_memory.get_stats(), "memory")
+        self.dashboard.register("optimizer", lambda: self.optimizer.get_stats(), "core")
 
     def _save_session(self):
         """Guarda el estado completo de la sesion para restaurar despues."""
@@ -1411,6 +1457,8 @@ class Genesis:
 
         if cmd == "/status":
             return self._cmd_status()
+        elif cmd == "/memory semantic":
+            return self.semantic_memory.generate_report()
         elif cmd == "/memory":
             return self._cmd_memory()
         elif cmd == "/debate":
@@ -2060,6 +2108,7 @@ class Genesis:
             return self._cmd_help()
         elif cmd in ("/exit", "/quit", "/salir"):
             self._save_session()
+            self.semantic_memory.save()
             self.heartbeat.stop()
             self.running = False
             return "Cerrando Genesis..."
@@ -2209,6 +2258,12 @@ class Genesis:
             f"",
             f"WEB INTELLIGENCE:",
             self.web.status(),
+            f"",
+            f"SEMANTIC MEMORY:",
+            self.semantic_memory.status(),
+            f"",
+            f"INFERENCE OPTIMIZER:",
+            self.optimizer.status(),
             f"",
             f"EVOLUCION AUTONOMA:",
             f"  Estado: {'ACTIVA' if self.autonomous.active else 'inactiva'}",
@@ -2963,6 +3018,14 @@ class Genesis:
   /web history           — Historial de busquedas
   /web learned           — Ver paginas aprendidas
 
+  MEMORIA SEMANTICA:
+  /memory semantic       — Reporte completo de la memoria semantica
+                           (entradas indexadas, intents, recientes)
+
+  INFERENCE OPTIMIZER:
+  (Automatico) Optimiza cada respuesta reduciendo tokens innecesarios.
+  Usa /thinking para ver los detalles de optimizacion en cada respuesta.
+
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
   /exit          — Salir de Genesis (guarda sesion automaticamente)
@@ -3092,6 +3155,14 @@ def main():
     n_custom = len(genesis.tool_creator.tools)
     if n_custom > 0:
         print(f"  Custom tools: {n_custom} herramientas")
+
+    # Mostrar memoria semantica
+    sem_entries = len(genesis.semantic_memory.entries)
+    if sem_entries > 0:
+        print(f"  Memoria semantica: {sem_entries} entradas indexadas")
+
+    # Mostrar optimizer
+    print(f"  Inference Optimizer: activo (cache + predictor + trimmer)")
 
     # Mostrar evolucion autonoma
     n_auto_actions = len(genesis.autonomous.actions)

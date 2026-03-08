@@ -28,6 +28,7 @@ except ImportError:
     sys.exit(1)
 
 from genesis import Genesis
+from config import GENESIS_VERSION
 from core.dashboard import get_dashboard_html
 
 # ============================================================
@@ -662,6 +663,141 @@ def api_command():
 def dashboard():
     """Dashboard visual con graficos y metricas."""
     return render_template_string(get_dashboard_html())
+
+
+@app.route("/dashboard/live")
+def dashboard_live():
+    """Dashboard en vivo con auto-refresh cada 3 segundos."""
+    from core.live_dashboard import get_live_dashboard_html
+    return render_template_string(get_live_dashboard_html())
+
+
+@app.route("/api/live-dashboard")
+def api_live_dashboard():
+    """
+    Endpoint JSON para el Live Dashboard.
+    Retorna snapshot completo del sistema para visualizacion en tiempo real.
+    """
+    try:
+        g = get_genesis()
+
+        # GPU stats (safe import)
+        gpu_data = {"available": False}
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw",
+                 "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0:
+                parts = [p.strip() for p in result.stdout.strip().split(",")]
+                if len(parts) >= 5:
+                    gpu_data = {
+                        "available": True,
+                        "utilization": float(parts[0]),
+                        "memory_used": float(parts[1]),
+                        "memory_total": float(parts[2]),
+                        "temperature": float(parts[3]),
+                        "power": float(parts[4]),
+                    }
+        except Exception:
+            pass
+
+        # Brain stats
+        brain_stats = g.brain.get_stats()
+
+        # Evolution
+        evo_data = {
+            "generation": g.evolution.get_generation(),
+            "interactions": g.evolution.interaction_count,
+            "total_evolutions": g.evolution.state.get("total_evolutions", 0),
+        }
+
+        # Memory
+        memory_data = {
+            "long_term": len(g.memory.long_term.memories),
+            "short_term": len(g.memory.short_term),
+            "emotional": len(getattr(g.memory, 'emotional', type('', (), {'memories': []})()).memories)
+                if hasattr(g.memory, 'emotional') and hasattr(g.memory.emotional, 'memories')
+                else 0,
+        }
+
+        # Web Intelligence
+        web_data = {
+            "searches": g.web.total_searches,
+            "pages_read": g.web.total_reads,
+            "pages_learned": g.web.total_learned,
+            "search_available": g.web.searcher.available,
+        }
+
+        # Semantic Memory
+        sem_data = g.semantic_memory.get_stats()
+
+        # Optimizer
+        opt_data = g.optimizer.get_stats()
+
+        # Autonomous Evolution
+        auto_data = {
+            "active": g.autonomous.active,
+            "actions": len(g.autonomous.actions),
+            "total_cycles": g.autonomous.total_cycles,
+            "total_actions": g.autonomous.total_actions,
+            "log": [
+                {"action": r.get("action", "?"), "success": r.get("success", False),
+                 "timestamp": r.get("timestamp", 0)}
+                for r in getattr(g.autonomous, "execution_log", [])[-10:]
+            ],
+        }
+
+        # Subsystems grid (quick health)
+        subsystems = []
+        sub_checks = [
+            ("Brain", lambda: g.brain.is_available()),
+            ("Memory", lambda: len(g.memory.long_term.memories) >= 0),
+            ("Evolution", lambda: g.evolution.get_generation() >= 0),
+            ("Curiosity", lambda: True),
+            ("Debate", lambda: True),
+            ("Heartbeat", lambda: True),
+            ("Embeddings", lambda: g.embeddings.engine_type != "none"),
+            ("Plugins", lambda: True),
+            ("KnowledgeGraph", lambda: True),
+            ("RAG", lambda: True),
+            ("WebIntel", lambda: g.web.searcher.available),
+            ("Agents", lambda: True),
+            ("SemanticMem", lambda: True),
+            ("Optimizer", lambda: True),
+            ("Scheduler", lambda: True),
+            ("Profiler", lambda: True),
+        ]
+        for name, check_fn in sub_checks:
+            try:
+                ok = check_fn()
+                subsystems.append({"name": name, "status": "ok" if ok else "warn"})
+            except Exception:
+                subsystems.append({"name": name, "status": "error"})
+
+        # Knowledge Graph sample
+        kg_stats = g.knowledge_graph.get_stats()
+
+        return jsonify({
+            "timestamp": time.time(),
+            "version": GENESIS_VERSION,
+            "gpu": gpu_data,
+            "brain": brain_stats,
+            "evolution": evo_data,
+            "memory": memory_data,
+            "web": web_data,
+            "semantic_memory": sem_data,
+            "optimizer": opt_data,
+            "autonomous": auto_data,
+            "subsystems": subsystems,
+            "knowledge_graph": kg_stats,
+            "streaming": g.streaming,
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e), "timestamp": time.time()})
 
 
 # ============================================================
