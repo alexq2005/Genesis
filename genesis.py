@@ -88,6 +88,9 @@ from core.chain_engine import ChainEngine
 from core.episodic_memory import EpisodicMemory
 from core.meta_learner import MetaLearner
 from core.personality_evolver import PersonalityEvolver
+from core.goal_manager import GoalManager
+from core.reflection_engine import ReflectionEngine
+from core.context_router import ContextRouter
 
 
 class Genesis:
@@ -361,6 +364,26 @@ class Genesis:
             base_dir=str(BASE_DIR / "data" / "personality"),
         )
         self.log.info(f"PersonalityEvolver: {self.personality.total_evolutions} evoluciones previas")
+
+        # Inicializar Goal Manager (sistema de metas)
+        self.goal_manager = GoalManager(
+            base_dir=str(BASE_DIR / "data" / "goals"),
+        )
+        self.log.info(f"GoalManager: {len(self.goal_manager.get_active_goals())} metas activas")
+
+        # Inicializar Reflection Engine (auto-reflexion)
+        self.reflection = ReflectionEngine(
+            base_dir=str(BASE_DIR / "data" / "reflection"),
+        )
+        self.log.info(f"ReflectionEngine: {self.reflection.total_reflections} reflexiones previas")
+
+        # Inicializar Context Router (ensamblaje inteligente de contexto)
+        self.context_router = ContextRouter(
+            base_dir=str(BASE_DIR / "data" / "context_router"),
+            total_budget=3000,
+        )
+        self._setup_context_sources()
+        self.log.info(f"ContextRouter: {len(self.context_router.sources)} fuentes registradas")
 
         # Configurar evolucion autonoma (conecta web + curiosity + evolution)
         self._setup_autonomous_evolution()
@@ -685,6 +708,16 @@ class Genesis:
         personality_hints = self.personality.get_prompt_hints()
         if personality_hints:
             system_prompt += f"\n\n[PERSONALIDAD] {personality_hints}"
+
+        # Goal Manager: inyectar metas activas
+        goals_context = self.goal_manager.get_context_for_prompt(max_chars=400)
+        if goals_context:
+            system_prompt += f"\n\n{goals_context}"
+
+        # Reflection Engine: inyectar auto-reflexión reciente
+        reflection_context = self.reflection.get_context_for_prompt(max_chars=400)
+        if reflection_context:
+            system_prompt += f"\n\n{reflection_context}"
 
         # Fase 0: Planificacion de tareas complejas
         if ((intent == "code" or self._is_coding_request(user_input))
@@ -1094,6 +1127,22 @@ class Genesis:
         # Personality Evolver: evolucionar por intent
         self.personality.evolve_from_intent(intent)
 
+        # Goal Manager: auto-tracking de progreso por keywords
+        self.goal_manager.auto_track(user_input, response)
+
+        # Reflection Engine: tick + reflexion periodica
+        self.reflection.tick()
+        if self.reflection.should_reflect():
+            eval_scores = [r.score for r in self.meta_learner.records[-50:]]
+            self.reflection.reflect(
+                eval_scores=eval_scores,
+                intent_counts=self.router.intent_counts,
+                positive_feedback=self.feedback.positive_count,
+                negative_feedback=self.feedback.negative_count,
+                personality_distance=self.personality.get_evolution_distance(),
+                personality_evolutions=self.personality.total_evolutions,
+            )
+
         # Auto-detectar proyectos multi-archivo en la respuesta
         if self.project_generator.has_multiple_files(response):
             if self.workspace.is_set():
@@ -1251,6 +1300,44 @@ class Genesis:
             self.log.error(f"Error en aprendizaje automatico: {e}")
 
         return ""
+
+    def _setup_context_sources(self):
+        """Registra fuentes de contexto en el ContextRouter."""
+        # Semantic Memory — alta prioridad para código y temas técnicos
+        self.context_router.register_source(
+            "semantic_memory",
+            getter=lambda inp, mc: self.semantic_memory.get_context_for_prompt(inp, max_chars=mc),
+            max_chars=800, base_priority=0.7,
+            keywords=["codigo", "funcion", "error", "antes", "recuerda"],
+        )
+        # Episodic Memory — contexto temporal
+        self.context_router.register_source(
+            "episodic_memory",
+            getter=lambda inp, mc: self.episodic_memory.get_context_for_prompt(inp, max_chars=mc),
+            max_chars=600, base_priority=0.5,
+            keywords=["ayer", "antes", "sesion", "ultima vez", "pasado"],
+        )
+        # Skill Memory — procedimientos HOW-TO
+        self.context_router.register_source(
+            "skill_memory",
+            getter=lambda inp, mc: self.skill_memory.get_context_for_prompt(inp, max_chars=mc),
+            max_chars=800, base_priority=0.6,
+            keywords=["como", "instalar", "configurar", "crear", "pasos"],
+        )
+        # Goal Manager — metas activas
+        self.context_router.register_source(
+            "goals",
+            getter=lambda inp, mc: self.goal_manager.get_context_for_prompt(max_chars=mc),
+            max_chars=400, base_priority=0.3,
+            keywords=["meta", "objetivo", "progreso", "plan"],
+        )
+        # Reflection Engine — auto-reflexion
+        self.context_router.register_source(
+            "reflection",
+            getter=lambda inp, mc: self.reflection.get_context_for_prompt(max_chars=mc),
+            max_chars=400, base_priority=0.3,
+            keywords=["mejora", "debilidad", "fortaleza", "reflexion"],
+        )
 
     def _setup_autonomous_evolution(self):
         """
@@ -1410,6 +1497,9 @@ class Genesis:
         self.dashboard.register("episodic_memory", lambda: self.episodic_memory.get_stats(), "memory")
         self.dashboard.register("meta_learner", lambda: self.meta_learner.get_stats(), "monitoring")
         self.dashboard.register("personality", lambda: self.personality.get_stats(), "core")
+        self.dashboard.register("goal_manager", lambda: self.goal_manager.get_stats(), "core")
+        self.dashboard.register("reflection", lambda: self.reflection.get_stats(), "monitoring")
+        self.dashboard.register("context_router", lambda: self.context_router.get_stats(), "core")
 
     def _save_session(self):
         """Guarda el estado completo de la sesion para restaurar despues."""
@@ -1586,6 +1676,12 @@ class Genesis:
             return self.meta_learner.generate_report()
         elif cmd == "/personality":
             return self.personality.generate_report()
+        elif cmd == "/goals":
+            return self.goal_manager.generate_report()
+        elif cmd == "/reflection":
+            return self.reflection.generate_report()
+        elif cmd == "/router":
+            return self.context_router.generate_report()
         elif cmd == "/memory semantic":
             return self.semantic_memory.generate_report()
         elif cmd == "/memory":
@@ -2247,6 +2343,9 @@ class Genesis:
             self.episodic_memory.save()
             self.meta_learner.save()
             self.personality.save()
+            self.goal_manager.save()
+            self.reflection.save()
+            self.context_router.save()
             self.heartbeat.stop()
             self.running = False
             return "Cerrando Genesis..."
@@ -2420,6 +2519,15 @@ class Genesis:
             f"",
             f"PERSONALITY:",
             self.personality.status(),
+            f"",
+            f"GOAL MANAGER:",
+            self.goal_manager.status(),
+            f"",
+            f"REFLECTION ENGINE:",
+            self.reflection.status(),
+            f"",
+            f"CONTEXT ROUTER:",
+            self.context_router.status(),
             f"",
             f"EVOLUCION AUTONOMA:",
             f"  Estado: {'ACTIVA' if self.autonomous.active else 'inactiva'}",
@@ -3205,6 +3313,15 @@ class Genesis:
   PERSONALITY:
   /personality       — Ver rasgos de personalidad y su evolucion
 
+  GOAL MANAGER:
+  /goals             — Ver metas activas, completadas y progreso
+
+  REFLECTION ENGINE:
+  /reflection        — Ver reflexiones, fortalezas y puntos ciegos
+
+  CONTEXT ROUTER:
+  /router            — Ver fuentes de contexto y estadisticas de routing
+
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
   /exit          — Salir de Genesis (guarda sesion automaticamente)
@@ -3354,6 +3471,12 @@ def main():
     if n_meta > 0:
         print(f"  Meta-Learner: {n_meta} registros, {len(genesis.meta_learner.insights)} insights")
     print(f"  Personality: distancia={genesis.personality.get_evolution_distance():.2f}")
+    n_goals = len(genesis.goal_manager.get_active_goals())
+    if n_goals > 0:
+        print(f"  Goals: {n_goals} metas activas")
+    if genesis.reflection.total_reflections > 0:
+        print(f"  Reflection: {genesis.reflection.total_reflections} reflexiones")
+    print(f"  Context Router: {len(genesis.context_router.sources)} fuentes")
 
     # Mostrar evolucion autonoma
     n_auto_actions = len(genesis.autonomous.actions)
