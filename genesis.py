@@ -82,6 +82,9 @@ from core.autonomous_mode import AutonomousMode
 from core.web_intelligence import WebIntelligence
 from core.semantic_memory import SemanticMemory
 from core.inference_optimizer import InferenceOptimizer
+from core.self_evaluator import SelfEvaluator
+from core.skill_memory import SkillMemory
+from core.chain_engine import ChainEngine
 
 
 class Genesis:
@@ -319,6 +322,23 @@ class Genesis:
 
         # Inicializar Inference Optimizer (reduce tiempo de respuesta)
         self.optimizer = InferenceOptimizer()
+
+        # Inicializar Self-Evaluator (metacognicion)
+        self.evaluator = SelfEvaluator(base_dir=str(BASE_DIR / "data" / "self_eval"))
+        self.log.info(f"SelfEvaluator: {self.evaluator.total_evaluations} evaluaciones previas")
+
+        # Inicializar Skill Memory (memoria de procedimientos)
+        self.skill_memory = SkillMemory(
+            embeddings_engine=self.embeddings,
+            base_dir=str(BASE_DIR / "data" / "skill_memory"),
+        )
+        self.log.info(f"SkillMemory: {len(self.skill_memory.skills)} skills almacenados")
+
+        # Inicializar Chain Engine (razonamiento multi-paso)
+        self.chain_engine = ChainEngine(
+            base_dir=str(BASE_DIR / "data" / "chain_engine"),
+        )
+        self.log.info(f"ChainEngine: {self.chain_engine.total_chains} cadenas previas")
 
         # Configurar evolucion autonoma (conecta web + curiosity + evolution)
         self._setup_autonomous_evolution()
@@ -625,6 +645,13 @@ class Genesis:
             if self.show_thinking:
                 print(f"  [SemanticMemory: contexto inyectado]")
 
+        # Skill Memory: inyectar procedimientos aprendidos
+        skill_context = self.skill_memory.get_context_for_prompt(user_input, max_chars=800)
+        if skill_context:
+            system_prompt += f"\n\n{skill_context}"
+            if self.show_thinking:
+                print(f"  [SkillMemory: skills inyectados]")
+
         # Fase 0: Planificacion de tareas complejas
         if ((intent == "code" or self._is_coding_request(user_input))
                 and self.task_planner.needs_planning(user_input)
@@ -680,8 +707,12 @@ class Genesis:
         # Fase 2: Generar respuesta final (con timeout protection)
         # Streaming: solo en la respuesta principal, no en tool loops
         use_stream = self.streaming and stream_callback is not None
-        # Temperatura del template (o default 0.7)
-        temp = template_temp if template_extra else 0.7
+        # Temperatura: template > auto-tuner > default 0.7
+        if template_extra:
+            temp = template_temp
+        else:
+            tuned = self.evaluator.get_tuned_config(intent)
+            temp = tuned.get("temperature", 0.7)
 
         # Model Router: obtener configuracion optima para esta tarea
         route_config = self.model_router.route(user_input, template_name=template_name)
@@ -990,6 +1021,27 @@ class Genesis:
             intent=intent,
             quality=0.5,
         )
+
+        # Self-evaluation: evaluar calidad de la respuesta
+        eval_result = self.evaluator.evaluate(user_input, response, intent)
+        if self.show_thinking:
+            grade = eval_result.get("grade", "?")
+            overall = eval_result.get("overall", 0)
+            print(f"  [SelfEval: {grade} ({overall:.2f})]")
+
+        # Actualizar calidad en semantic memory con el score
+        if eval_result.get("overall", 0) > 0:
+            self.semantic_memory.index(
+                user_input=user_input,
+                response=response,
+                intent=intent,
+                quality=eval_result["overall"],
+            )
+
+        # Skill Memory: extraer procedimientos si la respuesta contiene pasos
+        skill_id = self.skill_memory.extract_and_store(user_input, response)
+        if skill_id and self.show_thinking:
+            print(f"  [SkillMemory: nuevo skill extraido ({skill_id})]")
 
         # Auto-detectar proyectos multi-archivo en la respuesta
         if self.project_generator.has_multiple_files(response):
@@ -1301,6 +1353,9 @@ class Genesis:
         }, "core")
         self.dashboard.register("semantic_memory", lambda: self.semantic_memory.get_stats(), "memory")
         self.dashboard.register("optimizer", lambda: self.optimizer.get_stats(), "core")
+        self.dashboard.register("evaluator", lambda: self.evaluator.get_stats(), "monitoring")
+        self.dashboard.register("skill_memory", lambda: self.skill_memory.get_stats(), "memory")
+        self.dashboard.register("chain_engine", lambda: self.chain_engine.get_stats(), "core")
 
     def _save_session(self):
         """Guarda el estado completo de la sesion para restaurar despues."""
@@ -1441,6 +1496,7 @@ class Genesis:
                 agent=self._last_agent, feedback=1,
                 response_time=self._last_response_time,
             )
+            self.evaluator.record_feedback("+")
             return fb_result
         elif cmd in ("-", "👎"):
             fb_result = self.feedback.rate(positive=False)
@@ -1453,10 +1509,21 @@ class Genesis:
                 agent=self._last_agent, feedback=-1,
                 response_time=self._last_response_time,
             )
+            self.evaluator.record_feedback("-")
             return fb_result
 
         if cmd == "/status":
             return self._cmd_status()
+        elif cmd == "/evaluate" or cmd == "/eval":
+            return self.evaluator.generate_report()
+        elif cmd == "/skills":
+            return self.skill_memory.generate_report()
+        elif cmd == "/chain":
+            return self.chain_engine.generate_report()
+        elif cmd == "/chain toggle":
+            self.chain_engine.enabled = not self.chain_engine.enabled
+            state = "habilitado" if self.chain_engine.enabled else "deshabilitado"
+            return f"Chain Engine: {state}"
         elif cmd == "/memory semantic":
             return self.semantic_memory.generate_report()
         elif cmd == "/memory":
@@ -2109,6 +2176,9 @@ class Genesis:
         elif cmd in ("/exit", "/quit", "/salir"):
             self._save_session()
             self.semantic_memory.save()
+            self.evaluator.save()
+            self.skill_memory.save()
+            self.chain_engine.save()
             self.heartbeat.stop()
             self.running = False
             return "Cerrando Genesis..."
@@ -2264,6 +2334,15 @@ class Genesis:
             f"",
             f"INFERENCE OPTIMIZER:",
             self.optimizer.status(),
+            f"",
+            f"SELF-EVALUATOR:",
+            self.evaluator.status(),
+            f"",
+            f"SKILL MEMORY:",
+            self.skill_memory.status(),
+            f"",
+            f"CHAIN ENGINE:",
+            self.chain_engine.status(),
             f"",
             f"EVOLUCION AUTONOMA:",
             f"  Estado: {'ACTIVA' if self.autonomous.active else 'inactiva'}",
@@ -3026,6 +3105,20 @@ class Genesis:
   (Automatico) Optimiza cada respuesta reduciendo tokens innecesarios.
   Usa /thinking para ver los detalles de optimizacion en cada respuesta.
 
+  SELF-EVALUATION:
+  /evaluate          — Reporte completo de auto-evaluacion
+  /eval              — Atajo para /evaluate
+  (Automatico) Evalua calidad de cada respuesta y ajusta parametros.
+
+  SKILL MEMORY:
+  /skills            — Ver skills (procedimientos) aprendidos
+  (Automatico) Detecta y almacena procedimientos de las respuestas.
+
+  CHAIN ENGINE:
+  /chain             — Ver estado del motor de cadenas
+  /chain toggle      — Activar/desactivar razonamiento en cadena
+  (Automatico) Descompone preguntas complejas en sub-preguntas.
+
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
   /exit          — Salir de Genesis (guarda sesion automaticamente)
@@ -3163,6 +3256,11 @@ def main():
 
     # Mostrar optimizer
     print(f"  Inference Optimizer: activo (cache + predictor + trimmer)")
+    print(f"  Self-Evaluator: {genesis.evaluator.total_evaluations} evaluaciones previas")
+    n_skills = len(genesis.skill_memory.skills)
+    if n_skills > 0:
+        print(f"  Skill Memory: {n_skills} skills aprendidos")
+    print(f"  Chain Engine: {'habilitado' if genesis.chain_engine.enabled else 'deshabilitado'}")
 
     # Mostrar evolucion autonoma
     n_auto_actions = len(genesis.autonomous.actions)
