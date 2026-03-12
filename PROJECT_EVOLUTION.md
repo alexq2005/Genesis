@@ -21,7 +21,7 @@ GENESIS/
 ├── genesis.py              # Clase principal Genesis (~3,400+ líneas)
 ├── config.py               # Configuración central
 ├── web_ui.py               # Interfaz web Flask + SSE
-├── core/                   # 43 módulos del sistema
+├── core/                   # 46 módulos del sistema
 │   ├── brain.py            # Interfaz con LLM (multi-proveedor)
 │   ├── local_engine.py     # Motor ctransformers + CUDA
 │   ├── memory.py           # Memoria corto/largo plazo + TF-IDF
@@ -35,11 +35,14 @@ GENESIS/
 │   ├── episodic_memory.py  # Memoria episódica temporal (v2.4)
 │   ├── meta_learner.py     # Meta-aprendizaje estratégico (v2.4)
 │   ├── personality_evolver.py # Evolución de personalidad (v2.4)
+│   ├── goal_manager.py     # Sistema de metas auto-dirigidas (v2.5)
+│   ├── reflection_engine.py # Auto-reflexión profunda (v2.5)
+│   ├── context_router.py   # Ensamblaje inteligente de contexto (v2.5)
 │   ├── prompt_templates.py # Templates auto-detectados por tags
 │   ├── proactive.py        # Motor de sugerencias proactivas
 │   ├── project_generator.py# Generador multi-archivo
 │   └── ... (18 módulos más)
-├── tests/                  # 15 suites, 2343 tests
+├── tests/                  # 16 suites, 2611 tests
 ├── models/                 # Modelos .gguf (excluidos de git)
 └── plugins/                # Sistema de plugins extensible
 ```
@@ -348,12 +351,38 @@ GENESIS/
 - **257 tests pasando (suite v2.4)**
 - **Total: 2343 tests, 68 archivos, ~37,000+ líneas**
 
-### v2.5.0 — (Pendiente)
+### v2.5.0 — Self-Directed Intelligence (2026-03-12)
+**Hito:** Genesis se pone metas, reflexiona sobre su rendimiento y ensambla contexto inteligentemente.
+- GoalManager: sistema de metas auto-dirigidas
+  - Goal: título, descripción, prioridad (1-10), progreso (0-1), sub-goals, notas
+  - GoalTracker: seguimiento automático, detección de metas estancadas, priorización
+  - GoalSuggester: sugiere metas desde meta-learner insights, topics frecuentes y knowledge gaps
+  - Auto-tracking de progreso por keywords en conversación
+  - Deduplicación por containment similarity de títulos
+  - Evicción de metas abandonadas/completadas antiguas
+- ReflectionEngine: auto-reflexión profunda periódica
+  - ReflectionEntry: observaciones, fortalezas, puntos ciegos, plan de mejora, confianza
+  - SelfAnalyzer: analiza tendencia de calidad, distribución de intents, ratio feedback, drift de personalidad
+  - Reflexión automática cada 25 interacciones
+  - Detección de sobre-especialización, feedback pobre, personalidad inestable
+  - Historial de reflexiones con persistencia
+- ContextRouter: ensamblaje inteligente de contexto
+  - ContextSource: fuentes registradas con getter, prioridad base, keywords
+  - ContextBudget: asignación proporcional de chars por relevancia (total 3000 chars)
+  - Scoring por keywords + historial de utilidad (moving average)
+  - 5 fuentes integradas: semantic_memory, episodic_memory, skill_memory, goals, reflection
+  - record_feedback ajusta avg_usefulness por fuente
+- Integración: goals context en prompt, reflection context, auto-tracking post-process, reflexión periódica
+- Comandos: /goals, /reflection, /router
+- **268 tests pasando (suite v2.5)**
+- **Total: 2611 tests, 71 archivos, ~40,000+ líneas**
+
+### v2.6.0 — (Pendiente)
 Candidatos:
 - [ ] Multi-modal input (imágenes)
 - [ ] Federated learning entre instancias de Genesis
-- [ ] Sistema de goals y auto-dirección
-- [ ] Reflexión y auto-crítica profunda
+- [ ] Sistema de planning a largo plazo
+- [ ] Curiosidad dirigida por goals
 
 ---
 
