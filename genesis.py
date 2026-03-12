@@ -91,6 +91,9 @@ from core.personality_evolver import PersonalityEvolver
 from core.goal_manager import GoalManager
 from core.reflection_engine import ReflectionEngine
 from core.context_router import ContextRouter
+from core.causal_reasoner import CausalReasoner
+from core.concept_synthesizer import ConceptSynthesizer
+from core.strategic_planner import StrategicPlanner
 
 
 class Genesis:
@@ -384,6 +387,24 @@ class Genesis:
         )
         self._setup_context_sources()
         self.log.info(f"ContextRouter: {len(self.context_router.sources)} fuentes registradas")
+
+        # Inicializar Causal Reasoner (razonamiento causa-efecto)
+        self.causal_reasoner = CausalReasoner(
+            base_dir=str(BASE_DIR / "data" / "causal"),
+        )
+        self.log.info(f"CausalReasoner: {self.causal_reasoner.graph.link_count} links causales")
+
+        # Inicializar Concept Synthesizer (síntesis cross-domain)
+        self.concept_synth = ConceptSynthesizer(
+            base_dir=str(BASE_DIR / "data" / "concept_synth"),
+        )
+        self.log.info(f"ConceptSynthesizer: {len(self.concept_synth.concepts)} conceptos, {len(self.concept_synth.syntheses)} síntesis")
+
+        # Inicializar Strategic Planner (planificación jerárquica)
+        self.strategic_planner = StrategicPlanner(
+            base_dir=str(BASE_DIR / "data" / "strategic"),
+        )
+        self.log.info(f"StrategicPlanner: {len(self.strategic_planner.plans)} planes, {self.strategic_planner.total_phases_completed} fases completadas")
 
         # Configurar evolucion autonoma (conecta web + curiosity + evolution)
         self._setup_autonomous_evolution()
@@ -718,6 +739,27 @@ class Genesis:
         reflection_context = self.reflection.get_context_for_prompt(max_chars=400)
         if reflection_context:
             system_prompt += f"\n\n{reflection_context}"
+
+        # Causal Reasoner: inyectar razonamiento causal si hay pregunta causal
+        causal_context = self.causal_reasoner.get_context_for_prompt(user_input, max_chars=400)
+        if causal_context:
+            system_prompt += f"\n\n{causal_context}"
+            if self.show_thinking:
+                print(f"  [CausalReasoner: contexto causal inyectado]")
+
+        # Concept Synthesizer: inyectar síntesis relevantes
+        synth_context = self.concept_synth.get_context_for_prompt(user_input, max_chars=400)
+        if synth_context:
+            system_prompt += f"\n\n{synth_context}"
+            if self.show_thinking:
+                print(f"  [ConceptSynthesizer: síntesis inyectada]")
+
+        # Strategic Planner: inyectar plan activo
+        plan_context = self.strategic_planner.get_context_for_prompt(user_input, max_chars=400)
+        if plan_context:
+            system_prompt += f"\n\n{plan_context}"
+            if self.show_thinking:
+                print(f"  [StrategicPlanner: plan activo inyectado]")
 
         # Fase 0: Planificacion de tareas complejas
         if ((intent == "code" or self._is_coding_request(user_input))
@@ -1143,6 +1185,16 @@ class Genesis:
                 personality_evolutions=self.personality.total_evolutions,
             )
 
+        # Causal Reasoner: extraer relaciones causa-efecto de la conversación
+        combined_text = f"{user_input} {response}"
+        self.causal_reasoner.extract_and_store(combined_text, domain=intent)
+
+        # Concept Synthesizer: extraer conceptos de la conversación
+        self.concept_synth.extract_concept(combined_text)
+
+        # Strategic Planner: auto-tracking de progreso
+        self.strategic_planner.auto_track(user_input, response)
+
         # Auto-detectar proyectos multi-archivo en la respuesta
         if self.project_generator.has_multiple_files(response):
             if self.workspace.is_set():
@@ -1500,6 +1552,9 @@ class Genesis:
         self.dashboard.register("goal_manager", lambda: self.goal_manager.get_stats(), "core")
         self.dashboard.register("reflection", lambda: self.reflection.get_stats(), "monitoring")
         self.dashboard.register("context_router", lambda: self.context_router.get_stats(), "core")
+        self.dashboard.register("causal_reasoner", lambda: self.causal_reasoner.get_stats(), "core")
+        self.dashboard.register("concept_synth", lambda: self.concept_synth.get_stats(), "core")
+        self.dashboard.register("strategic_planner", lambda: self.strategic_planner.get_stats(), "core")
 
     def _save_session(self):
         """Guarda el estado completo de la sesion para restaurar despues."""
@@ -1682,6 +1737,12 @@ class Genesis:
             return self.reflection.generate_report()
         elif cmd == "/router":
             return self.context_router.generate_report()
+        elif cmd == "/causal":
+            return self.causal_reasoner.generate_report()
+        elif cmd == "/synthesis":
+            return self.concept_synth.generate_report()
+        elif cmd == "/planner":
+            return self.strategic_planner.generate_report()
         elif cmd == "/memory semantic":
             return self.semantic_memory.generate_report()
         elif cmd == "/memory":
@@ -2346,6 +2407,9 @@ class Genesis:
             self.goal_manager.save()
             self.reflection.save()
             self.context_router.save()
+            self.causal_reasoner.save()
+            self.concept_synth.save()
+            self.strategic_planner.save()
             self.heartbeat.stop()
             self.running = False
             return "Cerrando Genesis..."
@@ -2528,6 +2592,15 @@ class Genesis:
             f"",
             f"CONTEXT ROUTER:",
             self.context_router.status(),
+            f"",
+            f"CAUSAL REASONER:",
+            self.causal_reasoner.status(),
+            f"",
+            f"CONCEPT SYNTHESIZER:",
+            self.concept_synth.status(),
+            f"",
+            f"STRATEGIC PLANNER:",
+            self.strategic_planner.status(),
             f"",
             f"EVOLUCION AUTONOMA:",
             f"  Estado: {'ACTIVA' if self.autonomous.active else 'inactiva'}",
@@ -3322,6 +3395,15 @@ class Genesis:
   CONTEXT ROUTER:
   /router            — Ver fuentes de contexto y estadisticas de routing
 
+  CAUSAL REASONER:
+  /causal            — Ver grafo causal, links y cadenas causa-efecto
+
+  CONCEPT SYNTHESIZER:
+  /synthesis         — Ver conceptos, analogias y sintesis cross-domain
+
+  STRATEGIC PLANNER:
+  /planner           — Ver plan activo, fases, milestones y progreso
+
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
   /exit          — Salir de Genesis (guarda sesion automaticamente)
@@ -3477,6 +3559,16 @@ def main():
     if genesis.reflection.total_reflections > 0:
         print(f"  Reflection: {genesis.reflection.total_reflections} reflexiones")
     print(f"  Context Router: {len(genesis.context_router.sources)} fuentes")
+    n_links = genesis.causal_reasoner.graph.link_count
+    if n_links > 0:
+        print(f"  Causal Reasoner: {n_links} links causales")
+    n_concepts = len(genesis.concept_synth.concepts)
+    if n_concepts > 0:
+        print(f"  Concept Synth: {n_concepts} conceptos, {len(genesis.concept_synth.syntheses)} sintesis")
+    if genesis.strategic_planner.active_plan:
+        plan = genesis.strategic_planner.get_active_plan()
+        if plan:
+            print(f"  Strategic Planner: plan '{genesis.strategic_planner.active_plan}' ({plan.overall_progress:.0%})")
 
     # Mostrar evolucion autonoma
     n_auto_actions = len(genesis.autonomous.actions)
