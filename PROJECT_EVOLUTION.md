@@ -18,10 +18,10 @@ Sin APIs externas, sin censura, con capacidad de auto-modificación.
 ## Arquitectura
 ```
 GENESIS/
-├── genesis.py              # Clase principal Genesis (~3,400+ líneas)
+├── genesis.py              # Clase principal Genesis (~3,700+ líneas)
 ├── config.py               # Configuración central
 ├── web_ui.py               # Interfaz web Flask + SSE
-├── core/                   # 46 módulos del sistema
+├── core/                   # 49 módulos del sistema
 │   ├── brain.py            # Interfaz con LLM (multi-proveedor)
 │   ├── local_engine.py     # Motor ctransformers + CUDA
 │   ├── memory.py           # Memoria corto/largo plazo + TF-IDF
@@ -38,11 +38,14 @@ GENESIS/
 │   ├── goal_manager.py     # Sistema de metas auto-dirigidas (v2.5)
 │   ├── reflection_engine.py # Auto-reflexión profunda (v2.5)
 │   ├── context_router.py   # Ensamblaje inteligente de contexto (v2.5)
+│   ├── causal_reasoner.py  # Razonamiento causa-efecto con grafos (v2.6)
+│   ├── concept_synthesizer.py # Síntesis cross-domain de conceptos (v2.6)
+│   ├── strategic_planner.py # Planificación jerárquica con dependencias (v2.6)
 │   ├── prompt_templates.py # Templates auto-detectados por tags
 │   ├── proactive.py        # Motor de sugerencias proactivas
 │   ├── project_generator.py# Generador multi-archivo
 │   └── ... (18 módulos más)
-├── tests/                  # 16 suites, 2611 tests
+├── tests/                  # 17 suites, 2922 tests
 ├── models/                 # Modelos .gguf (excluidos de git)
 └── plugins/                # Sistema de plugins extensible
 ```
@@ -377,12 +380,43 @@ GENESIS/
 - **268 tests pasando (suite v2.5)**
 - **Total: 2611 tests, 71 archivos, ~40,000+ líneas**
 
-### v2.6.0 — (Pendiente)
+### v2.6.0 — Cognitive Architecture (2026-03-12)
+**Hito:** Genesis razona causalmente, sintetiza conceptos cross-domain y planifica estratégicamente.
+- CausalReasoner: razonamiento causa-efecto con grafos dirigidos
+  - CausalLink: relación causa→efecto con confianza, refuerzos y contradicciones
+  - CausalGraph: grafo DAG con índices forward/backward, trace_chain (BFS forward), trace_reverse (BFS backward)
+  - CausalInference: 6 patrones regex para extracción automática de pares causales del texto
+  - Detección de preguntas causales (por qué, qué causa, qué pasa si)
+  - why(): traza causas hacia atrás; what_if(): traza efectos hacia adelante
+  - Refuerzo automático de links duplicados, evicción de links débiles
+  - Inyección de razonamiento causal en prompts para preguntas causales
+- ConceptSynthesizer: síntesis creativa cross-domain de conceptos
+  - Concept: propiedades, relaciones, dominio, usage/synthesis counts
+  - AnalogyFinder: encuentra analogías cross-domain por similitud de propiedades (containment)
+  - SynthesisEngine: genera insights combinando conceptos con templates, novelty scoring
+  - Detección automática de dominio (6 dominios) y propiedades (8 propiedades) por keywords
+  - auto_synthesize(): genera síntesis desde las mejores analogías encontradas
+  - Novelty score: domain distance × similarity optimum × freshness
+  - Evicción por usage+synthesis count
+- StrategicPlanner: planificación jerárquica multi-fase con dependencias
+  - Phase: status (pending/ready/in_progress/completed/blocked/skipped), prerequisitos, acciones, progreso
+  - Milestone: checkpoint con target phases, auto-check al completar fases
+  - PlanGraph: DAG con topological sort, critical path (BFS longest), overall progress
+  - AdaptiveScheduler: adapta prioridades por bloqueos, eficiencia, feedback; sugiere próximas fases
+  - Multiple plans con plan activo, auto-tracking por keywords
+  - estimate_completion() calcula horas restantes
+  - Evicción de planes completados más antiguos
+- Integración: causal/synth/plan context en prompt, auto-extract post-process, auto-track
+- Comandos: /causal, /synthesis, /planner
+- **311 tests pasando (suite v2.6)**
+- **Total: 2922 tests, 74 archivos, ~43,000+ líneas**
+
+### v2.7.0 — (Pendiente)
 Candidatos:
 - [ ] Multi-modal input (imágenes)
 - [ ] Federated learning entre instancias de Genesis
-- [ ] Sistema de planning a largo plazo
 - [ ] Curiosidad dirigida por goals
+- [ ] Razonamiento probabilístico (Bayesian networks)
 
 ---
 
