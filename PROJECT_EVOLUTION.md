@@ -21,7 +21,7 @@ GENESIS/
 ├── genesis.py              # Clase principal Genesis (~3,400+ líneas)
 ├── config.py               # Configuración central
 ├── web_ui.py               # Interfaz web Flask + SSE
-├── core/                   # 40 módulos del sistema
+├── core/                   # 43 módulos del sistema
 │   ├── brain.py            # Interfaz con LLM (multi-proveedor)
 │   ├── local_engine.py     # Motor ctransformers + CUDA
 │   ├── memory.py           # Memoria corto/largo plazo + TF-IDF
@@ -32,11 +32,14 @@ GENESIS/
 │   ├── self_evaluator.py   # Auto-evaluación de calidad (v2.3)
 │   ├── skill_memory.py     # Memoria de procedimientos HOW-TO (v2.3)
 │   ├── chain_engine.py     # Razonamiento multi-paso (v2.3)
+│   ├── episodic_memory.py  # Memoria episódica temporal (v2.4)
+│   ├── meta_learner.py     # Meta-aprendizaje estratégico (v2.4)
+│   ├── personality_evolver.py # Evolución de personalidad (v2.4)
 │   ├── prompt_templates.py # Templates auto-detectados por tags
 │   ├── proactive.py        # Motor de sugerencias proactivas
 │   ├── project_generator.py# Generador multi-archivo
 │   └── ... (18 módulos más)
-├── tests/                  # 14 suites, 2086 tests
+├── tests/                  # 15 suites, 2343 tests
 ├── models/                 # Modelos .gguf (excluidos de git)
 └── plugins/                # Sistema de plugins extensible
 ```
@@ -320,12 +323,37 @@ GENESIS/
 - **248 tests pasando (suite v2.3)**
 - **Total: 2086 tests, 65 archivos, ~35,000+ lineas**
 
-### v2.4.0 — (Pendiente)
+### v2.4.0 — Adaptive Intelligence (2026-03-12)
+**Hito:** Genesis recuerda episodios, aprende de sus estrategias y evoluciona su personalidad.
+- EpisodicMemory: memoria temporal de episodios de conversación
+  - Episode: timestamp, topics, summary, emotional_tone, key_facts, tags
+  - EpisodeBuilder: detección automática de temas (7 categorías), tono emocional (5 tonos), extracción de hechos
+  - TimelineIndex: consultas por rango temporal, últimos N, últimas horas, por tema, por keyword
+  - start_episode/end_episode/record_message con recall por relevancia
+  - Inyección de contexto episódico en prompts (get_context_for_prompt)
+- MetaLearner: meta-aprendizaje de estrategias de respuesta
+  - StrategyRecord: registra intent, template, temperature, chain_used, skill_injected, score, feedback
+  - PatternDetector: análisis por intent, template, impacto de chains, impacto de skills, correlación de temperature
+  - LearningInsight: insights descubiertos con categoría, confianza y recomendación
+  - get_recommendation() sugiere configuración óptima por intent
+  - Análisis automático cada 10 records
+- PersonalityEvolver: evolución gradual de personalidad
+  - TraitVector: 8 rasgos (curiosity, verbosity, formality, creativity, precision, humor, assertiveness, empathy)
+  - DriftEngine: deltas por feedback (+/-), tono emocional, tipo de intent
+  - Decay gradual hacia personalidad base por inactividad
+  - Snapshots periódicos de estado de personalidad
+  - to_prompt_hints() genera directivas de personalidad para el prompt
+- Integración: episodic context en prompt, personality hints, strategy recording post-process
+- Comandos: /episodes, /metalearner, /personality
+- **257 tests pasando (suite v2.4)**
+- **Total: 2343 tests, 68 archivos, ~37,000+ líneas**
+
+### v2.5.0 — (Pendiente)
 Candidatos:
-- [ ] Multi-modal input (imagenes)
-- [ ] Sistema de memoria episodica (cuando + donde + con quien)
+- [ ] Multi-modal input (imágenes)
 - [ ] Federated learning entre instancias de Genesis
-- [ ] Meta-learning: Genesis aprende a aprender mejor
+- [ ] Sistema de goals y auto-dirección
+- [ ] Reflexión y auto-crítica profunda
 
 ---
 
