@@ -85,6 +85,9 @@ from core.inference_optimizer import InferenceOptimizer
 from core.self_evaluator import SelfEvaluator
 from core.skill_memory import SkillMemory
 from core.chain_engine import ChainEngine
+from core.episodic_memory import EpisodicMemory
+from core.meta_learner import MetaLearner
+from core.personality_evolver import PersonalityEvolver
 
 
 class Genesis:
@@ -339,6 +342,25 @@ class Genesis:
             base_dir=str(BASE_DIR / "data" / "chain_engine"),
         )
         self.log.info(f"ChainEngine: {self.chain_engine.total_chains} cadenas previas")
+
+        # Inicializar Episodic Memory (memoria temporal)
+        self.episodic_memory = EpisodicMemory(
+            base_dir=str(BASE_DIR / "data" / "episodic_memory"),
+        )
+        self.episodic_memory.start_episode()
+        self.log.info(f"EpisodicMemory: {self.episodic_memory.timeline.count} episodios previos")
+
+        # Inicializar Meta-Learner (meta-aprendizaje)
+        self.meta_learner = MetaLearner(
+            base_dir=str(BASE_DIR / "data" / "meta_learner"),
+        )
+        self.log.info(f"MetaLearner: {self.meta_learner.total_recorded} registros previos")
+
+        # Inicializar Personality Evolver (evolucion de personalidad)
+        self.personality = PersonalityEvolver(
+            base_dir=str(BASE_DIR / "data" / "personality"),
+        )
+        self.log.info(f"PersonalityEvolver: {self.personality.total_evolutions} evoluciones previas")
 
         # Configurar evolucion autonoma (conecta web + curiosity + evolution)
         self._setup_autonomous_evolution()
@@ -651,6 +673,18 @@ class Genesis:
             system_prompt += f"\n\n{skill_context}"
             if self.show_thinking:
                 print(f"  [SkillMemory: skills inyectados]")
+
+        # Episodic Memory: inyectar contexto temporal
+        ep_context = self.episodic_memory.get_context_for_prompt(user_input, max_chars=600)
+        if ep_context:
+            system_prompt += f"\n\n{ep_context}"
+            if self.show_thinking:
+                print(f"  [EpisodicMemory: contexto temporal inyectado]")
+
+        # Personality: inyectar hints de personalidad
+        personality_hints = self.personality.get_prompt_hints()
+        if personality_hints:
+            system_prompt += f"\n\n[PERSONALIDAD] {personality_hints}"
 
         # Fase 0: Planificacion de tareas complejas
         if ((intent == "code" or self._is_coding_request(user_input))
@@ -1043,6 +1077,23 @@ class Genesis:
         if skill_id and self.show_thinking:
             print(f"  [SkillMemory: nuevo skill extraido ({skill_id})]")
 
+        # Episodic Memory: registrar interacción
+        self.episodic_memory.record_message("user", user_input)
+        self.episodic_memory.record_message("assistant", response)
+
+        # Meta-Learner: registrar estrategia y resultado
+        self.meta_learner.record_strategy(
+            intent=intent,
+            template=template_name if template_extra else "",
+            temperature=temp,
+            chain_used=self.chain_engine.active_chain is not None,
+            skill_injected=bool(skill_context),
+            score=eval_result.get("overall", 0.5),
+        )
+
+        # Personality Evolver: evolucionar por intent
+        self.personality.evolve_from_intent(intent)
+
         # Auto-detectar proyectos multi-archivo en la respuesta
         if self.project_generator.has_multiple_files(response):
             if self.workspace.is_set():
@@ -1356,6 +1407,9 @@ class Genesis:
         self.dashboard.register("evaluator", lambda: self.evaluator.get_stats(), "monitoring")
         self.dashboard.register("skill_memory", lambda: self.skill_memory.get_stats(), "memory")
         self.dashboard.register("chain_engine", lambda: self.chain_engine.get_stats(), "core")
+        self.dashboard.register("episodic_memory", lambda: self.episodic_memory.get_stats(), "memory")
+        self.dashboard.register("meta_learner", lambda: self.meta_learner.get_stats(), "monitoring")
+        self.dashboard.register("personality", lambda: self.personality.get_stats(), "core")
 
     def _save_session(self):
         """Guarda el estado completo de la sesion para restaurar despues."""
@@ -1497,6 +1551,7 @@ class Genesis:
                 response_time=self._last_response_time,
             )
             self.evaluator.record_feedback("+")
+            self.personality.evolve_from_feedback("+")
             return fb_result
         elif cmd in ("-", "👎"):
             fb_result = self.feedback.rate(positive=False)
@@ -1510,6 +1565,7 @@ class Genesis:
                 response_time=self._last_response_time,
             )
             self.evaluator.record_feedback("-")
+            self.personality.evolve_from_feedback("-")
             return fb_result
 
         if cmd == "/status":
@@ -1524,6 +1580,12 @@ class Genesis:
             self.chain_engine.enabled = not self.chain_engine.enabled
             state = "habilitado" if self.chain_engine.enabled else "deshabilitado"
             return f"Chain Engine: {state}"
+        elif cmd == "/episodes":
+            return self.episodic_memory.generate_report()
+        elif cmd == "/metalearner":
+            return self.meta_learner.generate_report()
+        elif cmd == "/personality":
+            return self.personality.generate_report()
         elif cmd == "/memory semantic":
             return self.semantic_memory.generate_report()
         elif cmd == "/memory":
@@ -2179,6 +2241,12 @@ class Genesis:
             self.evaluator.save()
             self.skill_memory.save()
             self.chain_engine.save()
+            self.episodic_memory.end_episode(
+                [{"role": "user", "content": q} for q in (self.episodic_memory.current_episode.user_queries if self.episodic_memory.current_episode else [])]
+            )
+            self.episodic_memory.save()
+            self.meta_learner.save()
+            self.personality.save()
             self.heartbeat.stop()
             self.running = False
             return "Cerrando Genesis..."
@@ -2343,6 +2411,15 @@ class Genesis:
             f"",
             f"CHAIN ENGINE:",
             self.chain_engine.status(),
+            f"",
+            f"EPISODIC MEMORY:",
+            self.episodic_memory.status(),
+            f"",
+            f"META-LEARNER:",
+            self.meta_learner.status(),
+            f"",
+            f"PERSONALITY:",
+            self.personality.status(),
             f"",
             f"EVOLUCION AUTONOMA:",
             f"  Estado: {'ACTIVA' if self.autonomous.active else 'inactiva'}",
@@ -3119,6 +3196,15 @@ class Genesis:
   /chain toggle      — Activar/desactivar razonamiento en cadena
   (Automatico) Descompone preguntas complejas en sub-preguntas.
 
+  EPISODIC MEMORY:
+  /episodes          — Ver episodios recientes y contexto temporal
+
+  META-LEARNER:
+  /metalearner       — Ver insights y patrones de meta-aprendizaje
+
+  PERSONALITY:
+  /personality       — Ver rasgos de personalidad y su evolucion
+
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
   /exit          — Salir de Genesis (guarda sesion automaticamente)
@@ -3261,6 +3347,13 @@ def main():
     if n_skills > 0:
         print(f"  Skill Memory: {n_skills} skills aprendidos")
     print(f"  Chain Engine: {'habilitado' if genesis.chain_engine.enabled else 'deshabilitado'}")
+    n_episodes = genesis.episodic_memory.timeline.count
+    if n_episodes > 0:
+        print(f"  Episodic Memory: {n_episodes} episodios")
+    n_meta = genesis.meta_learner.total_recorded
+    if n_meta > 0:
+        print(f"  Meta-Learner: {n_meta} registros, {len(genesis.meta_learner.insights)} insights")
+    print(f"  Personality: distancia={genesis.personality.get_evolution_distance():.2f}")
 
     # Mostrar evolucion autonoma
     n_auto_actions = len(genesis.autonomous.actions)
