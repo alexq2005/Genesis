@@ -18,10 +18,10 @@ Sin APIs externas, sin censura, con capacidad de auto-modificación.
 ## Arquitectura
 ```
 GENESIS/
-├── genesis.py              # Clase principal Genesis (~2,700+ líneas)
+├── genesis.py              # Clase principal Genesis (~3,400+ líneas)
 ├── config.py               # Configuración central
-├── web_ui.py               # Interfaz web Flask
-├── core/                   # 37 módulos del sistema
+├── web_ui.py               # Interfaz web Flask + SSE
+├── core/                   # 40 módulos del sistema
 │   ├── brain.py            # Interfaz con LLM (multi-proveedor)
 │   ├── local_engine.py     # Motor ctransformers + CUDA
 │   ├── memory.py           # Memoria corto/largo plazo + TF-IDF
@@ -29,11 +29,14 @@ GENESIS/
 │   ├── knowledge_graph.py  # Grafo de conocimiento con PageRank
 │   ├── tool_creator.py     # Creador dinámico de herramientas
 │   ├── self_modifier.py    # Auto-modificación de código
+│   ├── self_evaluator.py   # Auto-evaluación de calidad (v2.3)
+│   ├── skill_memory.py     # Memoria de procedimientos HOW-TO (v2.3)
+│   ├── chain_engine.py     # Razonamiento multi-paso (v2.3)
 │   ├── prompt_templates.py # Templates auto-detectados por tags
 │   ├── proactive.py        # Motor de sugerencias proactivas
 │   ├── project_generator.py# Generador multi-archivo
 │   └── ... (18 módulos más)
-├── tests/                  # 4 suites, 277 tests
+├── tests/                  # 14 suites, 2086 tests
 ├── models/                 # Modelos .gguf (excluidos de git)
 └── plugins/                # Sistema de plugins extensible
 ```
@@ -275,12 +278,54 @@ GENESIS/
 - **116 tests pasando (suite v2.1)**
 - **Total: 1620 tests, 59 archivos, ~30,000+ lineas**
 
-### v2.2.0 — (Pendiente)
+### v2.2.0 — Semantic Intelligence (2026-03-12)
+**Hito:** Busqueda semantica en memoria, optimizacion de inferencia y dashboard en tiempo real.
+- SemanticMemory: busqueda por similitud semantica en conversaciones
+  - Indexacion automatica de cada interaccion en EmbeddingsEngine
+  - Recall por similitud coseno con threshold configurable
+  - Inyeccion de contexto semantico relevante en prompts
+  - Deduplicacion por similitud antes de almacenar
+- InferenceOptimizer: optimizacion automatica de parametros del modelo
+  - Ajuste de temperature, top_p, repetition_penalty por intent
+  - Benchmark runner para medir tokens/s y latencia
+  - Presets por tipo de tarea (creative, code, research, chat)
+  - Cache de configuraciones optimas por intent
+- LiveDashboard: metricas en tiempo real via web UI
+  - Server-Sent Events (SSE) para actualizacion sin polling
+  - Graficos de performance, memoria, embeddings en tiempo real
+  - Health grid de todos los subsistemas
+  - Export de datos historicos
+- **218 tests pasando (suite v2.2)**
+- **Total: 1838 tests, 62 archivos, ~32,000+ lineas**
+
+### v2.3.0 — Cognitive Self-Improvement (2026-03-12)
+**Hito:** Genesis evalua sus propias respuestas, aprende procedimientos y razona multi-paso.
+- SelfEvaluator: auto-evaluacion heuristica de calidad de respuestas
+  - QualityScorer: 5 metricas (relevance, length, specificity, completeness, error_free)
+  - PatternTracker: patrones de calidad por intent con trend detection
+  - AutoTuner: ajuste automatico de temperature/max_tokens por intent basado en feedback
+  - Grados A-F con persistencia y reportes detallados
+- SkillMemory: memoria de procedimientos HOW-TO
+  - SkillExtractor: detecta preguntas procedurales y extrae pasos
+  - Almacenamiento con deduplicacion por containment similarity
+  - Recall por keywords con inyeccion de skills en prompt
+  - Eviccion por calidad + uso + antiguedad
+- ChainEngine: razonamiento multi-paso forzado para preguntas complejas
+  - ChainPlanner: detecta complejidad por indicadores y descompone en sub-preguntas
+  - 6 templates (compare, analyze, optimize, design, explain_why, generic)
+  - ChainMemory: reutiliza cadenas exitosas por similitud de query
+  - Contexto acumulativo entre pasos
+- Integracion: skill context en prompt, auto-tuned temperature, post-process evaluation
+- Comandos: /evaluate, /eval, /skills, /chain, /chain toggle
+- **248 tests pasando (suite v2.3)**
+- **Total: 2086 tests, 65 archivos, ~35,000+ lineas**
+
+### v2.4.0 — (Pendiente)
 Candidatos:
 - [ ] Multi-modal input (imagenes)
-- [ ] Web UI v2 con dashboard de metricas en tiempo real
 - [ ] Sistema de memoria episodica (cuando + donde + con quien)
 - [ ] Federated learning entre instancias de Genesis
+- [ ] Meta-learning: Genesis aprende a aprender mejor
 
 ---
 

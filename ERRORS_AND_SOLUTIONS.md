@@ -148,6 +148,38 @@
 - **Solucion:** Cambiar a `GENESIS_VERSION >= "1.7.0"`.
 - **Prevencion:** REGLA ABSOLUTA: NUNCA usar `==` para version en tests. Siempre `>=`. Esto aplica a TODOS los futuros test files.
 
+## ERR-015: QualityScorer retorna score alto (0.3+) para respuestas vacías
+- **Fecha:** 2026-03-12
+- **Contexto:** Test de SelfEvaluator evaluaba `scorer.score("test", "", "chat")` esperando overall < 0.3.
+- **Error:** Score devuelto ~0.37 para respuesta vacía.
+- **Análisis:** `_score_relevance` defaultea 0.7, `_score_error_free` defaultea 1.0 para strings vacíos. El promedio ponderado daba un score inflado.
+- **Solución:** Agregar early return en `score()` para respuestas < 3 chars → overall 0.05 con todos los sub-scores en 0.
+- **Prevención:** Siempre validar edge cases (vacío, None, muy corto) al inicio de funciones de scoring.
+
+## ERR-016: SkillExtractor no detecta "como instalar" como pregunta HOW-TO
+- **Fecha:** 2026-03-12
+- **Contexto:** Regex HOW_TO_PATTERNS solo tenía verbos conjugados (hago, configuro, instalo).
+- **Error:** `is_how_to_question("como instalar python?")` retornaba False.
+- **Análisis:** Pattern `como\s+(?:hago|hacer|puedo|configuro|instalo|creo|uso)` no incluía infinitivos (instalar, configurar, crear, usar).
+- **Solución:** Agregar infinitivos al pattern: `instalar|configurar|crear|usar|desplegar|deploy`.
+- **Prevención:** Los patterns de verbos en español deben incluir tanto conjugados como infinitivos.
+
+## ERR-017: extract_skill() extrae de preguntas no-procedurales
+- **Fecha:** 2026-03-12
+- **Contexto:** `extract_skill("que es docker?", response_con_pasos)` debería retornar None.
+- **Error:** Retornaba un SkillEntry porque solo verificaba `has_procedure()`, no `is_how_to_question()`.
+- **Análisis:** El guard `is_how_to_question()` existía solo en `extract_and_store()`, no en `extract_skill()`. Un consumidor directo de `extract_skill()` no tenía el filtro.
+- **Solución:** Agregar `if not self.is_how_to_question(user_input): return None` al inicio de `extract_skill()`.
+- **Prevención:** Guards de validación deben estar en el método de bajo nivel, no solo en el wrapper de alto nivel.
+
+## ERR-018: _title_similarity Jaccard demasiado estricto para títulos cortos
+- **Fecha:** 2026-03-12
+- **Contexto:** Títulos "Instalar python" vs "Instalar python en pc" daban similarity 0.5 (< threshold 0.8).
+- **Error:** Duplicados no detectados porque Jaccard penaliza palabras extras.
+- **Análisis:** Jaccard(A,B) = |A∩B|/|A∪B|. Con sets de 2 y 4 palabras: 2/4=0.5. Para títulos cortos donde uno es substring del otro, esto es demasiado estricto.
+- **Solución:** Cambiar a containment similarity: |A∩B|/min(|A|,|B|). Resultado: 2/2=1.0 (detecta correctamente el duplicado).
+- **Prevención:** Para comparación de textos cortos, containment es mejor que Jaccard. Jaccard funciona mejor con textos largos.
+
 ---
 
 ## Plantilla para Nuevos Errores
