@@ -411,12 +411,35 @@ GENESIS/
 - **311 tests pasando (suite v2.6)**
 - **Total: 2922 tests, 74 archivos, ~43,000+ líneas**
 
-### v2.7.0 — (Pendiente)
+### v2.7.0 — Predictive Intelligence (2026-03-12)
+**Módulos: PatternPredictor, AnomalyDetector, AdaptiveInterface**
+- PatternPredictor: anticipación de necesidades del usuario
+  - TransitionMatrix: cadena de Markov de primer orden para transiciones de intents
+  - TemporalPattern: patrones por hora del día y día de semana
+  - SequencePredictor: n-gramas (window=3) con peso por longitud de secuencia
+  - Combinación ponderada: Markov (0.4) + Temporal (0.3) + Secuencia (0.3)
+  - Accuracy tracking con verify_prediction()
+- AnomalyDetector: detección de anomalías en métricas del sistema
+  - MetricStream: serie temporal con deque(maxlen=50), mean/std/trend incrementales
+  - ZScoreDetector: warning a 2σ, critical a 3σ
+  - TrendBreakDetector: detecta transiciones rising↔falling
+  - Streams automáticos: response_time, response_length, quality_score
+- AdaptiveInterface: aprendizaje de preferencias del usuario
+  - UserPreference: tracking bayesiano con learning rate decreciente
+  - PreferenceTracker: detección de señales (verbosity, technical_level, format)
+  - ResponseAdapter: genera directivas de estilo para inyectar en prompt
+  - Feedback loop: observe_input() + observe_feedback() → adapta estilo
+- Fix: bug de scope `_response_time` → `self._last_response_time` en post-process
+- Integración completa 10/10 puntos × 3 módulos
+- Comandos: /predictor, /anomalies, /adaptive
+- **318 tests pasando (suite v2.7)**
+- **Total: 3240 tests, 18 suites, 55 archivos, ~46,000+ líneas**
+
+### v2.8.0 — (Pendiente)
 Candidatos:
-- [ ] Multi-modal input (imágenes)
-- [ ] Federated learning entre instancias de Genesis
-- [ ] Curiosidad dirigida por goals
-- [ ] Razonamiento probabilístico (Bayesian networks)
+- [ ] HypothesisEngine: generación y validación de hipótesis
+- [ ] ExplanationEngine: explicaciones multi-nivel
+- [ ] DialogueStrategist: estrategias de diálogo adaptativas
 
 ---
 
