@@ -435,11 +435,35 @@ GENESIS/
 - **318 tests pasando (suite v2.7)**
 - **Total: 3240 tests, 18 suites, 55 archivos, ~46,000+ líneas**
 
-### v2.8.0 — (Pendiente)
+### v2.8.0 — Reasoning Architecture (2026-03-12)
+**Módulos: HypothesisEngine, ExplanationEngine, DialogueStrategist**
+- HypothesisEngine: formulación y evaluación iterativa de hipótesis
+  - Evidence: pieza de evidencia con peso y dirección (supports/contradicts)
+  - Hypothesis: statement con evidencia, confidence bayesiana, auto-confirm/refute
+  - HypothesisGenerator: extrae hipótesis por patrones regex (especulativo, creencia, condicional, causal)
+  - HypothesisEvaluator: evalúa relevancia por overlap, detecta soporte/contradicción, rankea por plausibility
+  - Plausibility scoring = confidence × certainty factor
+- ExplanationEngine: explicaciones multi-nivel con banco reutilizable
+  - Explanation: 4 niveles (simple, technical, analogical, step_by_step), tracking de usos y feedback
+  - ExplanationTemplate: directivas de estilo por nivel para prompt
+  - QualityScorer: evalúa por longitud, estructura, adecuación al nivel, feedback histórico
+  - detect_explanation_need(): detecta si el input solicita explicación y a qué nivel
+  - Evicción por relevance_score (quality × effectiveness)
+- DialogueStrategist: 6 estrategias conversacionales adaptativas
+  - Estrategias: Socrático, Didáctico, Exploratorio, Directivo, Colaborativo, Reflexivo
+  - StrategySelector: selecciona por señales textuales, intent y longitud de conversación
+  - EngagementTracker: rastrea uso, feedback y efectividad por estrategia
+  - Auto-switch a mejor estrategia cuando la actual tiene baja efectividad
+- Integración completa 10/10 puntos × 3 módulos
+- Comandos: /hypothesis, /explanations, /dialogue
+- **246 tests pasando (suite v2.8)**
+- **Total: 3486 tests, 19 suites, 58 archivos, ~50,000+ líneas**
+
+### v2.9.0 — (Pendiente)
 Candidatos:
-- [ ] HypothesisEngine: generación y validación de hipótesis
-- [ ] ExplanationEngine: explicaciones multi-nivel
-- [ ] DialogueStrategist: estrategias de diálogo adaptativas
+- [ ] CognitiveMonitor: monitoreo de carga cognitiva y rendimiento
+- [ ] AbstractionEngine: extracción de patrones abstractos
+- [ ] LearningOptimizer: optimización de estrategias de aprendizaje
 
 ---
 
