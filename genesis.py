@@ -94,6 +94,9 @@ from core.context_router import ContextRouter
 from core.causal_reasoner import CausalReasoner
 from core.concept_synthesizer import ConceptSynthesizer
 from core.strategic_planner import StrategicPlanner
+from core.pattern_predictor import PatternPredictor
+from core.anomaly_detector import AnomalyDetector
+from core.adaptive_interface import AdaptiveInterface
 
 
 class Genesis:
@@ -405,6 +408,24 @@ class Genesis:
             base_dir=str(BASE_DIR / "data" / "strategic"),
         )
         self.log.info(f"StrategicPlanner: {len(self.strategic_planner.plans)} planes, {self.strategic_planner.total_phases_completed} fases completadas")
+
+        # Inicializar Pattern Predictor (predicción de intents)
+        self.pattern_predictor = PatternPredictor(
+            base_dir=str(BASE_DIR / "data" / "predictor"),
+        )
+        self.log.info(f"PatternPredictor: accuracy={self.pattern_predictor.accuracy:.0%}")
+
+        # Inicializar Anomaly Detector (detección de anomalías)
+        self.anomaly_detector = AnomalyDetector(
+            base_dir=str(BASE_DIR / "data" / "anomaly"),
+        )
+        self.log.info(f"AnomalyDetector: {len(self.anomaly_detector.streams)} streams")
+
+        # Inicializar Adaptive Interface (interfaz adaptativa)
+        self.adaptive_iface = AdaptiveInterface(
+            base_dir=str(BASE_DIR / "data" / "adaptive_iface"),
+        )
+        self.log.info(f"AdaptiveInterface: {self.adaptive_iface.total_adaptations} adaptaciones")
 
         # Configurar evolucion autonoma (conecta web + curiosity + evolution)
         self._setup_autonomous_evolution()
@@ -760,6 +781,17 @@ class Genesis:
             system_prompt += f"\n\n{plan_context}"
             if self.show_thinking:
                 print(f"  [StrategicPlanner: plan activo inyectado]")
+
+        # Anomaly Detector: inyectar anomalías críticas
+        anomaly_context = self.anomaly_detector.get_context_for_prompt(max_chars=300)
+        if anomaly_context:
+            system_prompt += f"\n\n{anomaly_context}"
+
+        # Adaptive Interface: observar input y generar directivas de estilo
+        self.adaptive_iface.observe_input(user_input)
+        style_directives = self.adaptive_iface.get_context_for_prompt(max_chars=200)
+        if style_directives:
+            system_prompt += f"\n\n{style_directives}"
 
         # Fase 0: Planificacion de tareas complejas
         if ((intent == "code" or self._is_coding_request(user_input))
@@ -1195,6 +1227,17 @@ class Genesis:
         # Strategic Planner: auto-tracking de progreso
         self.strategic_planner.auto_track(user_input, response)
 
+        # Pattern Predictor: registrar intent y verificar predicción
+        self.pattern_predictor.verify_prediction(intent)
+        self.pattern_predictor.record_intent(intent)
+
+        # Anomaly Detector: registrar métricas de esta interacción
+        self.anomaly_detector.record("response_time", self._last_response_time)
+        self.anomaly_detector.record("response_length", len(response))
+        if eval_result:
+            self.anomaly_detector.record("quality_score", eval_result.get("overall", 0.5))
+        self.anomaly_detector.check_all()
+
         # Auto-detectar proyectos multi-archivo en la respuesta
         if self.project_generator.has_multiple_files(response):
             if self.workspace.is_set():
@@ -1555,6 +1598,9 @@ class Genesis:
         self.dashboard.register("causal_reasoner", lambda: self.causal_reasoner.get_stats(), "core")
         self.dashboard.register("concept_synth", lambda: self.concept_synth.get_stats(), "core")
         self.dashboard.register("strategic_planner", lambda: self.strategic_planner.get_stats(), "core")
+        self.dashboard.register("pattern_predictor", lambda: self.pattern_predictor.get_stats(), "monitoring")
+        self.dashboard.register("anomaly_detector", lambda: self.anomaly_detector.get_stats(), "monitoring")
+        self.dashboard.register("adaptive_iface", lambda: self.adaptive_iface.get_stats(), "core")
 
     def _save_session(self):
         """Guarda el estado completo de la sesion para restaurar despues."""
@@ -1743,6 +1789,12 @@ class Genesis:
             return self.concept_synth.generate_report()
         elif cmd == "/planner":
             return self.strategic_planner.generate_report()
+        elif cmd == "/predictor":
+            return self.pattern_predictor.generate_report()
+        elif cmd == "/anomalies":
+            return self.anomaly_detector.generate_report()
+        elif cmd == "/adaptive":
+            return self.adaptive_iface.generate_report()
         elif cmd == "/memory semantic":
             return self.semantic_memory.generate_report()
         elif cmd == "/memory":
@@ -2410,6 +2462,9 @@ class Genesis:
             self.causal_reasoner.save()
             self.concept_synth.save()
             self.strategic_planner.save()
+            self.pattern_predictor.save()
+            self.anomaly_detector.save()
+            self.adaptive_iface.save()
             self.heartbeat.stop()
             self.running = False
             return "Cerrando Genesis..."
@@ -2601,6 +2656,15 @@ class Genesis:
             f"",
             f"STRATEGIC PLANNER:",
             self.strategic_planner.status(),
+            f"",
+            f"PATTERN PREDICTOR:",
+            self.pattern_predictor.status(),
+            f"",
+            f"ANOMALY DETECTOR:",
+            self.anomaly_detector.status(),
+            f"",
+            f"ADAPTIVE INTERFACE:",
+            self.adaptive_iface.status(),
             f"",
             f"EVOLUCION AUTONOMA:",
             f"  Estado: {'ACTIVA' if self.autonomous.active else 'inactiva'}",
@@ -3404,6 +3468,15 @@ class Genesis:
   STRATEGIC PLANNER:
   /planner           — Ver plan activo, fases, milestones y progreso
 
+  PATTERN PREDICTOR:
+  /predictor         — Ver predicciones Markov, temporales y secuencias
+
+  ANOMALY DETECTOR:
+  /anomalies         — Ver streams, anomalias detectadas y alertas
+
+  ADAPTIVE INTERFACE:
+  /adaptive          — Ver preferencias aprendidas y directivas de estilo
+
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
   /exit          — Salir de Genesis (guarda sesion automaticamente)
@@ -3569,6 +3642,15 @@ def main():
         plan = genesis.strategic_planner.get_active_plan()
         if plan:
             print(f"  Strategic Planner: plan '{genesis.strategic_planner.active_plan}' ({plan.overall_progress:.0%})")
+    pred_acc = genesis.pattern_predictor.accuracy
+    if genesis.pattern_predictor.total_predictions > 0:
+        print(f"  Pattern Predictor: accuracy {pred_acc:.0%} ({genesis.pattern_predictor.total_predictions} predicciones)")
+    n_anomalies = len(genesis.anomaly_detector.get_active_anomalies())
+    if n_anomalies > 0:
+        print(f"  Anomaly Detector: {n_anomalies} anomalias activas")
+    adapt_obs = sum(p.observations for p in genesis.adaptive_iface.preferences.values())
+    if adapt_obs > 0:
+        print(f"  Adaptive Interface: {adapt_obs} observaciones, {genesis.adaptive_iface.total_adaptations} adaptaciones")
 
     # Mostrar evolucion autonoma
     n_auto_actions = len(genesis.autonomous.actions)
