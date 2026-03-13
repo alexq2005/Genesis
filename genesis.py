@@ -97,6 +97,9 @@ from core.strategic_planner import StrategicPlanner
 from core.pattern_predictor import PatternPredictor
 from core.anomaly_detector import AnomalyDetector
 from core.adaptive_interface import AdaptiveInterface
+from core.hypothesis_engine import HypothesisEngine
+from core.explanation_engine import ExplanationEngine
+from core.dialogue_strategist import DialogueStrategist
 
 
 class Genesis:
@@ -426,6 +429,24 @@ class Genesis:
             base_dir=str(BASE_DIR / "data" / "adaptive_iface"),
         )
         self.log.info(f"AdaptiveInterface: {self.adaptive_iface.total_adaptations} adaptaciones")
+
+        # Inicializar Hypothesis Engine (motor de hipótesis)
+        self.hypothesis_engine = HypothesisEngine(
+            base_dir=str(BASE_DIR / "data" / "hypothesis"),
+        )
+        self.log.info(f"HypothesisEngine: {len(self.hypothesis_engine.hypotheses)} hipotesis")
+
+        # Inicializar Explanation Engine (motor de explicaciones)
+        self.explanation_engine = ExplanationEngine(
+            base_dir=str(BASE_DIR / "data" / "explanations"),
+        )
+        self.log.info(f"ExplanationEngine: {len(self.explanation_engine.explanations)} explicaciones")
+
+        # Inicializar Dialogue Strategist (estrategia de diálogo)
+        self.dialogue_strategist = DialogueStrategist(
+            base_dir=str(BASE_DIR / "data" / "dialogue"),
+        )
+        self.log.info(f"DialogueStrategist: estrategia={self.dialogue_strategist.current_strategy}")
 
         # Configurar evolucion autonoma (conecta web + curiosity + evolution)
         self._setup_autonomous_evolution()
@@ -792,6 +813,21 @@ class Genesis:
         style_directives = self.adaptive_iface.get_context_for_prompt(max_chars=200)
         if style_directives:
             system_prompt += f"\n\n{style_directives}"
+
+        # Hypothesis Engine: contexto de hipótesis activas
+        hyp_context = self.hypothesis_engine.get_context_for_prompt(max_chars=200)
+        if hyp_context:
+            system_prompt += f"\n\n{hyp_context}"
+
+        # Explanation Engine: detectar necesidad de explicación
+        exp_context = self.explanation_engine.get_context_for_prompt(user_input, max_chars=200)
+        if exp_context:
+            system_prompt += f"\n\n{exp_context}"
+
+        # Dialogue Strategist: directiva de estrategia
+        dial_context = self.dialogue_strategist.get_context_for_prompt(user_input, max_chars=200)
+        if dial_context:
+            system_prompt += f"\n\n{dial_context}"
 
         # Fase 0: Planificacion de tareas complejas
         if ((intent == "code" or self._is_coding_request(user_input))
@@ -1238,6 +1274,23 @@ class Genesis:
             self.anomaly_detector.record("quality_score", eval_result.get("overall", 0.5))
         self.anomaly_detector.check_all()
 
+        # Hypothesis Engine: formular y evaluar hipótesis
+        self.hypothesis_engine.formulate(combined_text, domain=intent)
+        self.hypothesis_engine.evaluate_against(combined_text)
+
+        # Explanation Engine: almacenar explicación si fue una
+        exp_detection = self.explanation_engine.detect_explanation_need(user_input)
+        if exp_detection.get("needs_explanation") and len(response) > 50:
+            self.explanation_engine.store(
+                topic=exp_detection.get("topic", intent),
+                content=response[:500],
+                level=exp_detection.get("level", "simple"),
+                domain=intent,
+            )
+
+        # Dialogue Strategist: registrar interacción
+        self.dialogue_strategist.record_interaction(response_length=len(response))
+
         # Auto-detectar proyectos multi-archivo en la respuesta
         if self.project_generator.has_multiple_files(response):
             if self.workspace.is_set():
@@ -1601,6 +1654,9 @@ class Genesis:
         self.dashboard.register("pattern_predictor", lambda: self.pattern_predictor.get_stats(), "monitoring")
         self.dashboard.register("anomaly_detector", lambda: self.anomaly_detector.get_stats(), "monitoring")
         self.dashboard.register("adaptive_iface", lambda: self.adaptive_iface.get_stats(), "core")
+        self.dashboard.register("hypothesis_engine", lambda: self.hypothesis_engine.get_stats(), "core")
+        self.dashboard.register("explanation_engine", lambda: self.explanation_engine.get_stats(), "core")
+        self.dashboard.register("dialogue_strategist", lambda: self.dialogue_strategist.get_stats(), "core")
 
     def _save_session(self):
         """Guarda el estado completo de la sesion para restaurar despues."""
@@ -1795,6 +1851,12 @@ class Genesis:
             return self.anomaly_detector.generate_report()
         elif cmd == "/adaptive":
             return self.adaptive_iface.generate_report()
+        elif cmd == "/hypothesis":
+            return self.hypothesis_engine.generate_report()
+        elif cmd == "/explanations":
+            return self.explanation_engine.generate_report()
+        elif cmd == "/dialogue":
+            return self.dialogue_strategist.generate_report()
         elif cmd == "/memory semantic":
             return self.semantic_memory.generate_report()
         elif cmd == "/memory":
@@ -2465,6 +2527,9 @@ class Genesis:
             self.pattern_predictor.save()
             self.anomaly_detector.save()
             self.adaptive_iface.save()
+            self.hypothesis_engine.save()
+            self.explanation_engine.save()
+            self.dialogue_strategist.save()
             self.heartbeat.stop()
             self.running = False
             return "Cerrando Genesis..."
@@ -2665,6 +2730,15 @@ class Genesis:
             f"",
             f"ADAPTIVE INTERFACE:",
             self.adaptive_iface.status(),
+            f"",
+            f"HYPOTHESIS ENGINE:",
+            self.hypothesis_engine.status(),
+            f"",
+            f"EXPLANATION ENGINE:",
+            self.explanation_engine.status(),
+            f"",
+            f"DIALOGUE STRATEGIST:",
+            self.dialogue_strategist.status(),
             f"",
             f"EVOLUCION AUTONOMA:",
             f"  Estado: {'ACTIVA' if self.autonomous.active else 'inactiva'}",
@@ -3477,6 +3551,15 @@ class Genesis:
   ADAPTIVE INTERFACE:
   /adaptive          — Ver preferencias aprendidas y directivas de estilo
 
+  HYPOTHESIS ENGINE:
+  /hypothesis        — Ver hipotesis activas, confirmadas y refutadas
+
+  EXPLANATION ENGINE:
+  /explanations      — Ver banco de explicaciones, calidad y uso
+
+  DIALOGUE STRATEGIST:
+  /dialogue          — Ver estrategias de dialogo y efectividad
+
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
   /exit          — Salir de Genesis (guarda sesion automaticamente)
@@ -3651,6 +3734,15 @@ def main():
     adapt_obs = sum(p.observations for p in genesis.adaptive_iface.preferences.values())
     if adapt_obs > 0:
         print(f"  Adaptive Interface: {adapt_obs} observaciones, {genesis.adaptive_iface.total_adaptations} adaptaciones")
+    n_hyps = len(genesis.hypothesis_engine.hypotheses)
+    if n_hyps > 0:
+        active_h = len([h for h in genesis.hypothesis_engine.hypotheses.values() if h.status == "active"])
+        print(f"  Hypothesis Engine: {n_hyps} hipotesis ({active_h} activas)")
+    n_exps = len(genesis.explanation_engine.explanations)
+    if n_exps > 0:
+        print(f"  Explanation Engine: {n_exps} explicaciones almacenadas")
+    if genesis.dialogue_strategist.tracker.total_interactions > 0:
+        print(f"  Dialogue Strategist: {genesis.dialogue_strategist.current_strategy} ({genesis.dialogue_strategist.tracker.total_interactions} interacciones)")
 
     # Mostrar evolucion autonoma
     n_auto_actions = len(genesis.autonomous.actions)
