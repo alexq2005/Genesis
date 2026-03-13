@@ -18,10 +18,10 @@ Sin APIs externas, sin censura, con capacidad de auto-modificación.
 ## Arquitectura
 ```
 GENESIS/
-├── genesis.py              # Clase principal Genesis (~3,700+ líneas)
+├── genesis.py              # Clase principal Genesis (~4,100+ líneas)
 ├── config.py               # Configuración central
 ├── web_ui.py               # Interfaz web Flask + SSE
-├── core/                   # 49 módulos del sistema
+├── core/                   # 52 módulos del sistema
 │   ├── brain.py            # Interfaz con LLM (multi-proveedor)
 │   ├── local_engine.py     # Motor ctransformers + CUDA
 │   ├── memory.py           # Memoria corto/largo plazo + TF-IDF
@@ -459,11 +459,36 @@ GENESIS/
 - **246 tests pasando (suite v2.8)**
 - **Total: 3486 tests, 19 suites, 58 archivos, ~50,000+ líneas**
 
-### v2.9.0 — (Pendiente)
+### v2.9.0 — Meta-Cognitive Architecture (2026-03-12)
+**Módulos: CognitiveMonitor, AbstractionEngine, LearningOptimizer**
+- CognitiveMonitor: monitoreo de carga cognitiva del sistema
+  - CognitiveMetric: deque maxlen=100, umbrales warning/critical configurables
+  - CognitiveLoad: snapshot ponderado (context 0.35, latency 0.25, memory 0.2, modules 0.2)
+  - OverloadDetector: detecta 4 áreas de sobrecarga con sugerencias específicas
+  - Niveles: low, moderate, high, critical con auto-clamp [0.0, 1.0]
+  - get_context_for_prompt() solo inyecta si carga es high o critical
+- AbstractionEngine: extracción de patrones de interacción
+  - AbstractPattern: confianza asintótica n/(n+3), strength = conf*0.7 + app_factor*0.3
+  - PatternMatcher: 5 patrones (debug_cycle, learning_sequence, implementation_flow, refactor, exploration_spiral)
+  - Containment similarity: |A∩B|/min(|A|,|B|) para detectar repeticiones
+  - Auto-detección de patrones repetitivos cuando similitud > 0.5 en 2+ inputs previos
+  - Evicción por strength cuando excede max_patterns
+- LearningOptimizer: optimización de aprendizaje con knowledge gaps
+  - LearningRate: decaimiento exponencial (0.95^successes), min 5%, boost 1.2× en failures
+  - KnowledgeGap: brechas con severity creciente por ocurrencias, resolución automática
+  - LearningStrategy: 5 estrategias (spaced_repetition, active_recall, interleaving, elaboration, concrete_examples)
+  - Selección automática por mastery: novato→ejemplos, bajo→elaboración, medio→recall, alto→intercalación
+  - Mastery = success_ratio × experience_factor, efficiency = mastery/log(interactions+2)
+- Integración completa 10/10 puntos × 3 módulos
+- Comandos: /cognitive, /abstraction, /learning
+- **298 tests pasando (suite v2.9)**
+- **Total: 3784 tests, 20 suites, 61 archivos, ~52,000+ líneas**
+
+### v3.0.0 — (Pendiente)
 Candidatos:
-- [ ] CognitiveMonitor: monitoreo de carga cognitiva y rendimiento
-- [ ] AbstractionEngine: extracción de patrones abstractos
-- [ ] LearningOptimizer: optimización de estrategias de aprendizaje
+- [ ] UnifiedMind: consciencia unificada cross-módulo
+- [ ] DreamEngine: procesamiento offline de experiencias
+- [ ] SelfNarrative: narrativa autobiográfica continua
 
 ---
 
