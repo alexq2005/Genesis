@@ -18,10 +18,10 @@ Sin APIs externas, sin censura, con capacidad de auto-modificación.
 ## Arquitectura
 ```
 GENESIS/
-├── genesis.py              # Clase principal Genesis (~4,100+ líneas)
+├── genesis.py              # Clase principal Genesis (~4,300+ líneas)
 ├── config.py               # Configuración central
 ├── web_ui.py               # Interfaz web Flask + SSE
-├── core/                   # 52 módulos del sistema
+├── core/                   # 58 módulos del sistema
 │   ├── brain.py            # Interfaz con LLM (multi-proveedor)
 │   ├── local_engine.py     # Motor ctransformers + CUDA
 │   ├── memory.py           # Memoria corto/largo plazo + TF-IDF
@@ -484,11 +484,30 @@ GENESIS/
 - **298 tests pasando (suite v2.9)**
 - **Total: 3784 tests, 20 suites, 61 archivos, ~52,000+ líneas**
 
-### v3.0.0 — (Pendiente)
-Candidatos:
-- [ ] UnifiedMind: consciencia unificada cross-módulo
-- [ ] DreamEngine: procesamiento offline de experiencias
-- [ ] SelfNarrative: narrativa autobiográfica continua
+### v3.0.0 — Unified Consciousness (2026-03-12)
+**Módulos: UnifiedMind, DreamEngine, SelfNarrative**
+- UnifiedMind: estado de consciencia unificado cross-módulo
+  - ConsciousnessState: 5 dimensiones (mood, energy, focus, curiosity, confidence)
+  - MoodComputer: procesa señales positivas/negativas con decay hacia neutro
+  - FocusTracker: rastrea consistencia de dominio, dominant_domain por frecuencia
+  - 5 niveles de estado: critical, low, neutral, good, optimal
+  - awareness_score = promedio de 5 dimensiones, peak tracking
+- DreamEngine: procesamiento offline de experiencias (consolidación REM)
+  - DreamFragment: fragmento con emotional_weight, strength con consolidate/decay
+  - ConsolidationStrategy: 4 estrategias (emotional, frequency, connection, recency)
+  - DreamProcessor: ciclos de consolidación con boost a fuertes y decay a débiles
+  - Conexiones por dominio entre fragmentos, evicción de fragmentos débiles
+  - dream() ejecuta un ciclo completo: pending → fragments → consolidation → eviction
+- SelfNarrative: narrativa autobiográfica continua
+  - NarrativeEntry: 4 tipos (observation, milestone, reflection, learning)
+  - MilestoneDetector: thresholds progresivos, no repite hitos alcanzados
+  - IdentityTracker: rasgos emergentes (curioso, técnico, creativo, analítico, colaborativo, persistente)
+  - Evicción preserva milestones, descarta observations antiguas
+  - get_narrative_summary(): resumen en primera persona de la historia
+- Integración completa 10/10 puntos × 3 módulos
+- Comandos: /mind, /dream, /narrative
+- **239 tests pasando (suite v3.0)**
+- **Total: 4023 tests, 21 suites, 64 archivos, ~55,000+ líneas**
 
 ---
 
