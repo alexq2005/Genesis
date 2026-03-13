@@ -100,6 +100,9 @@ from core.adaptive_interface import AdaptiveInterface
 from core.hypothesis_engine import HypothesisEngine
 from core.explanation_engine import ExplanationEngine
 from core.dialogue_strategist import DialogueStrategist
+from core.cognitive_monitor import CognitiveMonitor
+from core.abstraction_engine import AbstractionEngine
+from core.learning_optimizer import LearningOptimizer
 
 
 class Genesis:
@@ -447,6 +450,24 @@ class Genesis:
             base_dir=str(BASE_DIR / "data" / "dialogue"),
         )
         self.log.info(f"DialogueStrategist: estrategia={self.dialogue_strategist.current_strategy}")
+
+        # Inicializar Cognitive Monitor (monitoreo de carga cognitiva)
+        self.cognitive_monitor = CognitiveMonitor(
+            base_dir=str(BASE_DIR / "data" / "cognitive"),
+        )
+        self.log.info(f"CognitiveMonitor: carga={self.cognitive_monitor.get_current_load().overall_load:.0%}")
+
+        # Inicializar Abstraction Engine (extracción de patrones)
+        self.abstraction_engine = AbstractionEngine(
+            base_dir=str(BASE_DIR / "data" / "abstraction"),
+        )
+        self.log.info(f"AbstractionEngine: {len(self.abstraction_engine.patterns)} patrones")
+
+        # Inicializar Learning Optimizer (optimización de aprendizaje)
+        self.learning_optimizer = LearningOptimizer(
+            base_dir=str(BASE_DIR / "data" / "learning_opt"),
+        )
+        self.log.info(f"LearningOptimizer: {len(self.learning_optimizer.learning_rates)} dominios")
 
         # Configurar evolucion autonoma (conecta web + curiosity + evolution)
         self._setup_autonomous_evolution()
@@ -828,6 +849,21 @@ class Genesis:
         dial_context = self.dialogue_strategist.get_context_for_prompt(user_input, max_chars=200)
         if dial_context:
             system_prompt += f"\n\n{dial_context}"
+
+        # Cognitive Monitor: contexto de carga cognitiva
+        cog_context = self.cognitive_monitor.get_context_for_prompt(max_chars=200)
+        if cog_context:
+            system_prompt += f"\n\n{cog_context}"
+
+        # Abstraction Engine: contexto de patrones abstractos
+        abs_context = self.abstraction_engine.get_context_for_prompt(max_chars=200)
+        if abs_context:
+            system_prompt += f"\n\n{abs_context}"
+
+        # Learning Optimizer: contexto de aprendizaje
+        learn_context = self.learning_optimizer.get_context_for_prompt(domain=intent, max_chars=200)
+        if learn_context:
+            system_prompt += f"\n\n{learn_context}"
 
         # Fase 0: Planificacion de tareas complejas
         if ((intent == "code" or self._is_coding_request(user_input))
@@ -1291,6 +1327,22 @@ class Genesis:
         # Dialogue Strategist: registrar interacción
         self.dialogue_strategist.record_interaction(response_length=len(response))
 
+        # Cognitive Monitor: registrar snapshot de carga
+        context_usage = len(system_prompt) / 4000.0 if 'system_prompt' in dir() else 0.3
+        module_count = 40  # Número aproximado de módulos activos
+        self.cognitive_monitor.record_snapshot(
+            context_util=min(1.0, context_usage),
+            latency=min(1.0, self._last_response_time / 60.0),
+            memory_pressure=min(1.0, len(self.memory.short_term.messages) / float(SHORT_TERM_LIMIT)),
+            module_load=min(1.0, module_count / 50.0),
+        )
+
+        # Abstraction Engine: observar interacción para patrones
+        self.abstraction_engine.observe(combined_text, domain=intent)
+
+        # Learning Optimizer: observar interacción
+        self.learning_optimizer.observe_interaction(user_input, domain=intent)
+
         # Auto-detectar proyectos multi-archivo en la respuesta
         if self.project_generator.has_multiple_files(response):
             if self.workspace.is_set():
@@ -1657,6 +1709,9 @@ class Genesis:
         self.dashboard.register("hypothesis_engine", lambda: self.hypothesis_engine.get_stats(), "core")
         self.dashboard.register("explanation_engine", lambda: self.explanation_engine.get_stats(), "core")
         self.dashboard.register("dialogue_strategist", lambda: self.dialogue_strategist.get_stats(), "core")
+        self.dashboard.register("cognitive_monitor", lambda: self.cognitive_monitor.get_stats(), "monitoring")
+        self.dashboard.register("abstraction_engine", lambda: self.abstraction_engine.get_stats(), "monitoring")
+        self.dashboard.register("learning_optimizer", lambda: self.learning_optimizer.get_stats(), "core")
 
     def _save_session(self):
         """Guarda el estado completo de la sesion para restaurar despues."""
@@ -1857,6 +1912,12 @@ class Genesis:
             return self.explanation_engine.generate_report()
         elif cmd == "/dialogue":
             return self.dialogue_strategist.generate_report()
+        elif cmd == "/cognitive":
+            return self.cognitive_monitor.generate_report()
+        elif cmd == "/abstraction":
+            return self.abstraction_engine.generate_report()
+        elif cmd == "/learning":
+            return self.learning_optimizer.generate_report()
         elif cmd == "/memory semantic":
             return self.semantic_memory.generate_report()
         elif cmd == "/memory":
@@ -2530,6 +2591,9 @@ class Genesis:
             self.hypothesis_engine.save()
             self.explanation_engine.save()
             self.dialogue_strategist.save()
+            self.cognitive_monitor.save()
+            self.abstraction_engine.save()
+            self.learning_optimizer.save()
             self.heartbeat.stop()
             self.running = False
             return "Cerrando Genesis..."
@@ -2739,6 +2803,15 @@ class Genesis:
             f"",
             f"DIALOGUE STRATEGIST:",
             self.dialogue_strategist.status(),
+            f"",
+            f"COGNITIVE MONITOR:",
+            self.cognitive_monitor.status(),
+            f"",
+            f"ABSTRACTION ENGINE:",
+            self.abstraction_engine.status(),
+            f"",
+            f"LEARNING OPTIMIZER:",
+            self.learning_optimizer.status(),
             f"",
             f"EVOLUCION AUTONOMA:",
             f"  Estado: {'ACTIVA' if self.autonomous.active else 'inactiva'}",
@@ -3560,6 +3633,15 @@ class Genesis:
   DIALOGUE STRATEGIST:
   /dialogue          — Ver estrategias de dialogo y efectividad
 
+  COGNITIVE MONITOR:
+  /cognitive         — Ver carga cognitiva, metricas y sugerencias
+
+  ABSTRACTION ENGINE:
+  /abstraction       — Ver patrones abstractos, instancias y confianza
+
+  LEARNING OPTIMIZER:
+  /learning          — Ver dominios, mastery, gaps y estrategias
+
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
   /exit          — Salir de Genesis (guarda sesion automaticamente)
@@ -3743,6 +3825,17 @@ def main():
         print(f"  Explanation Engine: {n_exps} explicaciones almacenadas")
     if genesis.dialogue_strategist.tracker.total_interactions > 0:
         print(f"  Dialogue Strategist: {genesis.dialogue_strategist.current_strategy} ({genesis.dialogue_strategist.tracker.total_interactions} interacciones)")
+    cog_load = genesis.cognitive_monitor.get_current_load()
+    if genesis.cognitive_monitor.total_snapshots > 0:
+        print(f"  Cognitive Monitor: carga={cog_load.overall_load:.0%} ({cog_load.load_level}), {genesis.cognitive_monitor.total_snapshots} snapshots")
+    n_abs_patterns = len(genesis.abstraction_engine.patterns)
+    if n_abs_patterns > 0:
+        active_abs = len(genesis.abstraction_engine.get_active_patterns())
+        print(f"  Abstraction Engine: {n_abs_patterns} patrones ({active_abs} activos)")
+    n_lr_domains = len(genesis.learning_optimizer.learning_rates)
+    if n_lr_domains > 0:
+        active_gaps = len(genesis.learning_optimizer.get_active_gaps())
+        print(f"  Learning Optimizer: {n_lr_domains} dominios, {active_gaps} gaps activos")
 
     # Mostrar evolucion autonoma
     n_auto_actions = len(genesis.autonomous.actions)
