@@ -103,6 +103,9 @@ from core.dialogue_strategist import DialogueStrategist
 from core.cognitive_monitor import CognitiveMonitor
 from core.abstraction_engine import AbstractionEngine
 from core.learning_optimizer import LearningOptimizer
+from core.unified_mind import UnifiedMind
+from core.dream_engine import DreamEngine
+from core.self_narrative import SelfNarrative
 
 
 class Genesis:
@@ -468,6 +471,24 @@ class Genesis:
             base_dir=str(BASE_DIR / "data" / "learning_opt"),
         )
         self.log.info(f"LearningOptimizer: {len(self.learning_optimizer.learning_rates)} dominios")
+
+        # Inicializar Unified Mind (consciencia unificada)
+        self.unified_mind = UnifiedMind(
+            base_dir=str(BASE_DIR / "data" / "unified_mind"),
+        )
+        self.log.info(f"UnifiedMind: estado={self.unified_mind.current_state.overall_state}")
+
+        # Inicializar Dream Engine (procesamiento de experiencias)
+        self.dream_engine = DreamEngine(
+            base_dir=str(BASE_DIR / "data" / "dream"),
+        )
+        self.log.info(f"DreamEngine: {len(self.dream_engine.fragments)} fragmentos, {self.dream_engine.total_dreams} sueños")
+
+        # Inicializar Self-Narrative (narrativa autobiográfica)
+        self.self_narrative = SelfNarrative(
+            base_dir=str(BASE_DIR / "data" / "narrative"),
+        )
+        self.log.info(f"SelfNarrative: {self.self_narrative.total_entries} entradas, {self.self_narrative.total_milestones} hitos")
 
         # Configurar evolucion autonoma (conecta web + curiosity + evolution)
         self._setup_autonomous_evolution()
@@ -864,6 +885,21 @@ class Genesis:
         learn_context = self.learning_optimizer.get_context_for_prompt(domain=intent, max_chars=200)
         if learn_context:
             system_prompt += f"\n\n{learn_context}"
+
+        # Unified Mind: estado de consciencia
+        mind_context = self.unified_mind.get_context_for_prompt(max_chars=200)
+        if mind_context:
+            system_prompt += f"\n\n{mind_context}"
+
+        # Dream Engine: memorias consolidadas
+        dream_context = self.dream_engine.get_context_for_prompt(max_chars=200)
+        if dream_context:
+            system_prompt += f"\n\n{dream_context}"
+
+        # Self-Narrative: identidad
+        narrative_context = self.self_narrative.get_context_for_prompt(max_chars=200)
+        if narrative_context:
+            system_prompt += f"\n\n{narrative_context}"
 
         # Fase 0: Planificacion de tareas complejas
         if ((intent == "code" or self._is_coding_request(user_input))
@@ -1343,6 +1379,25 @@ class Genesis:
         # Learning Optimizer: observar interacción
         self.learning_optimizer.observe_interaction(user_input, domain=intent)
 
+        # Unified Mind: observar interacción completa
+        self.unified_mind.observe(
+            user_input, response=response, domain=intent,
+            response_time=self._last_response_time,
+            quality_score=eval_result.get("overall", 0.5) if eval_result else 0.5,
+        )
+
+        # Dream Engine: registrar experiencia
+        emotional_w = 0.5
+        if eval_result:
+            emotional_w = eval_result.get("overall", 0.5)
+        self.dream_engine.record_experience(
+            content=combined_text[:300], domain=intent,
+            emotional_weight=emotional_w,
+        )
+
+        # Self-Narrative: observar identidad y registrar
+        self.self_narrative.observe_identity(user_input, domain=intent)
+
         # Auto-detectar proyectos multi-archivo en la respuesta
         if self.project_generator.has_multiple_files(response):
             if self.workspace.is_set():
@@ -1712,6 +1767,9 @@ class Genesis:
         self.dashboard.register("cognitive_monitor", lambda: self.cognitive_monitor.get_stats(), "monitoring")
         self.dashboard.register("abstraction_engine", lambda: self.abstraction_engine.get_stats(), "monitoring")
         self.dashboard.register("learning_optimizer", lambda: self.learning_optimizer.get_stats(), "core")
+        self.dashboard.register("unified_mind", lambda: self.unified_mind.get_stats(), "core")
+        self.dashboard.register("dream_engine", lambda: self.dream_engine.get_stats(), "memory")
+        self.dashboard.register("self_narrative", lambda: self.self_narrative.get_stats(), "core")
 
     def _save_session(self):
         """Guarda el estado completo de la sesion para restaurar despues."""
@@ -1918,6 +1976,12 @@ class Genesis:
             return self.abstraction_engine.generate_report()
         elif cmd == "/learning":
             return self.learning_optimizer.generate_report()
+        elif cmd == "/mind":
+            return self.unified_mind.generate_report()
+        elif cmd == "/dream":
+            return self.dream_engine.generate_report()
+        elif cmd == "/narrative":
+            return self.self_narrative.generate_report()
         elif cmd == "/memory semantic":
             return self.semantic_memory.generate_report()
         elif cmd == "/memory":
@@ -2594,6 +2658,9 @@ class Genesis:
             self.cognitive_monitor.save()
             self.abstraction_engine.save()
             self.learning_optimizer.save()
+            self.unified_mind.save()
+            self.dream_engine.save()
+            self.self_narrative.save()
             self.heartbeat.stop()
             self.running = False
             return "Cerrando Genesis..."
@@ -2812,6 +2879,15 @@ class Genesis:
             f"",
             f"LEARNING OPTIMIZER:",
             self.learning_optimizer.status(),
+            f"",
+            f"UNIFIED MIND:",
+            self.unified_mind.status(),
+            f"",
+            f"DREAM ENGINE:",
+            self.dream_engine.status(),
+            f"",
+            f"SELF-NARRATIVE:",
+            self.self_narrative.status(),
             f"",
             f"EVOLUCION AUTONOMA:",
             f"  Estado: {'ACTIVA' if self.autonomous.active else 'inactiva'}",
@@ -3642,6 +3718,15 @@ class Genesis:
   LEARNING OPTIMIZER:
   /learning          — Ver dominios, mastery, gaps y estrategias
 
+  UNIFIED MIND:
+  /mind              — Ver estado de consciencia, mood, energy, focus
+
+  DREAM ENGINE:
+  /dream             — Ver fragmentos consolidados, memorias fuertes
+
+  SELF-NARRATIVE:
+  /narrative         — Ver diario, hitos, identidad y rasgos
+
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
   /exit          — Salir de Genesis (guarda sesion automaticamente)
@@ -3836,6 +3921,14 @@ def main():
     if n_lr_domains > 0:
         active_gaps = len(genesis.learning_optimizer.get_active_gaps())
         print(f"  Learning Optimizer: {n_lr_domains} dominios, {active_gaps} gaps activos")
+    mind_state = genesis.unified_mind.current_state
+    if genesis.unified_mind.total_observations > 0:
+        print(f"  Unified Mind: {mind_state.overall_state} (awareness={mind_state.awareness_score:.0%})")
+    if genesis.dream_engine.total_dreams > 0 or len(genesis.dream_engine.fragments) > 0:
+        print(f"  Dream Engine: {len(genesis.dream_engine.fragments)} fragmentos, {genesis.dream_engine.total_dreams} sueños")
+    if genesis.self_narrative.total_entries > 0:
+        identity = genesis.self_narrative.identity.get_identity_summary()
+        print(f"  Self-Narrative: {genesis.self_narrative.total_entries} entradas, identidad={identity}")
 
     # Mostrar evolucion autonoma
     n_auto_actions = len(genesis.autonomous.actions)
