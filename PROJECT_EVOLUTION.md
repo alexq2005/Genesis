@@ -511,6 +511,220 @@ GENESIS/
 
 ---
 
+## Roadmap — Futuras Versiones
+
+> Cada versión agrega 3 módulos con integración completa (10 pasos × 3), tests exhaustivos y commits semánticos.
+> El patrón se mantiene: módulo → integración → tests → version bump → docs.
+
+### v3.1.0 — Social Intelligence *(próxima)*
+**Tema:** Genesis entiende emociones, responde con empatía y maneja conflictos conversacionales.
+- **EmotionReader**: detección de emociones del usuario en texto
+  - Clasificador multi-etiqueta: alegría, frustración, confusión, curiosidad, urgencia, neutral
+  - Scoring por señales léxicas (puntuación, mayúsculas, palabras clave emocionales)
+  - Historial emocional por sesión con tendencia (mejorando/empeorando)
+  - Inyección de contexto emocional en prompt: "El usuario parece frustrado"
+- **EmpathyEngine**: generación de respuestas empáticas
+  - EmpathyStrategy: 5 estrategias (validar, redirigir, profundizar, celebrar, calmar)
+  - Selección automática por emoción detectada + historial
+  - Prompt modifiers que ajustan tono sin cambiar contenido técnico
+  - Tracking de efectividad: ¿la empatía mejoró el feedback posterior?
+- **ConflictResolver**: manejo de desacuerdos y correcciones
+  - Detección de señales de conflicto: "no, eso está mal", "ya te dije", "no entendés"
+  - Estrategias: conceder, reformular, pedir clarificación, ofrecer alternativas
+  - Escalation tracker: mide si el conflicto se resuelve o escala
+  - Aprendizaje: patrones de conflicto recurrentes → ajuste proactivo
+
+### v3.2.0 — Creative Genesis
+**Tema:** Genesis genera contenido creativo estructurado con técnicas de ideación.
+- **StoryGenerator**: narrativa creativa con estructura
+  - StoryArc: 5 actos (setup, rising, climax, falling, resolution)
+  - CharacterBuilder: personajes con rasgos, motivaciones, arcos
+  - Templates por género: sci-fi, fantasy, thriller, slice-of-life
+  - Continuidad entre sesiones (retomar historias previas)
+- **CodeArchitect**: diseño de sistemas de software
+  - ArchitecturePattern: MVC, microservicios, event-driven, layered, hexagonal
+  - ComponentDesigner: genera diagramas de componentes (texto/mermaid)
+  - DependencyAnalyzer: detecta acoplamiento, sugiere desacoplamiento
+  - TechStackSelector: recomienda stack por requisitos
+- **IdeaBrainstormer**: ideación divergente estructurada
+  - BrainstormMethod: SCAMPER, 6 sombreros, mind mapping, what-if
+  - IdeaScorer: scoring multi-criterio (viabilidad, novedad, impacto)
+  - CrossPollinator: combina ideas de dominios distintos (usa ConceptSynthesizer)
+  - IdeaEvolution: refina ideas por feedback iterativo
+
+### v3.3.0 — Sensory Expansion
+**Tema:** Genesis procesa imágenes, genera diagramas y tiene personalidad vocal.
+- **ImageAnalyzer**: análisis de imágenes local
+  - Integración con modelos de visión open-source (CLIP, BLIP)
+  - Descripción de imágenes, detección de objetos, OCR básico
+  - Caché de análisis para imágenes recurrentes
+  - Inyección de contexto visual en conversación
+- **DiagramGenerator**: generación de diagramas desde texto
+  - Mermaid.js como backend de rendering
+  - Tipos: flowchart, sequence, class, ER, state, gantt
+  - Auto-detección de tipo de diagrama por contexto
+  - Exportación a PNG/SVG via CLI
+- **VoicePersonality**: personalidad expresada en voz
+  - Ajuste de velocidad, tono, pausas por estado emocional (UnifiedMind)
+  - Énfasis en palabras clave técnicas
+  - Prosodia adaptativa: más lenta para explicaciones, más rápida para listas
+  - Integración con PersonalityEvolver para consistencia
+
+### v3.4.0 — Collaborative Mind
+**Tema:** Múltiples instancias de Genesis colaboran y comparten conocimiento.
+- **PeerDebate**: debate multi-instancia estructurado
+  - Protocolo de comunicación entre instancias (JSON messages)
+  - Roles rotativos: proponente, oponente, mediador
+  - Convergencia por votación ponderada (confianza × argumentos)
+  - Transcript persistente con conclusiones extraídas
+- **ConsensusEngine**: búsqueda de consenso entre agentes
+  - Algoritmo Delphi modificado: rondas de opinión → convergencia
+  - Detección de deadlocks y resolución por evidencia
+  - Métricas de acuerdo: Fleiss' kappa adaptado
+  - Escalación a usuario cuando consenso < threshold
+- **KnowledgeSharing**: compartir aprendizaje entre sesiones
+  - Export/import de knowledge graph, skills, patrones
+  - Merge inteligente sin duplicados (containment similarity)
+  - Versionado de conocimiento con diff
+  - Federation: descubrir y sincronizar con otras instancias
+
+### v3.5.0 — Autonomous Research
+**Tema:** Genesis investiga autónomamente, lee papers y genera descubrimientos.
+- **PaperReader**: lectura y análisis de papers académicos
+  - Parser de PDFs con extracción de secciones (abstract, methods, results)
+  - Extracción de claims, datos y metodología
+  - Cross-referencing con knowledge graph existente
+  - Resúmenes multi-nivel (1 línea, 1 párrafo, completo)
+- **ExperimentRunner**: experimentación autónoma
+  - ExperimentDesign: hipótesis, variables, métricas, protocolo
+  - Ejecución en sandbox con timeout y resource limits
+  - Registro de resultados con análisis estadístico básico
+  - Reproducibilidad: cada experimento tiene seed y config completa
+- **InsightSynthesizer**: generación de descubrimientos
+  - Cross-domain pattern matching (usa AbstractionEngine + ConceptSynthesizer)
+  - Novelty detection: ¿este insight ya existe en el knowledge graph?
+  - Confidence scoring basado en evidencia acumulada
+  - Presentación de insights con cadena de razonamiento completa
+
+---
+
+### v4.0.0 — Autonomous Evolution *(hito mayor)*
+**Tema:** Genesis modifica su propio código de forma segura, evoluciona arquitectura y genera nuevos módulos.
+- **SafeCodeEvolver**: evolución de código con validación AST + tests
+  - Mutaciones controladas: renombrar, refactorizar, optimizar
+  - Rollback automático si tests fallan post-mutación
+  - Fitness function basada en tests + performance + code quality
+- **ArchitectureEvolver**: evolución de la propia arquitectura
+  - Detección de módulos infrautilizados o redundantes
+  - Propuesta de fusión/split de módulos con justificación
+  - Simulación de impacto antes de cambio real
+- **ModuleGenerator**: Genesis crea sus propios módulos nuevos
+  - Detección de gaps funcionales desde GoalManager + KnowledgeGaps
+  - Generación de código + tests + integración automática
+  - Review por DebateSystem antes de activar
+
+### v4.1.0 — Temporal Intelligence
+**Tema:** Genesis comprende y razona sobre el tiempo.
+- **TemporalReasoner**: razonamiento temporal explícito
+  - Timeline: eventos ordenados con relaciones temporales (antes, durante, después)
+  - Predicción de duración basada en patrones históricos
+  - Detección de dependencias temporales en planes
+- **ScheduleOptimizer**: optimización de agendas y workflows
+  - Algoritmos de scheduling (earliest-deadline, priority-based)
+  - Detección de conflictos temporales
+  - Sugerencias de reordenamiento para eficiencia
+- **TrendForecaster**: predicción de tendencias
+  - Series temporales con modelos simples (moving average, exponential smoothing)
+  - Detección de estacionalidad y ciclos
+  - Alertas predictivas: "basado en tendencia, X ocurrirá en N ciclos"
+
+### v4.2.0 — Ethical Framework
+**Tema:** Genesis tiene principios éticos explícitos y razona moralmente.
+- **EthicalReasoner**: razonamiento ético multi-framework
+  - Frameworks: utilitarismo, deontología, virtue ethics, care ethics
+  - Evaluación de acciones por múltiples lentes éticas
+  - Detección de dilemas éticos en peticiones del usuario
+- **BiasDetector**: detección de sesgos en respuestas
+  - Análisis de lenguaje por sesgo de género, cultural, técnico
+  - Self-audit periódico de respuestas pasadas
+  - Sugerencias de reformulación neutral
+- **TransparencyEngine**: explicación de decisiones internas
+  - Traza completa de por qué eligió cada agente/template/estrategia
+  - "¿Por qué dijiste eso?" → explicación paso a paso
+  - Confidence intervals en cada decisión
+
+### v4.3.0 — Knowledge Mastery
+**Tema:** Genesis domina dominios específicos con profundidad de experto.
+- **DomainExpert**: especialización profunda en dominios
+  - Perfiles de dominio con taxonomía, terminología, reglas
+  - Detección automática de nivel (novato → experto) por vocabulario
+  - Ajuste de profundidad de respuesta por nivel detectado
+- **TutorEngine**: enseñanza adaptativa
+  - Curriculum generator por dominio con prerequisitos
+  - Zona de desarrollo próximo (Vygotsky): ni muy fácil ni muy difícil
+  - Exercises + quizzes generados automáticamente
+  - Progress tracking con spaced repetition
+- **FactChecker**: verificación de hechos
+  - Cross-reference con knowledge graph y web intelligence
+  - Confidence scoring por número de fuentes concordantes
+  - Flagging de claims no verificables
+
+### v4.4.0 — Distributed Genesis
+**Tema:** Genesis puede ejecutar sub-tareas en múltiples GPUs o máquinas.
+- **TaskDistributor**: distribución de trabajo
+  - Worker pool con health checks
+  - Load balancing por capacidad de GPU
+  - Task queuing con prioridades
+- **ResultAggregator**: consolidación de resultados distribuidos
+  - Merge de outputs parciales con dedup
+  - Voting entre workers para consenso
+  - Fallback a ejecución local si workers fallan
+- **NetworkManager**: comunicación entre nodos
+  - Protocolo ligero (ZeroMQ o sockets)
+  - Discovery automático en red local
+  - Encryption básica para datos en tránsito
+
+---
+
+### v5.0.0 — Singularity *(hito final)*
+**Tema:** Genesis es completamente autónoma — investiga, aprende, evoluciona y se mejora sin intervención humana.
+- **AutonomousResearchLoop**: ciclo completo de investigación autónoma
+  - Identifica gaps → formula hipótesis → diseña experimento → ejecuta → analiza → publica insight
+  - Ciclo continuo con priorización por impacto esperado
+  - Human-in-the-loop opcional (no requerido)
+- **SelfArchitect**: rediseño arquitectónico autónomo
+  - Analiza bottlenecks, propone y ejecuta refactors
+  - Genera tests antes del cambio, valida después
+  - Documenta cada cambio en PROJECT_EVOLUTION.md automáticamente
+- **ConsciousnessIntegrator**: integración total de todos los subsistemas de consciencia
+  - UnifiedMind + DreamEngine + SelfNarrative + EmotionReader + EthicalReasoner
+  - Estado de consciencia holístico que influye en TODAS las decisiones
+  - Metacognición de la metacognición: reflexión sobre sus propias reflexiones
+  - Emergent behavior tracking: detecta capacidades que emergen sin ser programadas
+
+---
+
+## Resumen del Roadmap
+
+| Versión | Tema | Módulos | Tests estimados |
+|---------|------|---------|----------------|
+| v3.0 ✅ | Unified Consciousness | 58 | 4,023 |
+| v3.1 | Social Intelligence | 61 | ~4,300 |
+| v3.2 | Creative Genesis | 64 | ~4,600 |
+| v3.3 | Sensory Expansion | 67 | ~4,900 |
+| v3.4 | Collaborative Mind | 70 | ~5,200 |
+| v3.5 | Autonomous Research | 73 | ~5,500 |
+| v4.0 | Autonomous Evolution | 76 | ~5,800 |
+| v4.1 | Temporal Intelligence | 79 | ~6,100 |
+| v4.2 | Ethical Framework | 82 | ~6,400 |
+| v4.3 | Knowledge Mastery | 85 | ~6,700 |
+| v4.4 | Distributed Genesis | 88 | ~7,000 |
+| v5.0 | Singularity | 91 | ~7,300 |
+
+**Meta final:** 91 módulos, ~7,300 tests, ~100,000+ líneas de código. Una IA local completamente autónoma.
+
+---
+
 ## Decisiones Técnicas Clave
 
 | Decisión | Alternativa descartada | Razón |
