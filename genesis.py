@@ -115,6 +115,9 @@ from core.idea_brainstormer import IdeaBrainstormer
 from core.image_analyzer import ImageAnalyzer
 from core.diagram_generator import DiagramGenerator
 from core.voice_personality import VoicePersonality
+from core.peer_debate import PeerDebate as PeerDebateEngine
+from core.consensus_engine import ConsensusEngine
+from core.knowledge_sharing import KnowledgeSharing
 
 
 class Genesis:
@@ -552,6 +555,24 @@ class Genesis:
             base_dir=str(BASE_DIR / "data" / "voice_personality"),
         )
         self.log.info(f"VoicePersonality: {self.voice_personality.total_adaptations} adaptaciones, emocion={self.voice_personality.current_emotion}")
+
+        # Inicializar Peer Debate (debate entre perspectivas)
+        self.peer_debate = PeerDebateEngine(
+            base_dir=str(BASE_DIR / "data" / "peer_debate"),
+        )
+        self.log.info(f"PeerDebate: {self.peer_debate.total_debates} debates, argumentos={self.peer_debate.total_arguments}")
+
+        # Inicializar Consensus Engine (consenso Delphi)
+        self.consensus_engine = ConsensusEngine(
+            base_dir=str(BASE_DIR / "data" / "consensus"),
+        )
+        self.log.info(f"ConsensusEngine: {self.consensus_engine.total_consensuses} consensos, deadlocks={self.consensus_engine.total_deadlocks}")
+
+        # Inicializar Knowledge Sharing (compartir conocimiento)
+        self.knowledge_sharing = KnowledgeSharing(
+            base_dir=str(BASE_DIR / "data" / "knowledge_sharing"),
+        )
+        self.log.info(f"KnowledgeSharing: {self.knowledge_sharing.total_shared} compartidos")
 
         # Configurar evolucion autonoma (conecta web + curiosity + evolution)
         self._setup_autonomous_evolution()
@@ -1019,6 +1040,21 @@ class Genesis:
         )
         if voice_context:
             system_prompt += f"\n\n{voice_context}"
+
+        # Peer Debate: contexto de debates activos
+        peer_debate_ctx = self.peer_debate.get_context_for_prompt(max_chars=200)
+        if peer_debate_ctx:
+            system_prompt += f"\n\n{peer_debate_ctx}"
+
+        # Consensus Engine: contexto de consenso
+        consensus_ctx = self.consensus_engine.get_context_for_prompt(max_chars=200)
+        if consensus_ctx:
+            system_prompt += f"\n\n{consensus_ctx}"
+
+        # Knowledge Sharing: contexto de conocimiento compartido
+        knowledge_ctx = self.knowledge_sharing.get_context_for_prompt(user_input, max_chars=200)
+        if knowledge_ctx:
+            system_prompt += f"\n\n{knowledge_ctx}"
 
         # Fase 0: Planificacion de tareas complejas
         if ((intent == "code" or self._is_coding_request(user_input))
@@ -1908,6 +1944,9 @@ class Genesis:
         self.dashboard.register("image_analyzer", lambda: self.image_analyzer.get_stats(), "sensory")
         self.dashboard.register("diagram_generator", lambda: self.diagram_generator.get_stats(), "creative")
         self.dashboard.register("voice_personality", lambda: self.voice_personality.get_stats(), "sensory")
+        self.dashboard.register("peer_debate", lambda: self.peer_debate.get_stats(), "collaborative")
+        self.dashboard.register("consensus_engine", lambda: self.consensus_engine.get_stats(), "collaborative")
+        self.dashboard.register("knowledge_sharing", lambda: self.knowledge_sharing.get_stats(), "collaborative")
 
     def _save_session(self):
         """Guarda el estado completo de la sesion para restaurar despues."""
@@ -2138,6 +2177,12 @@ class Genesis:
             return self.diagram_generator.generate_report()
         elif cmd == "/voice":
             return self.voice_personality.generate_report()
+        elif cmd == "/peer_debate":
+            return self.peer_debate.generate_report()
+        elif cmd == "/consensus":
+            return self.consensus_engine.generate_report()
+        elif cmd == "/knowledge":
+            return self.knowledge_sharing.generate_report()
         elif cmd == "/memory semantic":
             return self.semantic_memory.generate_report()
         elif cmd == "/memory":
@@ -2826,6 +2871,9 @@ class Genesis:
             self.image_analyzer.save()
             self.diagram_generator.save()
             self.voice_personality.save()
+            self.peer_debate.save()
+            self.consensus_engine.save()
+            self.knowledge_sharing.save()
             self.heartbeat.stop()
             self.running = False
             return "Cerrando Genesis..."
@@ -3080,6 +3128,15 @@ class Genesis:
             f"",
             f"VOICE PERSONALITY:",
             self.voice_personality.status(),
+            f"",
+            f"PEER DEBATE:",
+            self.peer_debate.status(),
+            f"",
+            f"CONSENSUS ENGINE:",
+            self.consensus_engine.status(),
+            f"",
+            f"KNOWLEDGE SHARING:",
+            self.knowledge_sharing.status(),
             f"",
             f"EVOLUCION AUTONOMA:",
             f"  Estado: {'ACTIVA' if self.autonomous.active else 'inactiva'}",
@@ -3946,6 +4003,15 @@ class Genesis:
   VOICE PERSONALITY:
   /voice             — Ver estilo vocal, adaptaciones y directivas
 
+  PEER DEBATE:
+  /peer_debate       — Ver debates entre perspectivas y argumentos
+
+  CONSENSUS ENGINE:
+  /consensus         — Ver rondas de consenso Delphi y resultados
+
+  KNOWLEDGE SHARING:
+  /knowledge         — Ver paquetes de conocimiento compartidos
+
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
   /exit          — Salir de Genesis (guarda sesion automaticamente)
@@ -4169,6 +4235,12 @@ def main():
         print(f"  Diagram Generator: {genesis.diagram_generator.total_diagrams} diagramas")
     if genesis.voice_personality.total_adaptations > 0:
         print(f"  Voice Personality: {genesis.voice_personality.total_adaptations} adaptaciones, emocion={genesis.voice_personality.current_emotion}")
+    if genesis.peer_debate.total_debates > 0:
+        print(f"  Peer Debate: {genesis.peer_debate.total_debates} debates, argumentos={genesis.peer_debate.total_arguments}")
+    if genesis.consensus_engine.total_consensuses > 0:
+        print(f"  Consensus Engine: {genesis.consensus_engine.total_consensuses} consensos")
+    if genesis.knowledge_sharing.total_shared > 0:
+        print(f"  Knowledge Sharing: {genesis.knowledge_sharing.total_shared} compartidos")
 
     # Mostrar evolucion autonoma
     n_auto_actions = len(genesis.autonomous.actions)
