@@ -112,6 +112,9 @@ from core.conflict_resolver import ConflictResolver
 from core.story_generator import StoryGenerator
 from core.code_architect import CodeArchitect
 from core.idea_brainstormer import IdeaBrainstormer
+from core.image_analyzer import ImageAnalyzer
+from core.diagram_generator import DiagramGenerator
+from core.voice_personality import VoicePersonality
 
 
 class Genesis:
@@ -531,6 +534,24 @@ class Genesis:
             base_dir=str(BASE_DIR / "data" / "idea_brainstormer"),
         )
         self.log.info(f"IdeaBrainstormer: {self.idea_brainstormer.total_ideas} ideas, sesiones={self.idea_brainstormer.total_sessions}")
+
+        # Inicializar Image Analyzer (análisis de imágenes)
+        self.image_analyzer = ImageAnalyzer(
+            base_dir=str(BASE_DIR / "data" / "image_analyzer"),
+        )
+        self.log.info(f"ImageAnalyzer: {self.image_analyzer.total_analyzed} analizadas, cache={len(self.image_analyzer.cache.cache)}")
+
+        # Inicializar Diagram Generator (generación de diagramas Mermaid)
+        self.diagram_generator = DiagramGenerator(
+            base_dir=str(BASE_DIR / "data" / "diagram_generator"),
+        )
+        self.log.info(f"DiagramGenerator: {self.diagram_generator.total_diagrams} diagramas generados")
+
+        # Inicializar Voice Personality (personalidad vocal)
+        self.voice_personality = VoicePersonality(
+            base_dir=str(BASE_DIR / "data" / "voice_personality"),
+        )
+        self.log.info(f"VoicePersonality: {self.voice_personality.total_adaptations} adaptaciones, emocion={self.voice_personality.current_emotion}")
 
         # Configurar evolucion autonoma (conecta web + curiosity + evolution)
         self._setup_autonomous_evolution()
@@ -979,6 +1000,25 @@ class Genesis:
         brainstorm_context = self.idea_brainstormer.get_context_for_prompt(user_input, max_chars=300)
         if brainstorm_context:
             system_prompt += f"\n\n{brainstorm_context}"
+
+        # Image Analyzer: contexto de imágenes analizadas
+        image_context = self.image_analyzer.get_context_for_prompt(user_input, max_chars=200)
+        if image_context:
+            system_prompt += f"\n\n{image_context}"
+
+        # Diagram Generator: contexto de diagramas
+        diagram_context = self.diagram_generator.get_context_for_prompt(user_input, max_chars=200)
+        if diagram_context:
+            system_prompt += f"\n\n{diagram_context}"
+
+        # Voice Personality: directivas vocales basadas en emoción detectada
+        _voice_emotion = emotion_data.get("primary", "neutral") if emotion_data else "neutral"
+        voice_context = self.voice_personality.get_context_for_prompt(
+            emotion=_voice_emotion,
+            max_chars=200,
+        )
+        if voice_context:
+            system_prompt += f"\n\n{voice_context}"
 
         # Fase 0: Planificacion de tareas complejas
         if ((intent == "code" or self._is_coding_request(user_input))
@@ -1865,6 +1905,9 @@ class Genesis:
         self.dashboard.register("story_generator", lambda: self.story_generator.get_stats(), "creative")
         self.dashboard.register("code_architect", lambda: self.code_architect.get_stats(), "creative")
         self.dashboard.register("idea_brainstormer", lambda: self.idea_brainstormer.get_stats(), "creative")
+        self.dashboard.register("image_analyzer", lambda: self.image_analyzer.get_stats(), "sensory")
+        self.dashboard.register("diagram_generator", lambda: self.diagram_generator.get_stats(), "creative")
+        self.dashboard.register("voice_personality", lambda: self.voice_personality.get_stats(), "sensory")
 
     def _save_session(self):
         """Guarda el estado completo de la sesion para restaurar despues."""
@@ -2089,6 +2132,12 @@ class Genesis:
             return self.code_architect.generate_report()
         elif cmd == "/brainstorm":
             return self.idea_brainstormer.generate_report()
+        elif cmd == "/images":
+            return self.image_analyzer.generate_report()
+        elif cmd == "/diagrams":
+            return self.diagram_generator.generate_report()
+        elif cmd == "/voice":
+            return self.voice_personality.generate_report()
         elif cmd == "/memory semantic":
             return self.semantic_memory.generate_report()
         elif cmd == "/memory":
@@ -2774,6 +2823,9 @@ class Genesis:
             self.story_generator.save()
             self.code_architect.save()
             self.idea_brainstormer.save()
+            self.image_analyzer.save()
+            self.diagram_generator.save()
+            self.voice_personality.save()
             self.heartbeat.stop()
             self.running = False
             return "Cerrando Genesis..."
@@ -3019,6 +3071,15 @@ class Genesis:
             f"",
             f"IDEA BRAINSTORMER:",
             self.idea_brainstormer.status(),
+            f"",
+            f"IMAGE ANALYZER:",
+            self.image_analyzer.status(),
+            f"",
+            f"DIAGRAM GENERATOR:",
+            self.diagram_generator.status(),
+            f"",
+            f"VOICE PERSONALITY:",
+            self.voice_personality.status(),
             f"",
             f"EVOLUCION AUTONOMA:",
             f"  Estado: {'ACTIVA' if self.autonomous.active else 'inactiva'}",
@@ -3876,6 +3937,15 @@ class Genesis:
   IDEA BRAINSTORMER:
   /brainstorm        — Ver ideas, sesiones y scores de brainstorming
 
+  IMAGE ANALYZER:
+  /images            — Ver imagenes analizadas, cache y metadatos
+
+  DIAGRAM GENERATOR:
+  /diagrams          — Ver diagramas generados, tipos y Mermaid
+
+  VOICE PERSONALITY:
+  /voice             — Ver estilo vocal, adaptaciones y directivas
+
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
   /exit          — Salir de Genesis (guarda sesion automaticamente)
@@ -4093,6 +4163,12 @@ def main():
         print(f"  Code Architect: {genesis.code_architect.total_designs} diseños, componentes={genesis.code_architect.total_components}")
     if genesis.idea_brainstormer.total_ideas > 0:
         print(f"  Idea Brainstormer: {genesis.idea_brainstormer.total_ideas} ideas, sesiones={genesis.idea_brainstormer.total_sessions}")
+    if genesis.image_analyzer.total_analyzed > 0:
+        print(f"  Image Analyzer: {genesis.image_analyzer.total_analyzed} analizadas, cache={len(genesis.image_analyzer.cache.cache)}")
+    if genesis.diagram_generator.total_diagrams > 0:
+        print(f"  Diagram Generator: {genesis.diagram_generator.total_diagrams} diagramas")
+    if genesis.voice_personality.total_adaptations > 0:
+        print(f"  Voice Personality: {genesis.voice_personality.total_adaptations} adaptaciones, emocion={genesis.voice_personality.current_emotion}")
 
     # Mostrar evolucion autonoma
     n_auto_actions = len(genesis.autonomous.actions)
