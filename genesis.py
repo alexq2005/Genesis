@@ -109,6 +109,9 @@ from core.self_narrative import SelfNarrative
 from core.emotion_reader import EmotionReader
 from core.empathy_engine import EmpathyEngine
 from core.conflict_resolver import ConflictResolver
+from core.story_generator import StoryGenerator
+from core.code_architect import CodeArchitect
+from core.idea_brainstormer import IdeaBrainstormer
 
 
 class Genesis:
@@ -510,6 +513,24 @@ class Genesis:
             base_dir=str(BASE_DIR / "data" / "conflict"),
         )
         self.log.info(f"ConflictResolver: {self.conflict_resolver.tracker.total_conflicts} conflictos, resueltos={self.conflict_resolver.total_resolved}")
+
+        # Inicializar Story Generator (generación narrativa)
+        self.story_generator = StoryGenerator(
+            base_dir=str(BASE_DIR / "data" / "story_generator"),
+        )
+        self.log.info(f"StoryGenerator: {self.story_generator.total_stories} historias, personajes={self.story_generator.total_characters}")
+
+        # Inicializar Code Architect (diseño de sistemas)
+        self.code_architect = CodeArchitect(
+            base_dir=str(BASE_DIR / "data" / "code_architect"),
+        )
+        self.log.info(f"CodeArchitect: {self.code_architect.total_designs} diseños, componentes={self.code_architect.total_components}")
+
+        # Inicializar Idea Brainstormer (ideación divergente)
+        self.idea_brainstormer = IdeaBrainstormer(
+            base_dir=str(BASE_DIR / "data" / "idea_brainstormer"),
+        )
+        self.log.info(f"IdeaBrainstormer: {self.idea_brainstormer.total_ideas} ideas, sesiones={self.idea_brainstormer.total_sessions}")
 
         # Configurar evolucion autonoma (conecta web + curiosity + evolution)
         self._setup_autonomous_evolution()
@@ -943,6 +964,21 @@ class Genesis:
             system_prompt += f"\n\n{conflict_context}"
             if self.show_thinking:
                 print(f"  [ConflictResolver: conflicto detectado]")
+
+        # Story Generator: contexto narrativo si hay historia activa
+        story_context = self.story_generator.get_context_for_prompt(user_input, max_chars=300)
+        if story_context:
+            system_prompt += f"\n\n{story_context}"
+
+        # Code Architect: contexto arquitectónico si hay diseño activo
+        architect_context = self.code_architect.get_context_for_prompt(user_input, max_chars=300)
+        if architect_context:
+            system_prompt += f"\n\n{architect_context}"
+
+        # Idea Brainstormer: mejores ideas como contexto
+        brainstorm_context = self.idea_brainstormer.get_context_for_prompt(user_input, max_chars=300)
+        if brainstorm_context:
+            system_prompt += f"\n\n{brainstorm_context}"
 
         # Fase 0: Planificacion de tareas complejas
         if ((intent == "code" or self._is_coding_request(user_input))
@@ -1446,6 +1482,11 @@ class Genesis:
             quality = eval_result.get("overall", 0.5)
             self.empathy_engine.record_feedback(positive=(quality >= 0.5))
 
+        # Story Generator: detectar keywords narrativos para crear historia
+        story_kws = ["historia", "story", "cuento", "narrar", "relato"]
+        if any(kw in user_input.lower() for kw in story_kws) and "crear" in user_input.lower():
+            self.story_generator.create_story(user_input)
+
         # Auto-detectar proyectos multi-archivo en la respuesta
         if self.project_generator.has_multiple_files(response):
             if self.workspace.is_set():
@@ -1821,6 +1862,9 @@ class Genesis:
         self.dashboard.register("emotion_reader", lambda: self.emotion_reader.get_stats(), "core")
         self.dashboard.register("empathy_engine", lambda: self.empathy_engine.get_stats(), "core")
         self.dashboard.register("conflict_resolver", lambda: self.conflict_resolver.get_stats(), "core")
+        self.dashboard.register("story_generator", lambda: self.story_generator.get_stats(), "creative")
+        self.dashboard.register("code_architect", lambda: self.code_architect.get_stats(), "creative")
+        self.dashboard.register("idea_brainstormer", lambda: self.idea_brainstormer.get_stats(), "creative")
 
     def _save_session(self):
         """Guarda el estado completo de la sesion para restaurar despues."""
@@ -2039,6 +2083,12 @@ class Genesis:
             return self.empathy_engine.generate_report()
         elif cmd == "/conflict":
             return self.conflict_resolver.generate_report()
+        elif cmd == "/stories":
+            return self.story_generator.generate_report()
+        elif cmd == "/architect":
+            return self.code_architect.generate_report()
+        elif cmd == "/brainstorm":
+            return self.idea_brainstormer.generate_report()
         elif cmd == "/memory semantic":
             return self.semantic_memory.generate_report()
         elif cmd == "/memory":
@@ -2721,6 +2771,9 @@ class Genesis:
             self.emotion_reader.save()
             self.empathy_engine.save()
             self.conflict_resolver.save()
+            self.story_generator.save()
+            self.code_architect.save()
+            self.idea_brainstormer.save()
             self.heartbeat.stop()
             self.running = False
             return "Cerrando Genesis..."
@@ -2957,6 +3010,15 @@ class Genesis:
             f"",
             f"CONFLICT RESOLVER:",
             self.conflict_resolver.status(),
+            f"",
+            f"STORY GENERATOR:",
+            self.story_generator.status(),
+            f"",
+            f"CODE ARCHITECT:",
+            self.code_architect.status(),
+            f"",
+            f"IDEA BRAINSTORMER:",
+            self.idea_brainstormer.status(),
             f"",
             f"EVOLUCION AUTONOMA:",
             f"  Estado: {'ACTIVA' if self.autonomous.active else 'inactiva'}",
@@ -3805,6 +3867,15 @@ class Genesis:
   CONFLICT RESOLVER:
   /conflict          — Ver conflictos, resoluciones y patrones
 
+  STORY GENERATOR:
+  /stories           — Ver historias creadas, personajes y progreso
+
+  CODE ARCHITECT:
+  /architect         — Ver diseños de sistemas, componentes y decisiones
+
+  IDEA BRAINSTORMER:
+  /brainstorm        — Ver ideas, sesiones y scores de brainstorming
+
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
   /exit          — Salir de Genesis (guarda sesion automaticamente)
@@ -4016,6 +4087,12 @@ def main():
     if genesis.conflict_resolver.tracker.total_conflicts > 0:
         rate = genesis.conflict_resolver.tracker.get_resolution_rate()
         print(f"  Conflict Resolver: {genesis.conflict_resolver.tracker.total_conflicts} conflictos, resolucion={rate:.0%}")
+    if genesis.story_generator.total_stories > 0:
+        print(f"  Story Generator: {genesis.story_generator.total_stories} historias, personajes={genesis.story_generator.total_characters}")
+    if genesis.code_architect.total_designs > 0:
+        print(f"  Code Architect: {genesis.code_architect.total_designs} diseños, componentes={genesis.code_architect.total_components}")
+    if genesis.idea_brainstormer.total_ideas > 0:
+        print(f"  Idea Brainstormer: {genesis.idea_brainstormer.total_ideas} ideas, sesiones={genesis.idea_brainstormer.total_sessions}")
 
     # Mostrar evolucion autonoma
     n_auto_actions = len(genesis.autonomous.actions)
