@@ -510,6 +510,27 @@ GENESIS/
 - **Total: 4023 tests, 21 suites, 64 archivos, ~55,000+ líneas**
 
 ### v3.1.0 — Social Intelligence (2026-03-13)
+**Hito:** Genesis entiende emociones, responde con empatía y maneja conflictos conversacionales.
+- **EmotionReader** (`core/emotion_reader.py`): detección de emociones del usuario en texto
+  - EmotionSignal: señal emocional con tipo, intensidad y evidencia léxica
+  - EmotionProfile: perfil emocional con historial y tendencia (mejorando/empeorando)
+  - EmotionReader coordinador: detect(), get_trend(), get_context_for_prompt()
+  - Clasificador multi-etiqueta: alegría, frustración, confusión, curiosidad, urgencia, neutral
+  - Scoring por señales léxicas (puntuación, mayúsculas, palabras clave emocionales)
+- **EmpathyEngine** (`core/empathy_engine.py`): generación de respuestas empáticas
+  - EmpathyStrategy: 5 estrategias (validar, redirigir, profundizar, celebrar, calmar)
+  - EmpathyEngine coordinador: select_strategy(), generate_modifier(), get_context_for_prompt()
+  - Selección automática por emoción detectada + historial
+  - Tracking de efectividad por feedback posterior
+- **ConflictResolver** (`core/conflict_resolver.py`): manejo de desacuerdos y correcciones
+  - ConflictSignal: detección de señales de conflicto por patrones léxicos
+  - ConflictResolver coordinador: detect(), resolve(), get_context_for_prompt()
+  - Estrategias: conceder, reformular, pedir clarificación, ofrecer alternativas
+  - Escalation tracker: mide si el conflicto se resuelve o escala
+- **314 tests pasando (suite v3.1)**
+- **Total: 4337 tests, 22 suites, 67 archivos**
+
+### v3.2.0 — Creative Genesis (2026-03-13)
 **Hito:** Genesis genera contenido creativo estructurado con técnicas de ideación.
 - **StoryGenerator** (`core/story_generator.py`): narrativa creativa con estructura
   - StoryArc: 5 actos (setup, rising_action, climax, falling_action, resolution) con progress tracking
@@ -529,6 +550,8 @@ GENESIS/
   - IdeaScorer: scoring automático por señales léxicas, overall = weighted avg (viability 0.4, novelty 0.3, impact 0.3)
   - IdeaBrainstormer coordinador: brainstorm(), add_idea(), get_best_ideas(), combine_ideas(), get_context_for_prompt()
   - Persistencia JSON, sesiones de brainstorming con ideas vinculadas
+- **240 tests pasando (suite v3.2)**
+- **Total: 4337 tests, 23 suites, 70 archivos**
 
 ### v3.3.0 — Sensory Expansion (2026-03-13)
 **Hito:** Genesis procesa imágenes, genera diagramas Mermaid y tiene personalidad vocal adaptativa.
@@ -553,6 +576,8 @@ GENESIS/
   - ProsodyRule: 6 reglas por contenido (explanation=lento, code=monótono, warning=serio, etc.)
   - VoicePersonality coordinador: adapt_to_emotion(), adapt_to_content(), get_vocal_directives(), get_context_for_prompt()
   - Métricas: total_adaptations, emotion_counts, content_type_counts
+- **174 tests pasando (suite v3.3)**
+- **Total: 4337 tests, 23 suites, 73 archivos**
 
 ### v3.4.0 — Collaborative Mind (2026-03-13)
 **Hito:** Múltiples instancias de Genesis colaboran y comparten conocimiento.
