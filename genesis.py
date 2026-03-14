@@ -118,6 +118,27 @@ from core.voice_personality import VoicePersonality
 from core.peer_debate import PeerDebate as PeerDebateEngine
 from core.consensus_engine import ConsensusEngine
 from core.knowledge_sharing import KnowledgeSharing
+from core.paper_reader import PaperReader
+from core.experiment_runner import ExperimentRunner
+from core.insight_synthesizer import InsightSynthesizer
+from core.safe_code_evolver import SafeCodeEvolver
+from core.architecture_evolver import ArchitectureEvolver
+from core.module_generator import ModuleGenerator
+from core.temporal_reasoner import TemporalReasoner
+from core.schedule_optimizer import ScheduleOptimizer
+from core.trend_forecaster import TrendForecaster
+from core.ethical_reasoner import EthicalReasoner
+from core.bias_detector import BiasDetector
+from core.transparency_engine import TransparencyEngine
+from core.domain_expert import DomainExpert
+from core.tutor_engine import TutorEngine
+from core.fact_checker import FactChecker
+from core.task_distributor import TaskDistributor
+from core.result_aggregator import ResultAggregator
+from core.network_manager import NetworkManager
+from core.autonomous_research_loop import AutonomousResearchLoop
+from core.self_architect import SelfArchitect
+from core.consciousness_integrator import ConsciousnessIntegrator
 
 
 class Genesis:
@@ -573,6 +594,132 @@ class Genesis:
             base_dir=str(BASE_DIR / "data" / "knowledge_sharing"),
         )
         self.log.info(f"KnowledgeSharing: {self.knowledge_sharing.total_shared} compartidos")
+
+        # Inicializar PaperReader
+        self.paper_reader = PaperReader(
+            base_dir=str(BASE_DIR / "data" / "paper_reader"),
+        )
+        self.log.info(f"PaperReader: {self.paper_reader.total_papers_read}")
+
+        # Inicializar ExperimentRunner
+        self.experiment_runner = ExperimentRunner(
+            base_dir=str(BASE_DIR / "data" / "experiment_runner"),
+        )
+        self.log.info(f"ExperimentRunner: {self.experiment_runner.total_experiments}")
+
+        # Inicializar InsightSynthesizer
+        self.insight_synthesizer = InsightSynthesizer(
+            base_dir=str(BASE_DIR / "data" / "insight_synthesizer"),
+        )
+        self.log.info(f"InsightSynthesizer: {self.insight_synthesizer.total_insights}")
+
+        # Inicializar SafeCodeEvolver
+        self.safe_code_evolver = SafeCodeEvolver(
+            base_dir=str(BASE_DIR / "data" / "safe_code_evolver"),
+        )
+        self.log.info(f"SafeCodeEvolver: {self.safe_code_evolver.total_mutations}")
+
+        # Inicializar ArchitectureEvolver
+        self.architecture_evolver = ArchitectureEvolver(
+            base_dir=str(BASE_DIR / "data" / "architecture_evolver"),
+        )
+        self.log.info(f"ArchitectureEvolver: {self.architecture_evolver.total_proposals}")
+
+        # Inicializar ModuleGenerator
+        self.module_generator = ModuleGenerator(
+            base_dir=str(BASE_DIR / "data" / "module_generator"),
+        )
+        self.log.info(f"ModuleGenerator: {self.module_generator.total_generated}")
+
+        # Inicializar TemporalReasoner
+        self.temporal_reasoner = TemporalReasoner(
+            base_dir=str(BASE_DIR / "data" / "temporal_reasoner"),
+        )
+        self.log.info(f"TemporalReasoner: {self.temporal_reasoner.total_events}")
+
+        # Inicializar ScheduleOptimizer
+        self.schedule_optimizer = ScheduleOptimizer(
+            base_dir=str(BASE_DIR / "data" / "schedule_optimizer"),
+        )
+        self.log.info(f"ScheduleOptimizer: {self.schedule_optimizer.total_optimizations}")
+
+        # Inicializar TrendForecaster
+        self.trend_forecaster = TrendForecaster(
+            base_dir=str(BASE_DIR / "data" / "trend_forecaster"),
+        )
+        self.log.info(f"TrendForecaster: {self.trend_forecaster.total_forecasts}")
+
+        # Inicializar EthicalReasoner
+        self.ethical_reasoner = EthicalReasoner(
+            base_dir=str(BASE_DIR / "data" / "ethical_reasoner"),
+        )
+        self.log.info(f"EthicalReasoner: {self.ethical_reasoner.total_evaluations}")
+
+        # Inicializar BiasDetector
+        self.bias_detector = BiasDetector(
+            base_dir=str(BASE_DIR / "data" / "bias_detector"),
+        )
+        self.log.info(f"BiasDetector: {self.bias_detector.total_scans}")
+
+        # Inicializar TransparencyEngine
+        self.transparency_engine = TransparencyEngine(
+            base_dir=str(BASE_DIR / "data" / "transparency_engine"),
+        )
+        self.log.info(f"TransparencyEngine: {self.transparency_engine.total_decisions}")
+
+        # Inicializar DomainExpert
+        self.domain_expert = DomainExpert(
+            base_dir=str(BASE_DIR / "data" / "domain_expert"),
+        )
+        self.log.info(f"DomainExpert: {self.domain_expert.total_detections}")
+
+        # Inicializar TutorEngine
+        self.tutor_engine = TutorEngine(
+            base_dir=str(BASE_DIR / "data" / "tutor_engine"),
+        )
+        self.log.info(f"TutorEngine: {self.tutor_engine.total_lessons}")
+
+        # Inicializar FactChecker
+        self.fact_checker = FactChecker(
+            base_dir=str(BASE_DIR / "data" / "fact_checker"),
+        )
+        self.log.info(f"FactChecker: {self.fact_checker.total_checked}")
+
+        # Inicializar TaskDistributor
+        self.task_distributor = TaskDistributor(
+            base_dir=str(BASE_DIR / "data" / "task_distributor"),
+        )
+        self.log.info(f"TaskDistributor: {self.task_distributor.total_tasks}")
+
+        # Inicializar ResultAggregator
+        self.result_aggregator = ResultAggregator(
+            base_dir=str(BASE_DIR / "data" / "result_aggregator"),
+        )
+        self.log.info(f"ResultAggregator: {self.result_aggregator.total_aggregated}")
+
+        # Inicializar NetworkManager
+        self.network_manager = NetworkManager(
+            base_dir=str(BASE_DIR / "data" / "network_manager"),
+        )
+        self.log.info(f"NetworkManager: {self.network_manager.total_nodes_seen}")
+
+        # Inicializar AutonomousResearchLoop
+        self.autonomous_research_loop = AutonomousResearchLoop(
+            base_dir=str(BASE_DIR / "data" / "autonomous_research_loop"),
+        )
+        self.log.info(f"AutonomousResearchLoop: {self.autonomous_research_loop.total_cycles}")
+
+        # Inicializar SelfArchitect
+        self.self_architect = SelfArchitect(
+            base_dir=str(BASE_DIR / "data" / "self_architect"),
+        )
+        self.log.info(f"SelfArchitect: {self.self_architect.total_snapshots}")
+
+        # Inicializar ConsciousnessIntegrator
+        self.consciousness_integrator = ConsciousnessIntegrator(
+            base_dir=str(BASE_DIR / "data" / "consciousness_integrator"),
+        )
+        self.log.info(f"ConsciousnessIntegrator: {self.consciousness_integrator.total_integrations}")
 
         # Configurar evolucion autonoma (conecta web + curiosity + evolution)
         self._setup_autonomous_evolution()
@@ -1055,6 +1202,111 @@ class Genesis:
         knowledge_ctx = self.knowledge_sharing.get_context_for_prompt(user_input, max_chars=200)
         if knowledge_ctx:
             system_prompt += f"\n\n{knowledge_ctx}"
+
+        # PaperReader: contexto
+        paper_reader_ctx = self.paper_reader.get_context_for_prompt(user_input, max_chars=200)
+        if paper_reader_ctx:
+            system_prompt += f"\n\n{paper_reader_ctx}" 
+
+        # ExperimentRunner: contexto
+        experiment_runner_ctx = self.experiment_runner.get_context_for_prompt(max_chars=200)
+        if experiment_runner_ctx:
+            system_prompt += f"\n\n{experiment_runner_ctx}" 
+
+        # InsightSynthesizer: contexto
+        insight_synthesizer_ctx = self.insight_synthesizer.get_context_for_prompt(user_input, max_chars=200)
+        if insight_synthesizer_ctx:
+            system_prompt += f"\n\n{insight_synthesizer_ctx}" 
+
+        # SafeCodeEvolver: contexto
+        safe_code_evolver_ctx = self.safe_code_evolver.get_context_for_prompt(max_chars=200)
+        if safe_code_evolver_ctx:
+            system_prompt += f"\n\n{safe_code_evolver_ctx}" 
+
+        # ArchitectureEvolver: contexto
+        architecture_evolver_ctx = self.architecture_evolver.get_context_for_prompt(max_chars=200)
+        if architecture_evolver_ctx:
+            system_prompt += f"\n\n{architecture_evolver_ctx}" 
+
+        # ModuleGenerator: contexto
+        module_generator_ctx = self.module_generator.get_context_for_prompt(max_chars=200)
+        if module_generator_ctx:
+            system_prompt += f"\n\n{module_generator_ctx}" 
+
+        # TemporalReasoner: contexto
+        temporal_reasoner_ctx = self.temporal_reasoner.get_context_for_prompt(user_input, max_chars=200)
+        if temporal_reasoner_ctx:
+            system_prompt += f"\n\n{temporal_reasoner_ctx}" 
+
+        # ScheduleOptimizer: contexto
+        schedule_optimizer_ctx = self.schedule_optimizer.get_context_for_prompt(max_chars=200)
+        if schedule_optimizer_ctx:
+            system_prompt += f"\n\n{schedule_optimizer_ctx}" 
+
+        # TrendForecaster: contexto
+        trend_forecaster_ctx = self.trend_forecaster.get_context_for_prompt(max_chars=200)
+        if trend_forecaster_ctx:
+            system_prompt += f"\n\n{trend_forecaster_ctx}" 
+
+        # EthicalReasoner: contexto
+        ethical_reasoner_ctx = self.ethical_reasoner.get_context_for_prompt(user_input, max_chars=200)
+        if ethical_reasoner_ctx:
+            system_prompt += f"\n\n{ethical_reasoner_ctx}" 
+
+        # BiasDetector: contexto
+        bias_detector_ctx = self.bias_detector.get_context_for_prompt(max_chars=200)
+        if bias_detector_ctx:
+            system_prompt += f"\n\n{bias_detector_ctx}" 
+
+        # TransparencyEngine: contexto
+        transparency_engine_ctx = self.transparency_engine.get_context_for_prompt(max_chars=200)
+        if transparency_engine_ctx:
+            system_prompt += f"\n\n{transparency_engine_ctx}" 
+
+        # DomainExpert: contexto
+        domain_expert_ctx = self.domain_expert.get_context_for_prompt(user_input, max_chars=200)
+        if domain_expert_ctx:
+            system_prompt += f"\n\n{domain_expert_ctx}" 
+
+        # TutorEngine: contexto
+        tutor_engine_ctx = self.tutor_engine.get_context_for_prompt(user_input, max_chars=200)
+        if tutor_engine_ctx:
+            system_prompt += f"\n\n{tutor_engine_ctx}" 
+
+        # FactChecker: contexto
+        fact_checker_ctx = self.fact_checker.get_context_for_prompt(user_input, max_chars=200)
+        if fact_checker_ctx:
+            system_prompt += f"\n\n{fact_checker_ctx}" 
+
+        # TaskDistributor: contexto
+        task_distributor_ctx = self.task_distributor.get_context_for_prompt(max_chars=200)
+        if task_distributor_ctx:
+            system_prompt += f"\n\n{task_distributor_ctx}" 
+
+        # ResultAggregator: contexto
+        result_aggregator_ctx = self.result_aggregator.get_context_for_prompt(max_chars=200)
+        if result_aggregator_ctx:
+            system_prompt += f"\n\n{result_aggregator_ctx}" 
+
+        # NetworkManager: contexto
+        network_manager_ctx = self.network_manager.get_context_for_prompt(max_chars=200)
+        if network_manager_ctx:
+            system_prompt += f"\n\n{network_manager_ctx}" 
+
+        # AutonomousResearchLoop: contexto
+        autonomous_research_loop_ctx = self.autonomous_research_loop.get_context_for_prompt(max_chars=200)
+        if autonomous_research_loop_ctx:
+            system_prompt += f"\n\n{autonomous_research_loop_ctx}" 
+
+        # SelfArchitect: contexto
+        self_architect_ctx = self.self_architect.get_context_for_prompt(max_chars=200)
+        if self_architect_ctx:
+            system_prompt += f"\n\n{self_architect_ctx}" 
+
+        # ConsciousnessIntegrator: contexto
+        consciousness_integrator_ctx = self.consciousness_integrator.get_context_for_prompt(max_chars=200)
+        if consciousness_integrator_ctx:
+            system_prompt += f"\n\n{consciousness_integrator_ctx}" 
 
         # Fase 0: Planificacion de tareas complejas
         if ((intent == "code" or self._is_coding_request(user_input))
@@ -1947,6 +2199,27 @@ class Genesis:
         self.dashboard.register("peer_debate", lambda: self.peer_debate.get_stats(), "collaborative")
         self.dashboard.register("consensus_engine", lambda: self.consensus_engine.get_stats(), "collaborative")
         self.dashboard.register("knowledge_sharing", lambda: self.knowledge_sharing.get_stats(), "collaborative")
+        self.dashboard.register("paper_reader", lambda: self.paper_reader.get_stats(), "research")
+        self.dashboard.register("experiment_runner", lambda: self.experiment_runner.get_stats(), "research")
+        self.dashboard.register("insight_synthesizer", lambda: self.insight_synthesizer.get_stats(), "research")
+        self.dashboard.register("safe_code_evolver", lambda: self.safe_code_evolver.get_stats(), "evolution")
+        self.dashboard.register("architecture_evolver", lambda: self.architecture_evolver.get_stats(), "evolution")
+        self.dashboard.register("module_generator", lambda: self.module_generator.get_stats(), "evolution")
+        self.dashboard.register("temporal_reasoner", lambda: self.temporal_reasoner.get_stats(), "temporal")
+        self.dashboard.register("schedule_optimizer", lambda: self.schedule_optimizer.get_stats(), "temporal")
+        self.dashboard.register("trend_forecaster", lambda: self.trend_forecaster.get_stats(), "temporal")
+        self.dashboard.register("ethical_reasoner", lambda: self.ethical_reasoner.get_stats(), "ethics")
+        self.dashboard.register("bias_detector", lambda: self.bias_detector.get_stats(), "ethics")
+        self.dashboard.register("transparency_engine", lambda: self.transparency_engine.get_stats(), "ethics")
+        self.dashboard.register("domain_expert", lambda: self.domain_expert.get_stats(), "knowledge")
+        self.dashboard.register("tutor_engine", lambda: self.tutor_engine.get_stats(), "knowledge")
+        self.dashboard.register("fact_checker", lambda: self.fact_checker.get_stats(), "knowledge")
+        self.dashboard.register("task_distributor", lambda: self.task_distributor.get_stats(), "distributed")
+        self.dashboard.register("result_aggregator", lambda: self.result_aggregator.get_stats(), "distributed")
+        self.dashboard.register("network_manager", lambda: self.network_manager.get_stats(), "distributed")
+        self.dashboard.register("autonomous_research_loop", lambda: self.autonomous_research_loop.get_stats(), "singularity")
+        self.dashboard.register("self_architect", lambda: self.self_architect.get_stats(), "singularity")
+        self.dashboard.register("consciousness_integrator", lambda: self.consciousness_integrator.get_stats(), "singularity")
 
     def _save_session(self):
         """Guarda el estado completo de la sesion para restaurar despues."""
@@ -2183,6 +2456,48 @@ class Genesis:
             return self.consensus_engine.generate_report()
         elif cmd == "/knowledge":
             return self.knowledge_sharing.generate_report()
+        elif cmd == "/papers":
+            return self.paper_reader.generate_report()
+        elif cmd == "/experiments":
+            return self.experiment_runner.generate_report()
+        elif cmd == "/insights":
+            return self.insight_synthesizer.generate_report()
+        elif cmd == "/evolver":
+            return self.safe_code_evolver.generate_report()
+        elif cmd == "/arch_evolver":
+            return self.architecture_evolver.generate_report()
+        elif cmd == "/modgen":
+            return self.module_generator.generate_report()
+        elif cmd == "/temporal":
+            return self.temporal_reasoner.generate_report()
+        elif cmd == "/schedule":
+            return self.schedule_optimizer.generate_report()
+        elif cmd == "/trends":
+            return self.trend_forecaster.generate_report()
+        elif cmd == "/ethics":
+            return self.ethical_reasoner.generate_report()
+        elif cmd == "/bias":
+            return self.bias_detector.generate_report()
+        elif cmd == "/transparency":
+            return self.transparency_engine.generate_report()
+        elif cmd == "/domains":
+            return self.domain_expert.generate_report()
+        elif cmd == "/tutor":
+            return self.tutor_engine.generate_report()
+        elif cmd == "/factcheck":
+            return self.fact_checker.generate_report()
+        elif cmd == "/distribute":
+            return self.task_distributor.generate_report()
+        elif cmd == "/aggregate":
+            return self.result_aggregator.generate_report()
+        elif cmd == "/network":
+            return self.network_manager.generate_report()
+        elif cmd == "/research_loop":
+            return self.autonomous_research_loop.generate_report()
+        elif cmd == "/self_arch":
+            return self.self_architect.generate_report()
+        elif cmd == "/consciousness":
+            return self.consciousness_integrator.generate_report()
         elif cmd == "/memory semantic":
             return self.semantic_memory.generate_report()
         elif cmd == "/memory":
@@ -2874,6 +3189,27 @@ class Genesis:
             self.peer_debate.save()
             self.consensus_engine.save()
             self.knowledge_sharing.save()
+            self.paper_reader.save()
+            self.experiment_runner.save()
+            self.insight_synthesizer.save()
+            self.safe_code_evolver.save()
+            self.architecture_evolver.save()
+            self.module_generator.save()
+            self.temporal_reasoner.save()
+            self.schedule_optimizer.save()
+            self.trend_forecaster.save()
+            self.ethical_reasoner.save()
+            self.bias_detector.save()
+            self.transparency_engine.save()
+            self.domain_expert.save()
+            self.tutor_engine.save()
+            self.fact_checker.save()
+            self.task_distributor.save()
+            self.result_aggregator.save()
+            self.network_manager.save()
+            self.autonomous_research_loop.save()
+            self.self_architect.save()
+            self.consciousness_integrator.save()
             self.heartbeat.stop()
             self.running = False
             return "Cerrando Genesis..."
@@ -3137,6 +3473,69 @@ class Genesis:
             f"",
             f"KNOWLEDGE SHARING:",
             self.knowledge_sharing.status(),
+            f"",
+            f"PAPER READER:",
+            self.paper_reader.status(),
+            f"",
+            f"EXPERIMENT RUNNER:",
+            self.experiment_runner.status(),
+            f"",
+            f"INSIGHT SYNTHESIZER:",
+            self.insight_synthesizer.status(),
+            f"",
+            f"SAFE CODE EVOLVER:",
+            self.safe_code_evolver.status(),
+            f"",
+            f"ARCHITECTURE EVOLVER:",
+            self.architecture_evolver.status(),
+            f"",
+            f"MODULE GENERATOR:",
+            self.module_generator.status(),
+            f"",
+            f"TEMPORAL REASONER:",
+            self.temporal_reasoner.status(),
+            f"",
+            f"SCHEDULE OPTIMIZER:",
+            self.schedule_optimizer.status(),
+            f"",
+            f"TREND FORECASTER:",
+            self.trend_forecaster.status(),
+            f"",
+            f"ETHICAL REASONER:",
+            self.ethical_reasoner.status(),
+            f"",
+            f"BIAS DETECTOR:",
+            self.bias_detector.status(),
+            f"",
+            f"TRANSPARENCY ENGINE:",
+            self.transparency_engine.status(),
+            f"",
+            f"DOMAIN EXPERT:",
+            self.domain_expert.status(),
+            f"",
+            f"TUTOR ENGINE:",
+            self.tutor_engine.status(),
+            f"",
+            f"FACT CHECKER:",
+            self.fact_checker.status(),
+            f"",
+            f"TASK DISTRIBUTOR:",
+            self.task_distributor.status(),
+            f"",
+            f"RESULT AGGREGATOR:",
+            self.result_aggregator.status(),
+            f"",
+            f"NETWORK MANAGER:",
+            self.network_manager.status(),
+            f"",
+            f"AUTONOMOUS RESEARCH LOOP:",
+            self.autonomous_research_loop.status(),
+            f"",
+            f"SELF ARCHITECT:",
+            self.self_architect.status(),
+            f"",
+            f"CONSCIOUSNESS INTEGRATOR:",
+            self.consciousness_integrator.status(),
             f"",
             f"EVOLUCION AUTONOMA:",
             f"  Estado: {'ACTIVA' if self.autonomous.active else 'inactiva'}",
@@ -4241,6 +4640,48 @@ def main():
         print(f"  Consensus Engine: {genesis.consensus_engine.total_consensuses} consensos")
     if genesis.knowledge_sharing.total_shared > 0:
         print(f"  Knowledge Sharing: {genesis.knowledge_sharing.total_shared} compartidos")
+    if genesis.paper_reader.total_papers_read > 0:
+        print(f"  PaperReader: {genesis.paper_reader.total_papers_read}")
+    if genesis.experiment_runner.total_experiments > 0:
+        print(f"  ExperimentRunner: {genesis.experiment_runner.total_experiments}")
+    if genesis.insight_synthesizer.total_insights > 0:
+        print(f"  InsightSynthesizer: {genesis.insight_synthesizer.total_insights}")
+    if genesis.safe_code_evolver.total_mutations > 0:
+        print(f"  SafeCodeEvolver: {genesis.safe_code_evolver.total_mutations}")
+    if genesis.architecture_evolver.total_proposals > 0:
+        print(f"  ArchitectureEvolver: {genesis.architecture_evolver.total_proposals}")
+    if genesis.module_generator.total_generated > 0:
+        print(f"  ModuleGenerator: {genesis.module_generator.total_generated}")
+    if genesis.temporal_reasoner.total_events > 0:
+        print(f"  TemporalReasoner: {genesis.temporal_reasoner.total_events}")
+    if genesis.schedule_optimizer.total_optimizations > 0:
+        print(f"  ScheduleOptimizer: {genesis.schedule_optimizer.total_optimizations}")
+    if genesis.trend_forecaster.total_forecasts > 0:
+        print(f"  TrendForecaster: {genesis.trend_forecaster.total_forecasts}")
+    if genesis.ethical_reasoner.total_evaluations > 0:
+        print(f"  EthicalReasoner: {genesis.ethical_reasoner.total_evaluations}")
+    if genesis.bias_detector.total_scans > 0:
+        print(f"  BiasDetector: {genesis.bias_detector.total_scans}")
+    if genesis.transparency_engine.total_decisions > 0:
+        print(f"  TransparencyEngine: {genesis.transparency_engine.total_decisions}")
+    if genesis.domain_expert.total_detections > 0:
+        print(f"  DomainExpert: {genesis.domain_expert.total_detections}")
+    if genesis.tutor_engine.total_lessons > 0:
+        print(f"  TutorEngine: {genesis.tutor_engine.total_lessons}")
+    if genesis.fact_checker.total_checked > 0:
+        print(f"  FactChecker: {genesis.fact_checker.total_checked}")
+    if genesis.task_distributor.total_tasks > 0:
+        print(f"  TaskDistributor: {genesis.task_distributor.total_tasks}")
+    if genesis.result_aggregator.total_aggregated > 0:
+        print(f"  ResultAggregator: {genesis.result_aggregator.total_aggregated}")
+    if genesis.network_manager.total_nodes_seen > 0:
+        print(f"  NetworkManager: {genesis.network_manager.total_nodes_seen}")
+    if genesis.autonomous_research_loop.total_cycles > 0:
+        print(f"  AutonomousResearchLoop: {genesis.autonomous_research_loop.total_cycles}")
+    if genesis.self_architect.total_snapshots > 0:
+        print(f"  SelfArchitect: {genesis.self_architect.total_snapshots}")
+    if genesis.consciousness_integrator.total_integrations > 0:
+        print(f"  ConsciousnessIntegrator: {genesis.consciousness_integrator.total_integrations}")
 
     # Mostrar evolucion autonoma
     n_auto_actions = len(genesis.autonomous.actions)
