@@ -106,6 +106,9 @@ from core.learning_optimizer import LearningOptimizer
 from core.unified_mind import UnifiedMind
 from core.dream_engine import DreamEngine
 from core.self_narrative import SelfNarrative
+from core.emotion_reader import EmotionReader
+from core.empathy_engine import EmpathyEngine
+from core.conflict_resolver import ConflictResolver
 
 
 class Genesis:
@@ -489,6 +492,24 @@ class Genesis:
             base_dir=str(BASE_DIR / "data" / "narrative"),
         )
         self.log.info(f"SelfNarrative: {self.self_narrative.total_entries} entradas, {self.self_narrative.total_milestones} hitos")
+
+        # Inicializar Emotion Reader (detección de emociones)
+        self.emotion_reader = EmotionReader(
+            base_dir=str(BASE_DIR / "data" / "emotion_reader"),
+        )
+        self.log.info(f"EmotionReader: {self.emotion_reader.total_readings} lecturas, dominante={self.emotion_reader.history.get_dominant_emotion()}")
+
+        # Inicializar Empathy Engine (respuestas empáticas)
+        self.empathy_engine = EmpathyEngine(
+            base_dir=str(BASE_DIR / "data" / "empathy"),
+        )
+        self.log.info(f"EmpathyEngine: {self.empathy_engine.total_empathy_responses} respuestas, estrategia={self.empathy_engine.current_strategy}")
+
+        # Inicializar Conflict Resolver (resolución de conflictos)
+        self.conflict_resolver = ConflictResolver(
+            base_dir=str(BASE_DIR / "data" / "conflict"),
+        )
+        self.log.info(f"ConflictResolver: {self.conflict_resolver.tracker.total_conflicts} conflictos, resueltos={self.conflict_resolver.total_resolved}")
 
         # Configurar evolucion autonoma (conecta web + curiosity + evolution)
         self._setup_autonomous_evolution()
@@ -900,6 +921,28 @@ class Genesis:
         narrative_context = self.self_narrative.get_context_for_prompt(max_chars=200)
         if narrative_context:
             system_prompt += f"\n\n{narrative_context}"
+
+        # Emotion Reader: detectar emociones y generar contexto
+        emotion_context = self.emotion_reader.get_context_for_prompt(user_input, max_chars=200)
+        if emotion_context:
+            system_prompt += f"\n\n{emotion_context}"
+
+        # Empathy Engine: modificar tono por emoción detectada
+        emotion_data = self.emotion_reader.read(user_input)
+        empathy_context = self.empathy_engine.get_context_for_prompt(
+            emotion=emotion_data["primary"],
+            intensity=emotion_data["intensity"],
+            max_chars=200,
+        )
+        if empathy_context:
+            system_prompt += f"\n\n{empathy_context}"
+
+        # Conflict Resolver: detectar y manejar conflictos
+        conflict_context = self.conflict_resolver.get_context_for_prompt(user_input, max_chars=200)
+        if conflict_context:
+            system_prompt += f"\n\n{conflict_context}"
+            if self.show_thinking:
+                print(f"  [ConflictResolver: conflicto detectado]")
 
         # Fase 0: Planificacion de tareas complejas
         if ((intent == "code" or self._is_coding_request(user_input))
@@ -1398,6 +1441,11 @@ class Genesis:
         # Self-Narrative: observar identidad y registrar
         self.self_narrative.observe_identity(user_input, domain=intent)
 
+        # Empathy Engine: registrar feedback implícito
+        if eval_result:
+            quality = eval_result.get("overall", 0.5)
+            self.empathy_engine.record_feedback(positive=(quality >= 0.5))
+
         # Auto-detectar proyectos multi-archivo en la respuesta
         if self.project_generator.has_multiple_files(response):
             if self.workspace.is_set():
@@ -1770,6 +1818,9 @@ class Genesis:
         self.dashboard.register("unified_mind", lambda: self.unified_mind.get_stats(), "core")
         self.dashboard.register("dream_engine", lambda: self.dream_engine.get_stats(), "memory")
         self.dashboard.register("self_narrative", lambda: self.self_narrative.get_stats(), "core")
+        self.dashboard.register("emotion_reader", lambda: self.emotion_reader.get_stats(), "core")
+        self.dashboard.register("empathy_engine", lambda: self.empathy_engine.get_stats(), "core")
+        self.dashboard.register("conflict_resolver", lambda: self.conflict_resolver.get_stats(), "core")
 
     def _save_session(self):
         """Guarda el estado completo de la sesion para restaurar despues."""
@@ -1982,6 +2033,12 @@ class Genesis:
             return self.dream_engine.generate_report()
         elif cmd == "/narrative":
             return self.self_narrative.generate_report()
+        elif cmd == "/emotions":
+            return self.emotion_reader.generate_report()
+        elif cmd == "/empathy":
+            return self.empathy_engine.generate_report()
+        elif cmd == "/conflict":
+            return self.conflict_resolver.generate_report()
         elif cmd == "/memory semantic":
             return self.semantic_memory.generate_report()
         elif cmd == "/memory":
@@ -2661,6 +2718,9 @@ class Genesis:
             self.unified_mind.save()
             self.dream_engine.save()
             self.self_narrative.save()
+            self.emotion_reader.save()
+            self.empathy_engine.save()
+            self.conflict_resolver.save()
             self.heartbeat.stop()
             self.running = False
             return "Cerrando Genesis..."
@@ -2888,6 +2948,15 @@ class Genesis:
             f"",
             f"SELF-NARRATIVE:",
             self.self_narrative.status(),
+            f"",
+            f"EMOTION READER:",
+            self.emotion_reader.status(),
+            f"",
+            f"EMPATHY ENGINE:",
+            self.empathy_engine.status(),
+            f"",
+            f"CONFLICT RESOLVER:",
+            self.conflict_resolver.status(),
             f"",
             f"EVOLUCION AUTONOMA:",
             f"  Estado: {'ACTIVA' if self.autonomous.active else 'inactiva'}",
@@ -3727,6 +3796,15 @@ class Genesis:
   SELF-NARRATIVE:
   /narrative         — Ver diario, hitos, identidad y rasgos
 
+  EMOTION READER:
+  /emotions          — Ver emociones detectadas, tendencia, historial
+
+  EMPATHY ENGINE:
+  /empathy           — Ver estrategias de empatia y efectividad
+
+  CONFLICT RESOLVER:
+  /conflict          — Ver conflictos, resoluciones y patrones
+
   /last_debate   — Ver el ultimo debate interno completo
   /help          — Mostrar esta ayuda
   /exit          — Salir de Genesis (guarda sesion automaticamente)
@@ -3929,6 +4007,15 @@ def main():
     if genesis.self_narrative.total_entries > 0:
         identity = genesis.self_narrative.identity.get_identity_summary()
         print(f"  Self-Narrative: {genesis.self_narrative.total_entries} entradas, identidad={identity}")
+    if genesis.emotion_reader.total_readings > 0:
+        dominant = genesis.emotion_reader.history.get_dominant_emotion()
+        trend = genesis.emotion_reader.history.get_trend()
+        print(f"  Emotion Reader: {genesis.emotion_reader.total_readings} lecturas, dominante={dominant}, tendencia={trend}")
+    if genesis.empathy_engine.total_empathy_responses > 0:
+        print(f"  Empathy Engine: {genesis.empathy_engine.total_empathy_responses} respuestas, estrategia={genesis.empathy_engine.current_strategy}")
+    if genesis.conflict_resolver.tracker.total_conflicts > 0:
+        rate = genesis.conflict_resolver.tracker.get_resolution_rate()
+        print(f"  Conflict Resolver: {genesis.conflict_resolver.tracker.total_conflicts} conflictos, resolucion={rate:.0%}")
 
     # Mostrar evolucion autonoma
     n_auto_actions = len(genesis.autonomous.actions)
