@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 GENESIS Rate Limiter — Control de uso de recursos con Token Bucket.
 

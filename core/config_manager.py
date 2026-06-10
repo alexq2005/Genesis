@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 GENESIS Config Manager — Export/Import de configuraciones completas.
 
@@ -23,7 +24,7 @@ import json
 import time
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 from datetime import datetime
 
 
@@ -130,15 +131,15 @@ class ConfigManager:
         self.profiles_dir.mkdir(exist_ok=True)
 
         # Collectors: funciones que capturan config de cada subsistema
-        self._collectors: dict[str, callable] = {}
+        self._collectors: dict[str, Callable] = {}
 
         # Appliers: funciones que aplican config a cada subsistema
-        self._appliers: dict[str, callable] = {}
+        self._appliers: dict[str, Callable] = {}
 
         # Perfil activo
         self.active_profile: str = ""
 
-    def register_collector(self, section: str, collector: callable):
+    def register_collector(self, section: str, collector: Callable):
         """
         Registra un collector que captura la config de un subsistema.
 
@@ -146,7 +147,7 @@ class ConfigManager:
         """
         self._collectors[section] = collector
 
-    def register_applier(self, section: str, applier: callable):
+    def register_applier(self, section: str, applier: Callable):
         """
         Registra un applier que restaura la config de un subsistema.
 

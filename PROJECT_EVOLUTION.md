@@ -1,28 +1,33 @@
 # GENESIS — Evolución del Proyecto
 
 ## Objetivo Principal
-Sistema de IA auto-evolutivo que corre 100% local en GPU (RTX 3060 Ti, 8GB VRAM).
-Usa modelos open-source (Dolphin 2.8 Mistral 7B) via ctransformers con CUDA.
-Sin APIs externas, sin censura, con capacidad de auto-modificación.
+Sistema de IA auto-evolutivo con motor LLM multi-proveedor y **meta estratégica de soberanía digital** —
+cero dependencia de APIs externas. App de escritorio tipo Copilot + Web UI. Control total del dispositivo.
+Hardware: RTX 3060 Ti (8GB VRAM), i7-13700KF, 16 GB RAM, Windows 11 Pro.
 
 ## Stack Tecnológico
 | Componente | Tecnología | Razón |
 |---|---|---|
-| Lenguaje | Python 3.11+ | Ecosistema ML/AI maduro |
-| Motor LLM | ctransformers[cuda] | Inferencia directa en GPU sin servidor |
-| Modelo principal | dolphin-2.8-mistral-7b-v02 Q4_K_M | 7B parámetros, sin censura, GGUF optimizado |
+| Lenguaje | Python 3.10+ | Ecosistema ML/AI maduro |
+| **Motor LLM primario** | **Ollama local** (Genesis/Llama 3.1 8B + Qwen 2.5 Coder 7B) | Soberanía digital, sin API keys, GPU nativa |
+| Motor LLM fallback | Gemini / OpenAI / Anthropic (opcional) | Failover si Ollama cae |
+| **Router** | `core/provider_router.py` (v6.0) | Circuit breaker + task classifier + multi-model |
+| Desktop App | PyWebView + pystray + keyboard | Sidebar nativa tipo Copilot, sin navegador |
 | Web UI | Flask + SSE | Ligero, sin dependencias pesadas |
-| Tests | pytest | Estándar de la industria |
+| Tests | Framework custom `test(name, condition)` | No pytest — custom para el proyecto |
 | Hardware | RTX 3060 Ti (8GB VRAM), 16GB RAM | GPU consumer accesible |
+| Hardware objetivo | RTX 4060 Ti 16GB (financiado por bots de trading) | Modelos 14B calientes + DeepSeek Coder V2 Lite |
 
 ## Arquitectura
 ```
 GENESIS/
-├── genesis.py              # Clase principal Genesis (~5,300+ líneas)
-├── config.py               # Configuración central
-├── web_ui.py               # Interfaz web Flask + SSE
-├── core/                   # 91+ módulos del sistema
-│   ├── brain.py            # Interfaz con LLM (multi-proveedor)
+├── genesis.py              # Clase principal Genesis (~6,500+ líneas)
+├── genesis_desktop.py      # Desktop app tipo Copilot (PyWebView sidebar)
+├── config.py               # Configuración central (multi-proveedor)
+├── web_ui.py               # Interfaz web Flask + SSE (~3,500+ líneas)
+├── GENESIS_DESKTOP.bat     # Launcher desktop (limpia __pycache__)
+├── core/                   # 113+ módulos del sistema
+│   ├── brain.py            # Interfaz con LLM (4 proveedores: Ollama, Gemini, OpenAI, Anthropic)
 │   ├── local_engine.py     # Motor ctransformers + CUDA
 │   ├── memory.py           # Memoria corto/largo plazo + TF-IDF
 │   ├── evolution.py        # Auto-evolución con fitness tracking
@@ -724,6 +729,365 @@ GENESIS/
 
 ---
 
+### v5.1.0 — Device Control & Anti-Hallucination (2026-03-14)
+**Genesis obtiene control real del dispositivo y deja de inventar datos.**
+- **Ollama Migration**: Reemplazó ctransformers por Ollama como motor LLM local
+  - Llama 3.1 8B via `http://localhost:11434` — respuestas en ~10s vs timeout con ctransformers
+  - Brain multi-proveedor (`core/brain.py`): Ollama, OpenAI, Anthropic con streaming nativo
+- **Device Tools** (`core/device_tools.py`, ~1000 líneas): 11 clases de control del dispositivo
+  - `FileManager` — move, copy, rename, delete, create_folder, file_info
+  - `FileSearcher` — búsqueda por nombre, extensión (*.py), tamaño (>100MB)
+  - `FileOrganizer` — organización automática por tipo de archivo (13 categorías)
+  - `DiskAnalyzer` — uso de disco, archivos grandes, archivos antiguos
+  - `DuplicateFinder` — detección de duplicados via MD5 hash (primeros+últimos 8KB)
+  - `ProcessManager` — listar procesos, matar procesos
+  - `AppLauncher` — abrir archivos/apps con programa por defecto
+  - `ClipboardManager` — leer/escribir portapapeles via PowerShell
+  - `ScreenCapture` — capturas de pantalla via Pillow o PowerShell fallback
+  - `StartupManager` — listar programas de inicio de Windows (registro)
+  - `RecycleBin` — listar, restaurar (PowerShell COM), vaciar papelera
+  - Directorios protegidos: windows, system32, syswow64, boot, etc.
+- **Auto-Tool Pattern** (`genesis.py:_auto_detect_tool()`, ~200 líneas): Intercepta intención del usuario ANTES del LLM
+  - Detecta 16+ tipos de intención por keywords (archivos, sistema, procesos, papelera, etc.)
+  - Ejecuta herramientas reales y devuelve datos reales — el LLM nunca tiene oportunidad de inventar
+  - Path keywords inteligentes: "escritorio"→Desktop, "descargas"→Downloads, etc.
+- **Anti-Hallucination Filter** (`genesis.py:_anti_hallucination_filter()`): Post-procesamiento de respuestas LLM
+  - Detecta patrones fabricados: "restaurando", "he restaurado", "accediendo a" + indicadores falsos
+  - Reemplaza respuestas alucinadas con mensaje honesto
+  - Core rules con "NUNCA INVENTES datos del sistema"
+- **Bug fixes**:
+  - `semantic_memory.py`: `key=` → `doc_id=`, `metadata=` → `extra_metadata=`
+  - `skill_memory.py`: `metadata=` → `extra_metadata=`
+  - `context_manager.py`: tools section budget 600→3000 tokens
+  - `router.py`: Agregó "tools" y "custom_tools" a CHAT_SECTIONS
+  - `genesis.py`: Context budget total 3000→8000, "ram" false match en sys_keywords
+
+---
+
+### v5.4.0 — JARVIS: Gemini + Desktop App + Auto-Detect Expansion (2026-03-15)
+**Hito:** Genesis se convierte en app de escritorio tipo Copilot, integra Gemini como proveedor inteligente, y elimina hallucination en queries factuales.
+
+#### Gemini API Provider
+- **Nuevo proveedor**: Gemini 2.0 Flash (`generativelanguage.googleapis.com/v1beta/`)
+- **Auto-selección**: Si `GOOGLE_API_KEY` existe → Gemini; sino → Ollama (fallback local)
+- **Streaming SSE**: `streamGenerateContent?alt=sse` — tokens en tiempo real
+- **Formato Gemini**: `contents` + `parts` + `systemInstruction` (diferente de OpenAI)
+- **Free tier**: 15 RPM, 1M tokens/día — suficiente para uso personal
+- **4 proveedores totales**: Ollama (local/gratis), Gemini (recomendado), OpenAI, Anthropic
+
+#### Desktop App (Tipo Copilot)
+- **`genesis_desktop.py`** (~470 líneas): App nativa sin necesidad de abrir navegador
+- **PyWebView**: Sidebar nativa usando WebView2/Edge como renderer
+- **pystray**: Icono en system tray con menú contextual (Mostrar/Ocultar, Cerrar)
+- **keyboard**: Hotkey global `Ctrl+Shift+G` para toggle de ventana
+- **Splash screen**: Pantalla de carga animada mientras Flask inicia
+- **Custom titlebar**: Barra de título con drag, pin (always-on-top), minimize, close-to-tray
+- **INJECTED_CSS**: CSS completo para modo sidebar (compact header, tab bar, chat, scrollbar)
+- **INJECTED_JS**: Crea titlebar DOM, conecta botones a `pywebview.api`, detecta provider
+- **`GENESIS_DESKTOP.bat`**: Launcher que limpia `__pycache__` y abre como sidebar derecha
+
+#### 6 Nuevas Auto-Detecciones (bypass LLM completo)
+1. **Fecha/Hora**: `time_keywords`, `date_keywords` → `datetime.now()` instant
+2. **Username/Identidad**: `user_keywords` → `os.getenv("USERNAME")` + `COMPUTERNAME`
+3. **Dirección IP**: `ip_keywords` → `socket` local + `api.ipify.org` pública
+4. **Calculadora**: `math_keywords` → Python `eval()` con whitelist de caracteres seguros
+5. **Identidad de Genesis**: `identity_keywords` → versión, provider, modelo real
+6. **Conteo archivos / Tamaño carpeta**: `count_keywords`, `size_keywords` → `os.walk()` real
+
+#### Bug Fixes
+- **Windows 11 como Windows 10**: `platform.version()` devuelve `10.0.26200` — build ≥ 22000 = Windows 11. Fix en SystemInfoTool con PowerShell
+- **Close app double .exe**: `proc_map` tiene `"EXCEL.EXE"` y código añadía `.exe` otra vez → `"EXCEL.EXE.exe"`. Fix: check `endswith(".exe")`
+- **Multi-target close**: "cierra excel y word" parseado como un solo target. Fix: split en `" y "` para multi-target
+- **Unicode en genesis_desktop.py**: Box-drawing chars (╔═╗║╚) crasheaban con `charmap`. Fix: ASCII + `sys.stdout.reconfigure()`
+- **Close app verbose output**: taskkill mostraba cada PID. Fix: condensar a "Programa cerrado"
+- **Anti-hallucination false positive**: "windows 11 pro" estaba en fabrication indicators pero el usuario SÍ tiene Windows 11 Pro
+- **40% hallucination rate**: Auditoría encontró 6 auto-detect faltantes → añadidos todos → 15/15 tests, 0% hallucination
+
+- **113 core modules, 36 test files, 241 tests (suite v5.4)**
+- **Total: ~4,993 tests, 36 suites, 113 archivos, ~80,000+ líneas**
+
+---
+
+### v5.5.0 — Smart Productivity (2026-03-15)
+**Hito:** Genesis se convierte en asistente de productividad con notas rápidas, recordatorios con notificación, diagnóstico de red, y acciones del sistema.
+
+#### Nuevos Módulos
+- **QuickNotes** (`core/quick_notes.py`): Sistema de notas rápidas persistentes
+  - Crear notas con tags (#trabajo, #personal)
+  - Listar, buscar, eliminar, fijar/desfijar notas
+  - Persistencia JSON, filtrado por tags
+- **ReminderSystem** (`core/reminder_system.py`): Temporizadores con notificación desktop
+  - Parser de tiempo en español ("5 minutos", "2h30m", "media hora")
+  - Notificación via plyer → win10toast → PowerShell toast → stdout
+  - Background threads con daemon timers, cancelación individual
+  - Historial de recordatorios, lista de activos
+- **NetworkTools** (`core/network_tools.py`): Diagnóstico de red
+  - Check conectividad (DNS + HTTP + HTTPS con latencia)
+  - Info WiFi (SSID, señal, velocidad, canal, seguridad)
+  - Ping con estadísticas, speed test rápido via Cloudflare
+  - Adaptadores de red
+- **SystemActions** (`core/system_actions.py`): Acciones rápidas del sistema
+  - Limpieza de temporales con reporte de MB liberados
+  - Flush DNS, vaciar papelera
+  - Uptime, estado de batería
+  - Bloquear pantalla, abrir configuración de Windows (16 secciones)
+  - Contar apps instaladas
+
+#### Nuevas Auto-Detecciones (12 secciones, bypass LLM)
+1. Notas: "nota: ...", "mis notas", "busca en notas", "elimina nota N"
+2. Recordatorios: "recuerdame en X que...", "mis recordatorios", "cancela recordatorio N"
+3. Conectividad: "estoy conectado", "hay internet", "estado de red"
+4. WiFi: "info wifi", "señal wifi", "a que wifi estoy conectado"
+5. Ping: "haz ping a X"
+6. Velocidad: "velocidad de internet", "speed test"
+7. Limpieza: "limpiar temp", "flush dns"
+8. Uptime: "hace cuanto esta encendido"
+9. Batería: "bateria", "nivel de bateria"
+10. Bloquear: "bloquea pantalla"
+11. Configuración: "abre configuracion de [wifi/bluetooth/sonido/...]"
+12. Apps instaladas: "cuantas apps instaladas"
+
+- **116 core modules, 37 test files, 45 tests (suite v5.5)**
+- **Total: ~5,038 tests, 37 suites, 116 archivos, ~82,000+ líneas**
+
+---
+
+### v5.6.0 — Smart Utilities (2026-03-15)
+**Tema:** Herramientas de productividad diaria tipo asistente JARVIS.
+
+**Nuevos módulos (4):**
+- `core/clipboard_manager.py` (~190 líneas) — Historial de portapapeles con búsqueda, pin, monitoreo background. Usa `RLock` para thread safety (evitar deadlock en pin→save).
+- `core/text_transformer.py` (~200 líneas) — 23 transformaciones: case conversions (upper, lower, title, camel, snake, kebab), encoding (base64, URL, hex), hashing (MD5, SHA1, SHA256), estadísticas (chars, words, lines, read time), extracción (emails, URLs, números), JSON formatter, sort, dedup, reverse.
+- `core/unit_converter.py` (~220 líneas) — 7 categorías de conversión (distancia, peso, datos, tiempo, volumen, velocidad, temperatura). Parser de lenguaje natural: "10 km a millas", "cuántos metros son 5 pies", "30°C a fahrenheit". Tablas normalizadas a unidad base.
+- `core/pomodoro.py` (~250 líneas) — Timer Pomodoro con state machine (idle→working→break→working→...). 25min trabajo / 5min descanso / 15min largo cada 4. Pausa, resume, skip, configure, historial, notificaciones desktop.
+
+**Nuevos auto-detect blocks (28):**
+1-6. Clipboard: ver actual, historial, buscar, monitorear, detener, limpiar
+7-18. Text: mayúsculas, minúsculas, título, contar palabras, base64 enc/dec, hash, emails, URLs, números, JSON, ordenar, duplicados, invertir
+19-20. Units: convertir (NLP), listar categorías
+21-28. Pomodoro: iniciar, pausar, reanudar, detener, saltar, status, historial, configurar
+
+**Bugs encontrados y corregidos:**
+- **Deadlock en ClipboardManager**: `pin()` adquiría `Lock()` y llamaba `save()` que también adquiría `Lock()`. Fix: `threading.RLock()` (reentrant lock).
+- **Base64 decode vacío**: `"!!!"` es base64 válido que decodifica a string vacío. Fix: validar que el resultado no sea vacío.
+
+- **120 core modules, 39 test files, 92 tests (suite v5.6)**
+- **Total: ~5,130 tests, 39 suites, 120 archivos, ~84,000+ líneas**
+
+---
+
+### v5.7.0 — JARVIS Intelligence (2026-03-15)
+**Tema:** Comportamiento proactivo de asistente inteligente. GENESIS deja de ser reactivo y pasa a ser un co-piloto del sistema.
+
+**Nuevos módulos (4):**
+- `core/window_manager.py` (~270 líneas) — Control de ventanas via Win32 API (user32.dll). Snap left/right/top/bottom, maximize, minimize, minimize all, restore, focus, tile two windows, close, screen info. Parser de lenguaje natural para comandos de ventana.
+- `core/smart_launcher.py` (~220 líneas) — Búsqueda unificada con fuzzy matching (SequenceMatcher) en 6 fuentes: apps instaladas, archivos recientes, desktop, notas, clipboard, procesos activos. Score 0-1 con ranking visual.
+- `core/daily_briefing.py` (~180 líneas) — Briefing contextual: saludo por hora, sistema (CPU/RAM/uptime/disco), notas pendientes, recordatorios activos, pomodoro, cita motivacional random. Se activa con "buenos días" o "briefing".
+- `core/macro_system.py` (~260 líneas) — Macros nombradas que ejecutan secuencias de comandos auto-detect. Parser NLP: "macro trabajo: abre Chrome, abre VS Code, inicia pomodoro". Persistencia JSON, fuzzy name matching, historial de ejecuciones.
+
+**Nuevos auto-detect blocks (20):**
+1-12. Windows: snap left/right, maximize, minimize, minimize all, restore, focus, list, screen info, tile, close
+13-14. Launcher: search unified, launch best
+15. Briefing: buenos días, resumen del día, estado general
+16-20. Macros: create, execute, list, delete, show, history
+
+**Highlights técnicos:**
+- **Win32 API sin pywin32**: Usa `Add-Type` de PowerShell + `DllImport` para cargar `user32.dll` directamente. Cero dependencias externas.
+- **Fuzzy matching stdlib**: `difflib.SequenceMatcher` + boosting por iniciales y posición.
+- **Macro executor pattern**: `set_executor(callback)` permite que genesis.py inyecte `_auto_detect_tool()` sin acoplamiento.
+
+- **124 core modules, 40 test files, 67 tests (suite v5.7)**
+- **Total: ~5,197 tests, 40 suites, 124 archivos, ~86,000+ líneas**
+
+---
+
+### v5.8.0 — Autonomous Orchestration (2026-03-15)
+
+**Tema: GENESIS se vuelve proactivo — vigila, programa, trackea y aprende.**
+
+**Nuevos módulos (4):**
+
+1. **`core/file_watcher.py` — FileWatcher**
+   - Monitor de directorios con reglas configurables (patrón glob + acción)
+   - Acciones: move, copy, notify, execute
+   - Background daemon thread con scan cada 3 segundos
+   - Snapshot inicial para no disparar en archivos existentes
+   - Log de eventos, persistencia JSON, enable/disable por regla
+
+2. **`core/smart_scheduler.py` — SmartScheduler**
+   - Scheduler tipo cron con parsing NLP en español e inglés
+   - Tipos: intervalo ("cada 30 minutos"), diario ("daily 09:00"), semanal ("cada lunes a las 10")
+   - Patrón tick() cooperativo — se llama desde el loop principal
+   - Executor callback pattern (mismo que MacroSystem)
+   - Historial de ejecuciones, enable/disable por tarea
+
+3. **`core/habit_tracker.py` — HabitTracker**
+   - Hábitos diarios/semanales con tracking de completaciones
+   - Cálculo de streaks (racha actual + mejor histórica)
+   - Vista de hoy, estadísticas por hábito, tasa de completación 30 días
+   - Mensajes motivacionales adaptativos según racha (3d, 7d, 14d, 30d)
+   - Integración con DailyBriefing (get_summary → sección PRODUCTIVIDAD)
+   - Prevención de doble-completación, fuzzy matching en nombres
+
+4. **`core/context_engine.py` — ContextEngine**
+   - Registra interacciones (tipo, hora, query) con max 500 historial
+   - Top commands: frecuencia con barras visuales
+   - Time report: heatmap textual por hora del día, detección de hora pico
+   - Day report: uso por día de la semana
+   - Sugerencias proactivas: si a las 9:00 siempre pedís briefing → te lo sugiere
+   - Full report: análisis completo combinando todo
+
+**Integración en genesis.py (20 nuevos auto-detect blocks):**
+- FileWatcher: vigilar carpeta, listar/agregar reglas, start/stop monitoreo, eventos
+- SmartScheduler: programar tarea, listar tareas, historial
+- HabitTracker: crear/completar/listar/eliminar hábito, hábitos de hoy, estadísticas, rachas
+- ContextEngine: top comandos, patrones de uso, sugerencias, borrar datos
+
+**Patrones técnicos:**
+- **fnmatch para file matching**: stdlib, sin dependencias — `fnmatch.fnmatch(filename, "*.pdf")`
+- **Cooperative tick()**: SmartScheduler no usa threads — se llama desde el loop principal
+- **Streak calculation**: Cuenta días consecutivos desde hoy/ayer hacia atrás, maneja gaps
+- **Proactive suggestions**: Solo sugiere si el patrón es fuerte (>40% de interacciones a esa hora)
+
+- **128 core modules, 41 test files, 123 tests (suite v5.8)**
+- **Total: ~5,320 tests, 41 suites, 128 archivos, ~90,000+ líneas**
+
+---
+
+### v5.9.0 — System Mastery (2026-03-15)
+
+**Tema: GENESIS domina tu entorno — genera proyectos, gestiona snippets, aplica templates, audita el sistema.**
+
+**Nuevos módulos (4):**
+
+1. **`core/project_scaffolder.py` — ProjectScaffolder**
+   - 6 templates: Python (basic), Flask (MVC), FastAPI (REST), Node (Express), React (Vite), HTML (estática)
+   - Cada template genera estructura completa: main, config, README, .gitignore, tests
+   - Variables dinámicas: {name}, {name_slug}, {description}
+   - Historial de proyectos generados
+   - Bug fix: CSS braces `{}` deben escaparse como `{{}}` para `.format()`
+
+2. **`core/code_snippets.py` — CodeSnippets**
+   - Biblioteca personal de fragmentos de código
+   - Tags, lenguaje, fuzzy search (nombre + tag + contenido + lenguaje)
+   - Agrupación por lenguaje, contador de usos
+   - Persistencia JSON, export ready
+
+3. **`core/template_engine.py` — TemplateEngine**
+   - 5 templates predefinidos: email_formal, email_seguimiento, bug_report, acta_reunion, changelog
+   - Templates custom con extracción automática de variables `{var}`
+   - Apply con valores parciales (variables no proporcionadas quedan como placeholder)
+   - Auto-fill `{fecha}` con la fecha actual
+   - Protección contra eliminación de templates predefinidos
+
+4. **`core/system_profiler.py` — SystemProfiler**
+   - 7 reportes: software instalado, startup programs, env vars, disk usage, network connections, services, full report
+   - Software vía Windows Registry (WOW6432Node + native)
+   - Disk usage con barras visuales y estimación de primer nivel
+   - Network connections vía Get-NetTCPConnection
+   - Servicios con estado (running/stopped) y tipo de inicio
+
+**Integración en genesis.py (~20 nuevos auto-detect blocks):**
+- ProjectScaffolder: crear proyecto, templates disponibles, historial
+- CodeSnippets: guardar, obtener, buscar, listar, eliminar snippet
+- TemplateEngine: listar, preview, aplicar template
+- SystemProfiler: software, startup, env vars, disco, red, servicios, reporte completo
+
+- **132 core modules, 42 test files, 105 tests (suite v5.9)**
+- **Total: ~5,425 tests, 42 suites, 132 archivos, ~95,000+ líneas**
+
+---
+
+### v6.0.0 — Digital Sovereignty (2026-04-17)
+
+**Tema: GENESIS libera su cerebro — corre 100% local por defecto sin dependencia de APIs externas.**
+
+**Contexto estratégico**: el usuario está financiando hardware superior (meta RTX 4060 Ti 16GB)
+vía bots de trading (Forex +200% en 3 días con $50 → $150). La migración a soberanía digital
+es progresiva: Phase 0 crea la abstracción, Phase 1 activa multi-modelo local, Phases 2-4
+agregan RAG semántico, auto-evolución activa y fine-tuning LoRA nocturno.
+
+**Phase 0 — Multi-Provider Routing**:
+
+1. **`core/provider_router.py` (NUEVO, ~420 líneas)**
+   - **`_CircuitBreaker`**: marca provider DOWN tras N fallos consecutivos (default 3),
+     cooldown configurable (default 5 min), auto-recuperación con request de prueba.
+     - `is_up(provider)`, `record_success()`, `record_failure()`, `status()`
+   - **`_TaskClassifier`**: heurística keyword+length sin LLM (no recursivo).
+     - Clasifica en `'simple'` | `'coding'` | `'reasoning'`
+     - `_CODING_KW`: python, javascript, codigo, funcion, bug, script, regex...
+     - `_REASONING_KW`: analiza, evalua, compara, estrategia, arquitectura...
+     - Textos >3000 chars → `'reasoning'` automático
+   - **`ProviderRouter`**: facade con contrato compatible con `Brain`.
+     - `STRATEGIES`: `local_first` (default), `quality_first`, `cost_first`, `speed_first`
+     - `think()`: failover automático por el orden de la estrategia, respetando circuit breaker
+     - `from_config()`: factory que lee `config.py`, solo incluye providers con API key / con Ollama up
+     - Pass-through props: `provider`, `model`, `total_tokens_used` → drop-in para Brain
+
+2. **`config.py` (extendido)**:
+   - `LLM_STRATEGY = os.getenv("GENESIS_LLM_STRATEGY", "local_first")`
+   - `LLM_TASK_CLASSIFIER = os.getenv("GENESIS_LLM_CLASSIFIER", "true").lower() == "true"`
+   - Backwards compatible: `LLM_PROVIDER` sigue existiendo para single-provider legacy
+
+3. **`genesis.py` (modificado)**:
+   - `self.brain = ProviderRouter.from_config()` con fallback grácil al Brain legacy
+   - Imprime providers configurados y estrategia al arrancar
+
+**Phase 1 — Multi-Model Ollama**:
+
+1. **`config.py` (extendido)**:
+   ```python
+   OLLAMA_MODEL_BY_TASK = {
+       "coding":    "qwen2.5-coder:7b",  # especializado en código
+       "reasoning": "genesis",            # Llama 3.1 custom sin restricciones
+       "default":   "genesis",
+   }
+   ```
+   Sobreescribible vía env vars `GENESIS_OLLAMA_CODING`, `GENESIS_OLLAMA_REASONING`,
+   `GENESIS_OLLAMA_DEFAULT`.
+
+2. **`core/provider_router.py` (extendido)**:
+   - `_get_brain_for(provider, task_type)`: elige Brain según tipo de tarea.
+     - Para Ollama: resuelve modelo y cachea instancia por **nombre de modelo** (no por task).
+     - Fallback en cascada: task_type específico → "default" → modelo del Brain base
+   - `think()` usa `_get_brain_for()` en vez de `self.brains[provider]` directo
+   - Nueva telemetría: `calls_by_model`, `last_model_used`, `ollama_models_cached`
+
+3. **Modelos Ollama instalados**:
+   - `genesis:latest` (Llama 3.1 8B custom Q4_K_M, 4.58GB) — conversación general
+   - `qwen2.5-coder:7b` (Q4_K_M, 4.36GB) — especializado en código
+   - Total en disco: ~13.5GB
+
+**Tests**:
+- `tests/test_provider_router.py` (NUEVO, ~300 líneas):
+  - 48 tests, 48 passed, 0 failed
+  - 5 secciones: CircuitBreaker, TaskClassifier, failover automático, estrategias, multi-model
+  - Usa `FakeBrain` stub (sin HTTP real)
+- `tests/test_qwen_e2e.py` (NUEVO, ~100 líneas):
+  - Integración real con Ollama: valida que coding prompt → Qwen, general → Genesis
+  - Resultado PASS: `qwen2.5-coder:7b` 17.7s (carga fría), `genesis` 10.3s
+
+**VRAM** (RTX 3060 Ti 8GB):
+- Genesis (4.58GB) + Qwen Coder (4.36GB) = 8.94GB → no caben simultáneos
+- Ollama hace unload/reload (~2-3s overhead en switches)
+- Con 4060 Ti 16GB coexistirían calientes
+
+**Resultado**: Genesis corre 100% local sin necesidad de GOOGLE_API_KEY/OPENAI_API_KEY/
+ANTHROPIC_API_KEY. Single point of failure: que Ollama esté corriendo. Recomendación:
+configurar Gemini como backup silencioso (gratis 15 RPM).
+
+**Archivos nuevos/modificados**:
+- NUEVO: `core/provider_router.py` (~420 líneas)
+- NUEVO: `tests/test_provider_router.py` (~300 líneas)
+- NUEVO: `tests/test_qwen_e2e.py` (~100 líneas)
+- MODIFICADO: `config.py` (+~20 líneas)
+- MODIFICADO: `genesis.py` (+~20 líneas en `__init__`)
+
+- **133 core modules, 44 test files, ~5,473 tests totales**
+- **Total: ~5,473 tests, 44 suites, 133 archivos, ~96,000+ líneas**
+
+---
+
 ## Resumen del Roadmap
 
 | Version | Tema | Modulos | Tests |
@@ -740,8 +1104,19 @@ GENESIS/
 | v4.3 ✅ | Knowledge Mastery | 85 | 4,648 |
 | v4.4 ✅ | Distributed Genesis | 88 | 4,700 |
 | v5.0 ✅ | Singularity | 91 | 4,752 |
+| v5.1 ✅ | Device Control & Anti-Hallucination | 92 | 4,752 |
+| v5.4 ✅ | JARVIS — Gemini + Desktop App | 113 | 4,993 |
+| v5.5 ✅ | Smart Productivity | 116 | 5,038 |
+| v5.6 ✅ | Smart Utilities | 120 | 5,130 |
+| v5.7 ✅ | JARVIS Intelligence | 124 | 5,197 |
+| v5.8 ✅ | Autonomous Orchestration | 128 | 5,320 |
+| v5.9 ✅ | System Mastery | 132 | 5,425 |
+| **v6.0** ✅ | **Digital Sovereignty** | **133** | **5,473** |
 
-**GENESIS v5.0 COMPLETADO.** 91 modulos, 4,752 tests, ~70,000+ lineas de codigo. Una IA local completamente autonoma.
+**GENESIS v6.0 COMPLETADO.** 133 módulos, 125+ auto-detect sections, **router multi-provider
+con failover**, 2 modelos Ollama en producción (Genesis + Qwen Coder), desktop app, project
+scaffolder, snippets, templates, system profiler — ~96,000+ líneas de código.
+**Corre 100% local sin dependencia de APIs externas.**
 
 ---
 
@@ -754,3 +1129,8 @@ GENESIS/
 | JSON files sobre SQLite | SQLite | Simplicidad para datos pequeños, sin ORM |
 | TF-IDF propio sobre sklearn | sklearn | Cero dependencias adicionales para búsqueda |
 | Unittest sobre pytest | unittest incluido | pytest más expresivo, mejor output |
+| **Ollama sobre llama-cpp-python directo** (v6.0) | llama-cpp-python directo | Ollama gestiona unload/reload de modelos, HTTP API estable, multi-modelo en paralelo |
+| **ProviderRouter como Facade sobre Brain** (v6.0) | Refactor de Brain | Zero breaking changes — `self.brain` sigue siendo drop-in replaceable |
+| **Multi-model Ollama por task_type** (v6.0) | Un solo modelo Ollama | Qwen Coder 7B es ~15% mejor en código que Llama 3.1 8B general (según benchmarks HumanEval+); separar tareas aprovecha especialización |
+| **Circuit Breaker en vez de retry con backoff** (v6.0) | Retry simple | Con múltiples providers, el failover es más rápido que reintentar el caído — el circuit breaker evita gastar latencia en providers conocidos down |
+| **Task Classifier heurístico sin LLM** (v6.0) | LLM pequeño (BERT-tiny) | Para MVP, keywords son suficientes y cero dependencias. Phase futura: fine-tunear BERT-tiny sobre conversaciones reales |

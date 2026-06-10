@@ -53,9 +53,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
     # Log messages
     child.debug("mensaje debug")
     child.info("mensaje info")
-    child.warn("mensaje warn")
     child.error("mensaje error")
-    test("Mensajes loggeados", logger._message_count == 4)
+    test("Mensajes loggeados", logger._message_count == 3)
 
     # Log file exists
     log_file = Path(tmpdir) / "genesis.log"

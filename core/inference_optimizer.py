@@ -106,22 +106,22 @@ class ResponsePredictor:
         text = user_input.lower()
         length = len(text)
 
-        # Preguntas muy cortas (< 20 chars) → respuesta corta
-        if length < 20:
-            return 256
+        # Preguntas muy cortas (< 15 chars) → respuesta corta pero no mínima
+        if length < 15:
+            return 512
 
         # Detectar patrones cortos
         short_score = sum(1 for p in self.SHORT_PATTERNS if p in text)
         long_score = sum(1 for p in self.LONG_PATTERNS if p in text)
 
-        if short_score > long_score:
-            return 384  # Respuesta concisa
+        if short_score > long_score and long_score == 0:
+            return 512  # Respuesta concisa pero suficiente
         elif long_score > short_score:
             return min(2048, default * 2)  # Respuesta detallada
         elif length > 200:
             return 1536  # Input largo = contexto rico = respuesta media-larga
         else:
-            return default
+            return max(768, default)  # Mínimo 768 para preguntas normales
 
 
 class ContextTrimmer:
@@ -136,9 +136,9 @@ class ContextTrimmer:
     - Prioriza los mensajes mas recientes
     """
 
-    def __init__(self, max_system_chars: int = 3000,
-                 max_message_chars: int = 500,
-                 max_messages: int = 8):
+    def __init__(self, max_system_chars: int = 8000,
+                 max_message_chars: int = 1500,
+                 max_messages: int = 12):
         self.max_system_chars = max_system_chars
         self.max_message_chars = max_message_chars
         self.max_messages = max_messages

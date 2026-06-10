@@ -1,0 +1,14 @@
+{
+    "name": "Minimal",
+    "description": "Configuración ligera para hardware limitado. Sin debate, heartbeat lento.",
+    "provider": "ollama",
+    "model": "llama3.1:8b",
+    "gpu_layers": 20,
+    "streaming": true,
+    "debate_enabled": false,
+    "heartbeat_interval_min": 30,
+    "auto_backup_interval": 50,
+    "temperature": 0.6,
+    "max_tokens": 1024,
+    "notes": "Para equipos con <8GB RAM o sin GPU dedicada."
+}

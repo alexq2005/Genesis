@@ -272,9 +272,9 @@ class SkillMemory:
         if self.embeddings:
             try:
                 self.embeddings.add_text(
-                    f"skill_{skill.skill_id}",
-                    f"{skill.title} {' '.join(skill.tags)} {skill.source_query}",
-                    metadata={"type": "skill", "skill_id": skill.skill_id},
+                    doc_id=f"skill_{skill.skill_id}",
+                    text=f"{skill.title} {' '.join(skill.tags)} {skill.source_query}",
+                    extra_metadata={"type": "skill", "skill_id": skill.skill_id},
                 )
             except Exception:
                 pass

@@ -152,7 +152,7 @@ class SemanticMemory:
             similar = self.embeddings.search(entry.to_text(), top_k=1)
             if similar and similar[0]["score"] >= self.dedup_threshold:
                 # Actualizar entrada existente en vez de duplicar
-                existing_key = similar[0].get("key", "")
+                existing_key = similar[0].get("id", "")
                 if existing_key in self.entries:
                     old = self.entries[existing_key]
                     # Mantener la de mejor calidad
@@ -164,9 +164,9 @@ class SemanticMemory:
         # Indexar en embeddings
         if self.embeddings:
             self.embeddings.add_text(
-                key=entry.entry_id,
+                doc_id=entry.entry_id,
                 text=entry.to_text(),
-                metadata={
+                extra_metadata={
                     "type": "conversation",
                     "intent": intent,
                     "timestamp": entry.timestamp,
@@ -214,7 +214,7 @@ class SemanticMemory:
             if r["score"] < self.recall_min_score:
                 continue
 
-            entry_id = r.get("key", "")
+            entry_id = r.get("id", "")
             entry = self.entries.get(entry_id)
             if not entry:
                 continue

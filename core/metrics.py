@@ -65,6 +65,10 @@ class MetricsTracker:
         with open(self.filepath, "w", encoding="utf-8") as f:
             json.dump(self.data, f, ensure_ascii=False, indent=2)
 
+    def save(self):
+        """Persiste estado a disco."""
+        self._save()
+
     def _new_session(self) -> dict:
         """Crea metricas para una nueva sesion."""
         return {

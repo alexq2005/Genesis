@@ -53,6 +53,30 @@ class FeedbackSystem:
         with open(self.filepath, "w", encoding="utf-8") as f:
             json.dump(self.data, f, ensure_ascii=False, indent=2)
 
+    def save(self):
+        """Persiste estado a disco."""
+        self._save()
+
+    def clear(self):
+        """Resetea todos los datos de feedback y elimina el archivo."""
+        self.data = {
+            "ratings": [],
+            "positive_count": 0,
+            "negative_count": 0,
+            "patterns": {
+                "liked_topics": {},
+                "disliked_topics": {},
+                "liked_styles": [],
+                "disliked_styles": [],
+            },
+            "streak": 0,
+            "best_streak": 0,
+            "created": time.time(),
+        }
+        self.last_interaction = {}
+        if self.filepath.exists():
+            self.filepath.unlink()
+
     def set_last_interaction(self, user_input: str, response: str,
                              category: str = "general"):
         """Registra la ultima interaccion para poder calificarla."""

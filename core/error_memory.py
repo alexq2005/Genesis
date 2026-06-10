@@ -41,6 +41,16 @@ class ErrorMemory:
         with open(self.filepath, "w", encoding="utf-8") as f:
             json.dump(self.errors, f, ensure_ascii=False, indent=2)
 
+    def save(self):
+        """Persiste estado a disco."""
+        self._save()
+
+    def clear(self):
+        """Resetea la memoria de errores y elimina el archivo."""
+        self.errors = []
+        if self.filepath.exists():
+            self.filepath.unlink()
+
     def record_error(self, error_text: str, code: str,
                      fix: str = "", fix_code: str = "") -> dict:
         """

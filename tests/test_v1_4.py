@@ -12,6 +12,14 @@ import tempfile
 import shutil
 import time
 
+# UTF-8 para Windows
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # Path setup
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.chdir(os.path.join(os.path.dirname(__file__), ".."))

@@ -107,6 +107,17 @@ class KnowledgeGraph:
             "edges": self.edges,
         })
 
+    def save(self):
+        """Persiste estado a disco."""
+        self._save()
+
+    def clear(self):
+        """Resetea el grafo de conocimiento y elimina el archivo."""
+        self.nodes = {}
+        self.edges = {}
+        if self.graph_file.exists():
+            self.graph_file.unlink()
+
     @staticmethod
     def _make_edge_key(a: str, b: str) -> str:
         """Crea clave de arista normalizada (siempre sorted)."""

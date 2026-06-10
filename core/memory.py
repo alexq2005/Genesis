@@ -224,6 +224,10 @@ class LongTermMemory:
         with open(self.filepath, "w", encoding="utf-8") as f:
             json.dump(self.memories, f, ensure_ascii=False, indent=2)
 
+    def save(self):
+        """Persiste estado a disco."""
+        self._save()
+
     def remember(self, fact: str, category: str = "general", source: str = "conversation"):
         """Almacena un hecho en la memoria de largo plazo."""
         # Evitar duplicados
@@ -352,6 +356,10 @@ class EmotionalMemory:
         """Persiste memorias a disco."""
         with open(self.filepath, "w", encoding="utf-8") as f:
             json.dump(self.memories, f, ensure_ascii=False, indent=2)
+
+    def save(self):
+        """Persiste estado a disco."""
+        self._save()
 
     def imprint(self, memory: str, emotion: str, weight: float,
                 context: str = ""):

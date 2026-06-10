@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 GENESIS Health Monitor — Monitoreo de salud del sistema en produccion.
 

@@ -50,6 +50,16 @@ class CodeMemory:
         with open(self.filepath, "w", encoding="utf-8") as f:
             json.dump(self.solutions, f, ensure_ascii=False, indent=2)
 
+    def save(self):
+        """Persiste estado a disco."""
+        self._save()
+
+    def clear(self):
+        """Resetea la memoria de codigo y elimina el archivo."""
+        self.solutions = []
+        if self.filepath.exists():
+            self.filepath.unlink()
+
     def store(self, task: str, code: str, output: str,
               language: str = "python") -> dict:
         """

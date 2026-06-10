@@ -1,6 +1,6 @@
 """
 GENESIS Brain — Motor LLM multi-proveedor.
-Soporta Ollama (local/gratis), OpenAI y Anthropic.
+Soporta Ollama (local/gratis), OpenAI, Anthropic y Gemini.
 Todos los proveedores soportan streaming via callback.
 """
 import json
@@ -18,6 +18,7 @@ class Brain:
         self.ollama_url = kwargs.get("ollama_url", "http://localhost:11434")
         self.openai_key = kwargs.get("openai_key", "")
         self.anthropic_key = kwargs.get("anthropic_key", "")
+        self.google_key = kwargs.get("google_key", "")
         self.total_tokens_used = 0
         self.total_calls = 0
 
@@ -55,17 +56,32 @@ class Brain:
                 system_prompt, messages, temperature, max_tokens,
                 stream=stream, callback=stream_callback,
             )
+        elif self.provider == "gemini":
+            return self._think_gemini(
+                system_prompt, messages, temperature, max_tokens,
+                stream=stream, callback=stream_callback,
+            )
         else:
             raise ValueError(f"Proveedor no soportado: {self.provider}")
 
     def _think_ollama(self, system_prompt: str, messages: list[dict],
                       temperature: float, max_tokens: int,
-                      stream: bool = False, callback: Callable = None) -> str:
+                      stream: bool = False, callback: Callable = None,
+                      timeout: int = 300) -> str:
         """Genera respuesta usando Ollama (local)."""
         all_messages = [{"role": "system", "content": system_prompt}] + messages
 
         # Ollama soporta streaming nativo via NDJSON
         use_stream = stream and callback is not None
+
+        # Calcular num_ctx dinámico basado en el tamaño real del prompt
+        # Esto optimiza el uso de RAM: preguntas simples usan menos KV cache
+        total_chars = sum(len(m.get("content", "")) for m in all_messages)
+        estimated_tokens = total_chars // 3  # ~3 chars por token aprox
+        # Mínimo 8K, máximo 32K, con margen del 50% para respuesta
+        dynamic_ctx = max(8192, min(32768, int(estimated_tokens * 1.5) + max_tokens))
+        # Alinear a múltiplos de 2048 para eficiencia
+        dynamic_ctx = ((dynamic_ctx + 2047) // 2048) * 2048
 
         payload = {
             "model": self.model,
@@ -74,6 +90,7 @@ class Brain:
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
+                "num_ctx": dynamic_ctx,
             }
         }
 
@@ -88,10 +105,18 @@ class Brain:
 
             if use_stream:
                 # Streaming: Ollama envia NDJSON (una linea JSON por token)
+                # IMPORTANTE: usar readline() en vez de 'for line in resp:'
+                # porque el iterador de archivo bufferea internamente (~8KB),
+                # bloqueando el streaming real. readline() entrega cada linea
+                # inmediatamente cuando Ollama la envia via chunked encoding.
                 full_response = []
-                with urllib.request.urlopen(req, timeout=300) as resp:
-                    for line in resp:
-                        if not line.strip():
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    while True:
+                        line = resp.readline()
+                        if not line:
+                            break
+                        line = line.strip()
+                        if not line:
                             continue
                         try:
                             chunk = json.loads(line.decode("utf-8"))
@@ -107,7 +132,7 @@ class Brain:
                 return "".join(full_response)
             else:
                 # Batch: esperar respuesta completa
-                with urllib.request.urlopen(req, timeout=120) as resp:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
                     result = json.loads(resp.read().decode("utf-8"))
                     return result["message"]["content"]
 
@@ -237,6 +262,110 @@ class Brain:
         except Exception as e:
             return f"[ERROR] Anthropic: {e}"
 
+    def _think_gemini(self, system_prompt: str, messages: list[dict],
+                      temperature: float, max_tokens: int,
+                      stream: bool = False, callback: Callable = None) -> str:
+        """Genera respuesta usando Google Gemini API."""
+        if not self.google_key:
+            return "[ERROR] No se configuro GOOGLE_API_KEY. Edita config.py o usa variable de entorno."
+
+        use_stream = stream and callback is not None
+
+        # Convertir mensajes de formato OpenAI a formato Gemini
+        # Gemini usa "user"/"model" (no "assistant") y "parts" (no "content")
+        gemini_contents = []
+        for msg in messages:
+            role = "model" if msg["role"] == "assistant" else "user"
+            gemini_contents.append({
+                "role": role,
+                "parts": [{"text": msg["content"]}]
+            })
+
+        payload = {
+            "contents": gemini_contents,
+            "systemInstruction": {
+                "parts": [{"text": system_prompt}]
+            },
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens,
+            }
+        }
+
+        try:
+            data = json.dumps(payload).encode("utf-8")
+
+            if use_stream:
+                # Streaming: Gemini usa streamGenerateContent con SSE
+                url = (f"https://generativelanguage.googleapis.com/v1beta/"
+                       f"models/{self.model}:streamGenerateContent"
+                       f"?alt=sse&key={self.google_key}")
+                req = urllib.request.Request(
+                    url, data=data,
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                full_response = []
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    for line in resp:
+                        line = line.decode("utf-8").strip()
+                        if not line or not line.startswith("data: "):
+                            continue
+                        try:
+                            chunk = json.loads(line[6:])
+                            candidates = chunk.get("candidates", [])
+                            if candidates:
+                                parts = candidates[0].get("content", {}).get("parts", [])
+                                for part in parts:
+                                    token = part.get("text", "")
+                                    if token:
+                                        callback(token)
+                                        full_response.append(token)
+                            # Contar tokens del uso
+                            usage = chunk.get("usageMetadata", {})
+                            if usage:
+                                self.total_tokens_used += usage.get("totalTokenCount", 0)
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue
+                return "".join(full_response)
+            else:
+                # Batch: respuesta completa
+                url = (f"https://generativelanguage.googleapis.com/v1beta/"
+                       f"models/{self.model}:generateContent"
+                       f"?key={self.google_key}")
+                req = urllib.request.Request(
+                    url, data=data,
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    result = json.loads(resp.read().decode("utf-8"))
+                    candidates = result.get("candidates", [])
+                    if not candidates:
+                        # Puede ser un bloqueo de seguridad
+                        block_reason = result.get("promptFeedback", {}).get("blockReason", "UNKNOWN")
+                        return f"[ERROR] Gemini bloqueo la respuesta: {block_reason}"
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    text = "".join(p.get("text", "") for p in parts)
+                    # Contar tokens
+                    usage = result.get("usageMetadata", {})
+                    self.total_tokens_used += usage.get("totalTokenCount", 0)
+                    return text
+
+        except urllib.error.HTTPError as e:
+            error_body = ""
+            try:
+                error_body = e.read().decode("utf-8")
+                error_json = json.loads(error_body)
+                error_msg = error_json.get("error", {}).get("message", str(e))
+            except Exception:
+                error_msg = error_body or str(e)
+            if e.code == 429:
+                return f"[ERROR] Gemini: limite de requests excedido. {error_msg}"
+            return f"[ERROR] Gemini ({e.code}): {error_msg}"
+        except Exception as e:
+            return f"[ERROR] Gemini: {e}"
+
     def quick_think(self, prompt: str, system: str = "Responde de forma concisa.",
                     temperature: float = 0.5) -> str:
         """Atajo para pensamientos rapidos internos (debate, evaluacion, etc)."""
@@ -256,6 +385,17 @@ class Brain:
             return bool(self.openai_key)
         elif self.provider == "anthropic":
             return bool(self.anthropic_key)
+        elif self.provider == "gemini":
+            if not self.google_key:
+                return False
+            try:
+                url = (f"https://generativelanguage.googleapis.com/v1beta/"
+                       f"models/{self.model}?key={self.google_key}")
+                req = urllib.request.Request(url)
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    return resp.status == 200
+            except Exception:
+                return False
         return False
 
     def get_stats(self) -> dict:

@@ -1,0 +1,15 @@
+{
+    "name": "Local GPU",
+    "description": "Operación 100% local con Ollama + GPU. Sin conexión a internet requerida.",
+    "provider": "ollama",
+    "model": "llama3.1:8b",
+    "ollama_url": "http://localhost:11434",
+    "gpu_layers": 50,
+    "streaming": true,
+    "debate_enabled": false,
+    "heartbeat_interval_min": 15,
+    "auto_backup_interval": 25,
+    "temperature": 0.7,
+    "max_tokens": 2048,
+    "notes": "Requiere Ollama instalado y modelo descargado: ollama pull llama3.1"
+}

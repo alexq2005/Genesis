@@ -291,6 +291,143 @@ class FileTools:
             return f"[ERROR] No se pudo escribir {filepath}: {e}"
 
     @staticmethod
+    def edit_file(filepath: str, old_text: str, new_text: str) -> str:
+        """
+        Edita un archivo reemplazando texto específico (find/replace).
+
+        Busca 'old_text' en el archivo y lo reemplaza con 'new_text'.
+        Si old_text no se encuentra, intenta coincidencia aproximada
+        (ignorando diferencias de whitespace al inicio de línea).
+
+        Args:
+            filepath: Ruta al archivo
+            old_text: Texto a buscar (debe ser único en el archivo)
+            new_text: Texto de reemplazo
+
+        Returns:
+            Mensaje de éxito/error
+        """
+        valid, msg = PathValidator.validate_write(filepath)
+        if not valid:
+            return f"[ERROR] {msg}"
+
+        try:
+            path = Path(filepath)
+            if not path.exists():
+                return f"[ERROR] Archivo no encontrado: {filepath}"
+
+            content = path.read_text(encoding="utf-8", errors="ignore")
+
+            # Intento 1: coincidencia exacta
+            if old_text in content:
+                count = content.count(old_text)
+                if count > 1:
+                    return (
+                        f"[ERROR] El texto a reemplazar aparece {count} veces. "
+                        f"Usa un fragmento más grande/específico para que sea único."
+                    )
+                new_content = content.replace(old_text, new_text, 1)
+                path.write_text(new_content, encoding="utf-8")
+                return (
+                    f"Archivo editado: {filepath}\n"
+                    f"Reemplazado {len(old_text)} chars → {len(new_text)} chars"
+                )
+
+            # Intento 2: coincidencia flexible (ignorar whitespace)
+            # Útil cuando el LLM no respeta la indentación exacta
+            old_lines = old_text.strip().splitlines()
+            content_lines = content.splitlines()
+
+            for i in range(len(content_lines) - len(old_lines) + 1):
+                match = True
+                for j, old_line in enumerate(old_lines):
+                    if content_lines[i + j].strip() != old_line.strip():
+                        match = False
+                        break
+                if match:
+                    # Encontrado — reemplazar preservando indentación
+                    new_lines = new_text.splitlines()
+                    # Obtener la indentación de la primera línea original
+                    base_indent = ""
+                    orig_line = content_lines[i]
+                    for ch in orig_line:
+                        if ch in (' ', '\t'):
+                            base_indent += ch
+                        else:
+                            break
+
+                    result_lines = content_lines[:i]
+                    for nl in new_lines:
+                        stripped = nl.lstrip()
+                        if stripped:
+                            result_lines.append(base_indent + stripped)
+                        else:
+                            result_lines.append("")
+                    result_lines.extend(content_lines[i + len(old_lines):])
+
+                    new_content = "\n".join(result_lines)
+                    if content.endswith("\n"):
+                        new_content += "\n"
+                    path.write_text(new_content, encoding="utf-8")
+                    return (
+                        f"Archivo editado (match flexible): {filepath}\n"
+                        f"Líneas {i+1}-{i+len(old_lines)} reemplazadas"
+                    )
+
+            return (
+                f"[ERROR] No encontré el texto a reemplazar en {filepath}.\n"
+                f"Buscado (primeros 100 chars): {old_text[:100]}\n"
+                f"Asegúrate de que el texto coincida exactamente."
+            )
+
+        except Exception as e:
+            return f"[ERROR] No se pudo editar {filepath}: {e}"
+
+    @staticmethod
+    def insert_at_line(filepath: str, line_num: int, text: str) -> str:
+        """
+        Inserta texto en una línea específica del archivo.
+
+        Args:
+            filepath: Ruta al archivo
+            line_num: Número de línea donde insertar (1-indexed)
+            text: Texto a insertar
+
+        Returns:
+            Mensaje de éxito/error
+        """
+        valid, msg = PathValidator.validate_write(filepath)
+        if not valid:
+            return f"[ERROR] {msg}"
+
+        try:
+            path = Path(filepath)
+            if not path.exists():
+                return f"[ERROR] Archivo no encontrado: {filepath}"
+
+            lines = path.read_text(encoding="utf-8", errors="ignore").splitlines(True)
+
+            if line_num < 1:
+                line_num = 1
+            if line_num > len(lines) + 1:
+                line_num = len(lines) + 1
+
+            # Insertar las nuevas líneas
+            new_lines = text.splitlines(True)
+            if new_lines and not new_lines[-1].endswith("\n"):
+                new_lines[-1] += "\n"
+
+            lines[line_num - 1:line_num - 1] = new_lines
+            path.write_text("".join(lines), encoding="utf-8")
+            return (
+                f"Insertado en {filepath}:L{line_num}\n"
+                f"{len(new_lines)} línea(s) agregada(s)"
+            )
+
+        except Exception as e:
+            return f"[ERROR] No se pudo insertar en {filepath}: {e}"
+
+    @staticmethod
     def list_directory(dirpath: str = ".") -> str:
         """Lista el contenido de un directorio."""
         try:
@@ -822,52 +959,128 @@ class SystemInfoTool:
     """
 
     @staticmethod
+    def _ps_query(command: str, timeout: int = 10) -> str:
+        """Ejecuta un comando PowerShell y retorna stdout."""
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", command],
+            capture_output=True, text=True, timeout=timeout
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+
+    @staticmethod
     def get_system_info() -> str:
-        """Obtiene informacion completa del sistema."""
+        """Obtiene informacion completa del sistema usando PowerShell (compatible Win10+Win11)."""
         import platform
 
         lines = ["=== INFORMACION DEL SISTEMA ===\n"]
 
-        # Info basica del SO
-        lines.append(f"Sistema: {platform.system()} {platform.release()}")
-        lines.append(f"Version: {platform.version()}")
-        lines.append(f"Arquitectura: {platform.machine()}")
-        lines.append(f"Procesador: {platform.processor()}")
-        lines.append(f"Python: {platform.python_version()}")
+        # === SO + CPU + RAM via PowerShell (un solo comando, más rápido) ===
+        os_name = platform.system()
+        os_version = platform.version()
+        cpu_name = platform.processor()
+        os_caption = ""
+        ram_total_gb = 0
+        ram_free_gb = 0
 
-        # CPU info
-        try:
-            cpu_count = os.cpu_count()
-            lines.append(f"CPUs: {cpu_count}")
-        except Exception:
-            pass
+        if os_name == "Windows":
+            try:
+                # Un solo comando PowerShell que obtiene todo
+                ps_cmd = (
+                    "$os = Get-CimInstance Win32_OperatingSystem; "
+                    "$cpu = Get-CimInstance Win32_Processor; "
+                    "$mb = Get-CimInstance Win32_BaseBoard; "
+                    "Write-Output \"OS_CAPTION=$($os.Caption)\"; "
+                    "Write-Output \"OS_BUILD=$($os.BuildNumber)\"; "
+                    "Write-Output \"CPU_NAME=$($cpu.Name)\"; "
+                    "Write-Output \"CPU_CORES=$($cpu.NumberOfCores)\"; "
+                    "Write-Output \"CPU_THREADS=$($cpu.NumberOfLogicalProcessors)\"; "
+                    "Write-Output \"CPU_MHZ=$($cpu.MaxClockSpeed)\"; "
+                    "Write-Output \"RAM_TOTAL=$($os.TotalVisibleMemorySize)\"; "
+                    "Write-Output \"RAM_FREE=$($os.FreePhysicalMemory)\"; "
+                    "Write-Output \"MB_MAKER=$($mb.Manufacturer)\"; "
+                    "Write-Output \"MB_PRODUCT=$($mb.Product)\""
+                )
+                ps_output = SystemInfoTool._ps_query(ps_cmd, timeout=15)
+                ps_data = {}
+                for line in ps_output.split("\n"):
+                    line = line.strip()
+                    if "=" in line:
+                        key, val = line.split("=", 1)
+                        ps_data[key.strip()] = val.strip()
+
+                # OS caption real (ej: "Microsoft Windows 11 Pro")
+                os_caption = ps_data.get("OS_CAPTION", "")
+                if os_caption:
+                    # Extraer versión y edición del caption
+                    os_display = os_caption.replace("Microsoft ", "")
+                else:
+                    # Fallback: detectar por build number
+                    try:
+                        build = int(os_version.split(".")[-1])
+                        os_display = f"Windows {'11' if build >= 22000 else '10'}"
+                    except (ValueError, IndexError):
+                        os_display = f"{os_name} {platform.release()}"
+
+                # CPU real
+                cpu_name = ps_data.get("CPU_NAME", cpu_name)
+                cpu_cores = ps_data.get("CPU_CORES", "")
+                cpu_threads = ps_data.get("CPU_THREADS", str(os.cpu_count() or ""))
+                cpu_mhz = ps_data.get("CPU_MHZ", "")
+
+                # RAM
+                try:
+                    ram_total_kb = int(ps_data.get("RAM_TOTAL", 0))
+                    ram_free_kb = int(ps_data.get("RAM_FREE", 0))
+                    ram_total_gb = ram_total_kb / (1024 * 1024)
+                    ram_free_gb = ram_free_kb / (1024 * 1024)
+                    ram_used_gb = ram_total_gb - ram_free_gb
+                except (ValueError, TypeError):
+                    pass
+
+                # Motherboard
+                mb_info = ""
+                mb_maker = ps_data.get("MB_MAKER", "")
+                mb_product = ps_data.get("MB_PRODUCT", "")
+                if mb_maker and mb_product:
+                    mb_info = f"{mb_maker} {mb_product}"
+
+            except Exception:
+                os_display = f"{os_name} {platform.release()}"
+                cpu_threads = str(os.cpu_count() or "")
+                cpu_cores = ""
+                cpu_mhz = ""
+                mb_info = ""
+        else:
+            os_display = f"{os_name} {platform.release()}"
+            cpu_threads = str(os.cpu_count() or "")
+            cpu_cores = ""
+            cpu_mhz = ""
+            mb_info = ""
+
+        lines.append(f"Sistema: {os_display}")
+        lines.append(f"Build: {os_version}")
+        lines.append(f"Arquitectura: {platform.machine()}")
+        if cpu_name:
+            cpu_line = f"Procesador: {cpu_name}"
+            if cpu_cores:
+                cpu_line += f" ({cpu_cores} cores, {cpu_threads} threads)"
+            if cpu_mhz:
+                try:
+                    ghz = int(cpu_mhz) / 1000
+                    cpu_line += f" @ {ghz:.1f} GHz"
+                except (ValueError, TypeError):
+                    pass
+            lines.append(cpu_line)
+        if mb_info:
+            lines.append(f"Motherboard: {mb_info}")
 
         # RAM
-        try:
-            if platform.system() == "Windows":
-                result = subprocess.run(
-                    ["wmic", "OS", "get", "TotalVisibleMemorySize", "/value"],
-                    capture_output=True, text=True, timeout=10
-                )
-                for line in result.stdout.strip().split("\n"):
-                    if "TotalVisibleMemorySize" in line:
-                        kb = int(line.split("=")[1].strip())
-                        gb = kb / (1024 * 1024)
-                        lines.append(f"RAM Total: {gb:.1f} GB")
+        if ram_total_gb > 0:
+            lines.append(f"RAM Total: {ram_total_gb:.1f} GB")
+            lines.append(f"RAM Usada: {ram_used_gb:.1f} GB ({ram_used_gb/ram_total_gb*100:.0f}%)")
+            lines.append(f"RAM Libre: {ram_free_gb:.1f} GB")
 
-                result = subprocess.run(
-                    ["wmic", "OS", "get", "FreePhysicalMemory", "/value"],
-                    capture_output=True, text=True, timeout=10
-                )
-                for line in result.stdout.strip().split("\n"):
-                    if "FreePhysicalMemory" in line:
-                        kb = int(line.split("=")[1].strip())
-                        gb = kb / (1024 * 1024)
-                        lines.append(f"RAM Libre: {gb:.1f} GB")
-        except Exception:
-            pass
-
-        # GPU (NVIDIA)
+        # GPU (NVIDIA via nvidia-smi — siempre funciona)
         try:
             result = subprocess.run(
                 ["nvidia-smi", "--query-gpu=name,memory.total,memory.used,memory.free,temperature.gpu,utilization.gpu",
@@ -875,7 +1088,7 @@ class SystemInfoTool:
                 capture_output=True, text=True, timeout=10
             )
             if result.returncode == 0:
-                lines.append(f"\n=== GPU NVIDIA ===")
+                lines.append(f"\n=== GPU ===")
                 for gpu_line in result.stdout.strip().split("\n"):
                     parts = [p.strip() for p in gpu_line.split(",")]
                     if len(parts) >= 6:
@@ -890,28 +1103,36 @@ class SystemInfoTool:
         except Exception:
             pass
 
-        # Disco
+        # Disco via PowerShell (reemplaza wmic logicaldisk)
         try:
-            if platform.system() == "Windows":
-                result = subprocess.run(
-                    ["wmic", "logicaldisk", "get", "size,freespace,caption", "/value"],
-                    capture_output=True, text=True, timeout=10
+            if os_name == "Windows":
+                disk_cmd = (
+                    "Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | "
+                    "ForEach-Object { "
+                    "Write-Output \"DISK=$($_.DeviceID)|$($_.Size)|$($_.FreeSpace)|$($_.VolumeName)\" }"
                 )
-                lines.append(f"\n=== DISCO ===")
-                current = {}
-                for line in result.stdout.strip().split("\n"):
-                    line = line.strip()
-                    if "=" in line:
-                        key, val = line.split("=", 1)
-                        current[key.strip()] = val.strip()
-                    if "Size" in current and "FreeSpace" in current and "Caption" in current:
-                        try:
-                            total_gb = int(current["Size"]) / (1024**3)
-                            free_gb = int(current["FreeSpace"]) / (1024**3)
-                            lines.append(f"{current['Caption']} Total: {total_gb:.0f} GB, Libre: {free_gb:.0f} GB")
-                        except (ValueError, KeyError):
-                            pass
-                        current = {}
+                disk_output = SystemInfoTool._ps_query(disk_cmd, timeout=10)
+                if disk_output:
+                    lines.append(f"\n=== ALMACENAMIENTO ===")
+                    for dline in disk_output.split("\n"):
+                        dline = dline.strip()
+                        if dline.startswith("DISK="):
+                            parts = dline[5:].split("|")
+                            if len(parts) >= 3:
+                                drive = parts[0]
+                                try:
+                                    total_gb = int(parts[1]) / (1024**3)
+                                    free_gb = int(parts[2]) / (1024**3)
+                                    used_gb = total_gb - free_gb
+                                    vol = parts[3] if len(parts) > 3 and parts[3] else ""
+                                    label = f" ({vol})" if vol else ""
+                                    lines.append(
+                                        f"{drive}{label} Total: {total_gb:.0f} GB, "
+                                        f"Usado: {used_gb:.0f} GB, Libre: {free_gb:.0f} GB "
+                                        f"({free_gb/total_gb*100:.0f}%)"
+                                    )
+                                except (ValueError, ZeroDivisionError):
+                                    pass
         except Exception:
             pass
 
@@ -1172,30 +1393,74 @@ class TextSummarizer:
 # SISTEMA DE HERRAMIENTAS INTEGRADO
 # ============================================================
 
-TOOLS_DESCRIPTION = """Herramientas disponibles (usa UNA por respuesta):
-[TOOL:buscar] texto — buscar en internet
-[TOOL:investigar] tema — investigacion profunda (multiples busquedas + lectura de paginas)
-[TOOL:web] url — leer pagina web
+TOOLS_DESCRIPTION = """IMPORTANTE: Tienes acceso TOTAL al dispositivo del usuario. DEBES usar herramientas cuando te pidan algo del sistema, archivos o datos.
+Cuando el usuario pida listar, buscar, mover, organizar, analizar archivos o el sistema, USA la herramienta correspondiente. NO digas "no puedo acceder".
+
+Herramientas disponibles (usa UNA por respuesta, escribe la llamada EXACTA):
+
+=== ARCHIVOS Y SISTEMA ===
 [TOOL:leer] ruta — leer archivo
-[TOOL:escribir] ruta ||| contenido — crear archivo
-[TOOL:listar] ruta — listar directorio
+[TOOL:escribir] ruta ||| contenido — crear/escribir archivo
+[TOOL:editar] ruta ||| texto_viejo ||| texto_nuevo — editar archivo (find/replace)
+[TOOL:insertar] ruta ||| numero_linea ||| texto — insertar texto en linea especifica
+[TOOL:listar] ruta — listar directorio (ej: [TOOL:listar] C:/Users/Lexus/Desktop)
 [TOOL:python] codigo — ejecutar Python (con sandbox de seguridad)
 [TOOL:shell] comando — ejecutar comando del sistema (cmd/bash)
-[TOOL:escanear] ruta — escanear estructura de un proyecto (clases, funciones, imports)
-[TOOL:analizar] ruta — analizar archivo sospechoso
 [TOOL:sistema] — informacion del sistema (CPU, RAM, GPU, disco, red, procesos)
 [TOOL:gpu] — estado detallado de la GPU NVIDIA
-[TOOL:mi_codigo] — listar mis propios archivos fuente
-[TOOL:leer_codigo] ruta_relativa — leer mi propio codigo (ej: core/brain.py)
-[TOOL:editar_codigo] ruta_relativa ||| texto_viejo ||| texto_nuevo — editar mi propio codigo
+[TOOL:escanear] ruta — escanear estructura de un proyecto
+[TOOL:analizar] ruta — analizar archivo sospechoso
 
-REGLAS PARA PROGRAMAR:
-- SIEMPRE usa [TOOL:python] para ejecutar el codigo que generes. No solo lo muestres.
-- Si el codigo falla, lee el error y corrige automaticamente. No te rindas al primer error.
-- Antes de crear codigo para un proyecto, usa [TOOL:escanear] para entender la estructura.
-- Cuando el codigo funcione exitosamente, se guarda automaticamente en tu memoria de codigo.
-- Si te piden algo que ya resolviste antes, usaras tus soluciones anteriores como referencia.
-- [TOOL:shell] es para comandos del sistema: pip install, git, dir, etc. NO para Python."""
+=== INTERNET ===
+[TOOL:buscar] texto — buscar en internet
+[TOOL:investigar] tema — investigacion profunda (multiples busquedas)
+[TOOL:web] url — leer pagina web
+
+=== DOCUMENTOS ===
+[TOOL:documento] ruta — procesar documento completo (PDF, DOCX, XLSX, CSV, TXT, imagen OCR). Extrae texto, resumen, entidades, tablas.
+[TOOL:resumir] ruta_o_texto — generar resumen inteligente de un documento o texto
+[TOOL:extraer] ruta — extraer entidades (emails, fechas, montos, personas, organizaciones) y tablas de un documento
+
+=== AUTO-MODIFICACION ===
+[TOOL:mi_codigo] — listar mis propios archivos fuente
+[TOOL:leer_codigo] ruta_relativa — leer mi propio codigo
+[TOOL:editar_codigo] ruta ||| texto_viejo ||| texto_nuevo — editar mi codigo
+
+REGLAS CRITICAS:
+- SIEMPRE usa herramientas cuando el usuario pida acciones del sistema. NUNCA digas "no tengo acceso" o "no puedo acceder".
+- Tu TIENES acceso completo al dispositivo. Eres una IA con herramientas reales.
+- Si el codigo falla, lee el error y corrige. No te rindas al primer error.
+- [TOOL:shell] es para comandos: pip install, git, dir, etc. NO para Python.
+
+EJEMPLOS de como responder (SIGUE este formato EXACTO):
+
+Usuario: "que archivos hay en mi escritorio?"
+Tu respuesta: Voy a revisar tu escritorio.
+[TOOL:listar] C:/Users/Lexus/Desktop
+
+Usuario: "busca archivos python en mi PC"
+Tu respuesta: Buscando archivos Python...
+[TOOL:buscar_archivos] *.py
+
+Usuario: "que sistema tengo?"
+Tu respuesta: Revisando tu sistema...
+[TOOL:sistema]
+
+Usuario: "crea una carpeta llamada Proyectos en el escritorio"
+Tu respuesta: Creando la carpeta...
+[TOOL:crear_carpeta] C:/Users/Lexus/Desktop/Proyectos
+
+Usuario: "organiza mi carpeta de descargas"
+Tu respuesta: Organizando tu carpeta de descargas por tipo de archivo...
+[TOOL:organizar] C:/Users/Lexus/Downloads
+
+Usuario: "agrega un import os al inicio de mi script.py"
+Tu respuesta: Editando el archivo...
+[TOOL:editar] C:/Users/Lexus/Desktop/script.py ||| import sys ||| import sys\nimport os
+
+Usuario: "instala la libreria requests"
+Tu respuesta: Instalando requests...
+[TOOL:shell] pip install requests"""
 
 
 def parse_tool_call(response: str) -> Optional[tuple[str, str]]:
@@ -1209,8 +1474,45 @@ def parse_tool_call(response: str) -> Optional[tuple[str, str]]:
     if match:
         tool_name = match.group(1).strip().lower()
         tool_arg = match.group(2).strip()
+        # Si hay otro [TOOL:...] dentro del argumento, recortar
+        next_tool = re.search(r'\[TOOL:\w+\]', tool_arg)
+        if next_tool:
+            tool_arg = tool_arg[:next_tool.start()].strip()
         return (tool_name, tool_arg)
     return None
+
+
+def parse_all_tool_calls(response: str) -> list[tuple[str, str]]:
+    """
+    Detecta TODAS las llamadas a herramientas en una respuesta.
+
+    Para agente multi-step: el LLM puede emitir varias herramientas
+    en una sola respuesta (ej: crear carpeta + escribir archivos).
+
+    Returns:
+        Lista de (nombre_herramienta, argumento)
+    """
+    tools = []
+    # Buscar todas las ocurrencias de [TOOL:X]
+    pattern = r'\[TOOL:(\w+)\]\s*'
+    matches = list(re.finditer(pattern, response))
+
+    for i, match in enumerate(matches):
+        tool_name = match.group(1).strip().lower()
+        start = match.end()
+        # El argumento va hasta el siguiente [TOOL:] o fin del texto
+        if i + 1 < len(matches):
+            end = matches[i + 1].start()
+        else:
+            end = len(response)
+        tool_arg = response[start:end].strip()
+        # Limpiar texto decorativo que el LLM pone entre tools
+        # (ej: "\n\nAhora creo el siguiente archivo:\n")
+        tool_arg = tool_arg.rstrip()
+        if tool_arg:
+            tools.append((tool_name, tool_arg))
+
+    return tools
 
 
 def execute_tool(tool_name: str, tool_arg: str) -> str:
@@ -1228,6 +1530,24 @@ def execute_tool(tool_name: str, tool_arg: str) -> str:
         if len(parts) == 2:
             return FileTools.write_file(parts[0].strip(), parts[1].strip())
         return "[ERROR] Formato: [TOOL:escribir] ruta ||| contenido"
+    elif tool_name == "editar":
+        parts = tool_arg.split("|||")
+        if len(parts) == 3:
+            return FileTools.edit_file(
+                parts[0].strip(), parts[1].strip(), parts[2].strip()
+            )
+        return "[ERROR] Formato: [TOOL:editar] ruta ||| texto_viejo ||| texto_nuevo"
+    elif tool_name == "insertar":
+        parts = tool_arg.split("|||")
+        if len(parts) == 3:
+            try:
+                line_num = int(parts[1].strip())
+                return FileTools.insert_at_line(
+                    parts[0].strip(), line_num, parts[2].strip()
+                )
+            except ValueError:
+                return "[ERROR] El numero de linea debe ser un entero"
+        return "[ERROR] Formato: [TOOL:insertar] ruta ||| numero_linea ||| texto"
     elif tool_name == "listar":
         return FileTools.list_directory(tool_arg)
     elif tool_name == "python":
@@ -1253,5 +1573,31 @@ def execute_tool(tool_name: str, tool_arg: str) -> str:
                 parts[0].strip(), parts[1].strip(), parts[2].strip()
             )
         return "[ERROR] Formato: [TOOL:editar_codigo] ruta ||| texto_viejo ||| texto_nuevo"
+    elif tool_name == "documento":
+        from core.document_processor import DocumentProcessor
+        processor = DocumentProcessor()
+        result = processor.process(tool_arg.strip())
+        if "error" in result:
+            return f"[ERROR] {result['error']}"
+        return result.get("formatted_output", json.dumps(result, ensure_ascii=False, indent=2))
+    elif tool_name == "resumir":
+        from core.document_processor import DocumentProcessor
+        processor = DocumentProcessor()
+        arg = tool_arg.strip()
+        if os.path.exists(arg):
+            return processor.summarize_document(arg)
+        return processor.summarize_document(arg, is_text=True)
+    elif tool_name == "extraer":
+        from core.document_processor import DocumentProcessor
+        processor = DocumentProcessor()
+        result = processor.extract_from_document(tool_arg.strip())
+        if "error" in result:
+            return f"[ERROR] {result['error']}"
+        return json.dumps(result, ensure_ascii=False, indent=2)
     else:
+        # Intentar herramientas de dispositivo
+        from core.device_tools import execute_device_tool
+        device_result = execute_device_tool(tool_name, tool_arg)
+        if device_result is not None:
+            return device_result
         return f"[ERROR] Herramienta desconocida: {tool_name}"

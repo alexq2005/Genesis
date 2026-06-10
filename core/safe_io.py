@@ -148,16 +148,20 @@ class BackupManager:
         self.backup_dir.mkdir(exist_ok=True)
         self.max_backups = max_backups
 
-    def create_backup(self, label: str = "") -> Optional[Path]:
+    def create_backup(self, label: str = "", compress: bool = True) -> Optional[Path]:
         """
         Crea un backup completo de todos los datos.
 
         Args:
             label: Etiqueta opcional para el backup (ej: "pre_evolution")
+            compress: Si True, crea un .tar.gz comprimido en vez de directorio
 
         Returns:
-            Path al directorio del backup, o None si fallo
+            Path al archivo/directorio del backup, o None si fallo
         """
+        import gzip
+        import tarfile
+
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         name = f"backup_{timestamp}"
         if label:
@@ -175,7 +179,6 @@ class BackupManager:
 
                 for json_file in data_dir.glob("*.json"):
                     try:
-                        # Usar safe_read para no interferir con threads
                         dest = backup_path / f"{data_dir.name}_{json_file.name}"
                         shutil.copy2(json_file, dest)
                         files_backed += 1
@@ -183,13 +186,24 @@ class BackupManager:
                         continue
 
             if files_backed == 0:
-                # No habia nada que respaldar
                 backup_path.rmdir()
                 return None
 
-            # Limpiar backups viejos
-            self._cleanup()
+            # Comprimir si se solicita
+            if compress:
+                tar_path = self.backup_dir / f"{name}.tar.gz"
+                try:
+                    with tarfile.open(tar_path, "w:gz") as tar:
+                        for f in backup_path.iterdir():
+                            tar.add(f, arcname=f.name)
+                    shutil.rmtree(backup_path)
+                    self._cleanup()
+                    return tar_path
+                except Exception:
+                    # Si falla compresion, mantener directorio sin comprimir
+                    pass
 
+            self._cleanup()
             return backup_path
 
         except Exception:
@@ -230,32 +244,46 @@ class BackupManager:
             return False
 
     def list_backups(self) -> list[dict]:
-        """Lista los backups disponibles."""
+        """Lista los backups disponibles (directorios y .tar.gz)."""
         backups = []
         for item in sorted(self.backup_dir.iterdir(), reverse=True):
-            if item.is_dir() and item.name.startswith("backup_"):
-                files = list(item.glob("*.json"))
-                size = sum(f.stat().st_size for f in files)
-                backups.append({
-                    "name": item.name,
-                    "files": len(files),
-                    "size_kb": size / 1024,
-                    "created": item.stat().st_mtime,
-                })
+            if item.name.startswith("backup_"):
+                if item.is_dir():
+                    files = list(item.glob("*.json"))
+                    size = sum(f.stat().st_size for f in files)
+                    backups.append({
+                        "name": item.name,
+                        "files": len(files),
+                        "size_kb": size / 1024,
+                        "created": item.stat().st_mtime,
+                        "compressed": False,
+                    })
+                elif item.suffix == '.gz' and item.stem.endswith('.tar'):
+                    size = item.stat().st_size
+                    backups.append({
+                        "name": item.name,
+                        "files": -1,
+                        "size_kb": size / 1024,
+                        "created": item.stat().st_mtime,
+                        "compressed": True,
+                    })
         return backups
 
     def _cleanup(self):
         """Elimina backups viejos si hay mas del maximo."""
-        backups = sorted(
+        items = sorted(
             [d for d in self.backup_dir.iterdir()
-             if d.is_dir() and d.name.startswith("backup_")],
+             if d.name.startswith("backup_")],
             key=lambda d: d.stat().st_mtime,
             reverse=True,
         )
 
-        for old_backup in backups[self.max_backups:]:
+        for old_backup in items[self.max_backups:]:
             try:
-                shutil.rmtree(old_backup)
+                if old_backup.is_dir():
+                    shutil.rmtree(old_backup)
+                else:
+                    old_backup.unlink()
             except Exception:
                 pass
 

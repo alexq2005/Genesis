@@ -170,6 +170,27 @@ class GenesisLogger:
         except Exception as e:
             return f"Error leyendo logs: {e}"
 
+    def cleanup_old_logs(self, max_age_days: int = 30):
+        """
+        Elimina logs mas viejos que max_age_days.
+        Politica de retencion: 30 dias por defecto.
+        """
+        now = time.time()
+        max_age_secs = max_age_days * 86400
+        deleted = 0
+        try:
+            for f in self.log_dir.iterdir():
+                if f.suffix == '.log' and f.is_file():
+                    age = now - f.stat().st_mtime
+                    if age > max_age_secs:
+                        f.unlink()
+                        deleted += 1
+            if deleted > 0:
+                self.log("INFO", "logger", f"Retencion: {deleted} logs eliminados (>{max_age_days} dias)")
+        except Exception:
+            pass
+        return deleted
+
     def status(self) -> str:
         """Resumen para /status."""
         uptime = time.time() - self._session_start
@@ -198,9 +219,6 @@ class ModuleLogger:
 
     def info(self, message: str):
         self._parent.log("INFO", self._module, message)
-
-    def warn(self, message: str):
-        self._parent.log("WARN", self._module, message)
 
     def error(self, message: str):
         self._parent.log("ERROR", self._module, message)

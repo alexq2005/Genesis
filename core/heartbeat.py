@@ -57,6 +57,10 @@ class HeartbeatLog:
             with open(self.log_file, "w", encoding="utf-8") as f:
                 json.dump(self.entries[-100:], f, ensure_ascii=False, indent=2)
 
+    def save(self):
+        """Persiste estado a disco."""
+        self._save()
+
     def add(self, action: str, details: str):
         with self._lock:
             self.entries.append({
@@ -119,6 +123,8 @@ class Heartbeat:
         self.cycles_completed = 0
         self.questions_researched = 0
         self.last_cycle_time: Optional[float] = None
+        self.last_findings: list[dict] = []  # Últimos hallazgos para mostrar al usuario
+        self._notify_enabled = False  # Notificaciones Windows desactivadas por defecto (usar /heartbeat notify on)
 
     def configure(self, brain: "Brain", memory: "MemorySystem",
                   curiosity: "CuriosityEngine", evolution: "EvolutionEngine"):
@@ -226,6 +232,20 @@ class Heartbeat:
             self.curiosity.mark_explored(question_text)
             self.questions_researched += 1
 
+            # Guardar hallazgo reciente para el usuario
+            self.last_findings.append({
+                "question": question_text,
+                "finding": summary,
+                "timestamp": time.time(),
+            })
+            # Mantener solo últimos 10
+            if len(self.last_findings) > 10:
+                self.last_findings = self.last_findings[-10:]
+
+            # Notificación Windows
+            if self._notify_enabled:
+                self._send_notification(question_text, summary)
+
         # Paso 4: Verificar si toca evolucionar (poner en cola, NO ejecutar)
         if self.evolution.should_evolve() and not self.pending_evolution:
             self.log.add("EVOLUCION_PENDIENTE",
@@ -296,6 +316,41 @@ class Heartbeat:
         except Exception as e:
             self.log.add("ERROR_INVESTIGACION", str(e)[:200])
             return None
+
+    def _send_notification(self, question: str, finding: str):
+        """Envía notificación Windows sobre hallazgo de investigación."""
+        try:
+            import subprocess as _sp
+            safe_q = question[:60].replace("'", "").replace('"', '').replace('\n', ' ')
+            safe_f = finding[:120].replace("'", "").replace('"', '').replace('\n', ' ')
+            ps_script = f"""
+Add-Type -AssemblyName System.Windows.Forms
+$balloon = New-Object System.Windows.Forms.NotifyIcon
+$balloon.Icon = [System.Drawing.SystemIcons]::Information
+$balloon.BalloonTipTitle = 'GENESIS — Investigacion Autonoma'
+$balloon.BalloonTipText = '{safe_q}: {safe_f}'
+$balloon.Visible = $true
+$balloon.ShowBalloonTip(5000)
+Start-Sleep -Seconds 6
+$balloon.Dispose()
+"""
+            _sp.Popen(
+                ['powershell', '-NoProfile', '-Command', ps_script],
+                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+            )
+        except Exception:
+            pass  # No bloquear el heartbeat por fallos de notificación
+
+    def get_recent_findings(self, n: int = 5) -> str:
+        """Retorna los hallazgos recientes para mostrar al usuario."""
+        if not self.last_findings:
+            return "No hay hallazgos recientes de investigación autónoma."
+        lines = ["🔬 HALLAZGOS DE INVESTIGACIÓN AUTÓNOMA:\n"]
+        for f in self.last_findings[-n:]:
+            t = time.strftime("%H:%M", time.localtime(f["timestamp"]))
+            lines.append(f"  [{t}] 🔍 {f['question'][:60]}")
+            lines.append(f"        → {f['finding'][:200]}\n")
+        return "\n".join(lines)
 
     def confirm_evolution(self, brain: "Brain",
                           real_fitness: int = None,

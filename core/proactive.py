@@ -12,7 +12,9 @@ Funciona analizando:
 Las sugerencias se acumulan y se muestran en momentos naturales
 (despues de una respuesta, cuando hay pausa, etc.)
 """
+import os
 import time
+from pathlib import Path
 from typing import Optional
 
 
@@ -38,6 +40,7 @@ class ProactiveEngine:
         self.enabled = enabled
         self.pending_suggestions: list[dict] = []
         self.shown_suggestions: list[dict] = []
+        self.executed_actions: list[dict] = []
         self.last_suggestion_time: float = 0
         self.interaction_count = 0
         self._cooldowns: dict[str, float] = {}  # tipo -> timestamp
@@ -320,4 +323,293 @@ class ProactiveEngine:
             "total_suggestions": len(self.shown_suggestions),
             "by_type": type_counts,
             "interaction_count": self.interaction_count,
+            "actions_executed": len(self.executed_actions),
         }
+
+    # ============================================================
+    # ACCIONES PROACTIVAS REALES (Ultron mode: ejecutar, no sugerir)
+    # ============================================================
+
+    SAFE_ACTIONS = {
+        "clean_temp": {
+            "name": "Limpiar archivos temporales",
+            "description": "Elimina archivos temporales de Windows y Python cache",
+            "category": "optimization",
+        },
+        "optimize_memory": {
+            "name": "Optimizar memoria Genesis",
+            "description": "Compacta memorias, elimina duplicados, libera recursos",
+            "category": "optimization",
+        },
+        "backup_state": {
+            "name": "Backup de estado",
+            "description": "Crea backup completo de Genesis (memorias, config, estado)",
+            "category": "safety",
+        },
+        "check_updates": {
+            "name": "Verificar dependencias",
+            "description": "Lista paquetes Python desactualizados",
+            "category": "maintenance",
+        },
+        "system_health": {
+            "name": "Diagnostico de salud",
+            "description": "CPU, RAM, disco, GPU — detecta problemas",
+            "category": "monitoring",
+        },
+        "kill_idle": {
+            "name": "Cerrar procesos idle pesados",
+            "description": "Identifica procesos que consumen >500MB sin actividad",
+            "category": "optimization",
+        },
+    }
+
+    def execute_action(self, action_id: str, genesis=None) -> dict:
+        """
+        Ejecuta una accion proactiva REAL.
+        Ultron mode: no solo sugerir, sino hacer.
+
+        Returns:
+            dict con 'result', 'notification', 'error'
+        """
+        if action_id not in self.SAFE_ACTIONS:
+            return {
+                "error": f"Accion desconocida: {action_id}",
+                "available": list(self.SAFE_ACTIONS.keys()),
+            }
+
+        action = self.SAFE_ACTIONS[action_id]
+        result = ""
+        notification = ""
+
+        try:
+            if action_id == "clean_temp":
+                result, notification = self._action_clean_temp()
+
+            elif action_id == "optimize_memory":
+                result, notification = self._action_optimize_memory(genesis)
+
+            elif action_id == "backup_state":
+                result, notification = self._action_backup_state(genesis)
+
+            elif action_id == "check_updates":
+                result, notification = self._action_check_updates()
+
+            elif action_id == "system_health":
+                result, notification = self._action_system_health()
+
+            elif action_id == "kill_idle":
+                result, notification = self._action_kill_idle()
+
+            self.executed_actions.append({
+                "action_id": action_id,
+                "name": action["name"],
+                "timestamp": time.time(),
+                "success": True,
+            })
+
+            return {
+                "result": result,
+                "notification": notification,
+                "action": action["name"],
+            }
+
+        except Exception as e:
+            self.executed_actions.append({
+                "action_id": action_id,
+                "name": action["name"],
+                "timestamp": time.time(),
+                "success": False,
+                "error": str(e),
+            })
+            return {"error": str(e)}
+
+    def _action_clean_temp(self) -> tuple:
+        """Limpia archivos temporales de forma segura."""
+        import shutil
+        import glob
+
+        cleaned = 0
+        freed_bytes = 0
+        errors = 0
+
+        # Python __pycache__
+        for cache_dir in glob.glob("**/__pycache__", recursive=True):
+            try:
+                size = sum(f.stat().st_size for f in Path(cache_dir).rglob("*") if f.is_file())
+                shutil.rmtree(cache_dir)
+                freed_bytes += size
+                cleaned += 1
+            except Exception:
+                errors += 1
+
+        # .pyc files sueltos
+        for pyc in glob.glob("**/*.pyc", recursive=True):
+            try:
+                freed_bytes += os.path.getsize(pyc)
+                os.remove(pyc)
+                cleaned += 1
+            except Exception:
+                errors += 1
+
+        freed_mb = freed_bytes / (1024 * 1024)
+        result = (
+            f"  ━━━ LIMPIEZA COMPLETADA ━━━\n"
+            f"  Archivos eliminados: {cleaned}\n"
+            f"  Espacio liberado: {freed_mb:.1f} MB\n"
+            f"  Errores: {errors}\n"
+        )
+        notification = f"Limpieza: {cleaned} archivos, {freed_mb:.1f}MB liberados"
+        return result, notification
+
+    def _action_optimize_memory(self, genesis) -> tuple:
+        """Optimiza memorias de Genesis."""
+        if not genesis:
+            return "Genesis no disponible", ""
+
+        optimized = []
+
+        # Compactar short-term memory
+        if hasattr(genesis, 'memory'):
+            st_before = len(genesis.memory.short_term)
+            if st_before > 20:
+                genesis.memory.short_term = genesis.memory.short_term[-15:]
+                optimized.append(f"Short-term: {st_before} -> {len(genesis.memory.short_term)}")
+
+        # Limpiar sugerencias viejas
+        old_suggestions = len(self.shown_suggestions)
+        if old_suggestions > 50:
+            self.shown_suggestions = self.shown_suggestions[-20:]
+            optimized.append(f"Sugerencias: {old_suggestions} -> {len(self.shown_suggestions)}")
+
+        # Garbage collect
+        import gc
+        gc.collect()
+        optimized.append("Garbage collector ejecutado")
+
+        result = "  ━━━ MEMORIA OPTIMIZADA ━━━\n" + "\n".join(f"  {o}" for o in optimized)
+        notification = f"Memoria optimizada: {len(optimized)} operaciones"
+        return result, notification
+
+    def _action_backup_state(self, genesis) -> tuple:
+        """Crea backup del estado de Genesis."""
+        if not genesis:
+            return "Genesis no disponible", ""
+
+        try:
+            if hasattr(genesis, 'save_all'):
+                genesis.save_all()
+                result = "  ━━━ BACKUP COMPLETADO ━━━\n  Estado persistido via save_all()"
+                notification = "Backup de estado completado"
+            else:
+                result = "  save_all() no disponible"
+                notification = ""
+            return result, notification
+        except Exception as e:
+            return f"  Error en backup: {str(e)}", ""
+
+    def _action_check_updates(self) -> tuple:
+        """Verifica paquetes desactualizados."""
+        import subprocess
+
+        try:
+            proc = subprocess.run(
+                ['pip', 'list', '--outdated', '--format=columns'],
+                capture_output=True, text=True, timeout=30
+            )
+            output = proc.stdout.strip()
+            if not output or "Package" not in output:
+                result = "  ━━━ DEPENDENCIAS ━━━\n  Todos los paquetes estan actualizados"
+                notification = "Dependencias al dia"
+            else:
+                lines = output.strip().split('\n')
+                count = max(0, len(lines) - 2)  # Minus header lines
+                result = f"  ━━━ DEPENDENCIAS ({count} desactualizadas) ━━━\n{output}"
+                notification = f"{count} paquetes desactualizados"
+            return result, notification
+        except Exception as e:
+            return f"  Error: {str(e)}", ""
+
+    def _action_system_health(self) -> tuple:
+        """Diagnostico completo del sistema."""
+        try:
+            import psutil
+
+            cpu = psutil.cpu_percent(interval=1)
+            ram = psutil.virtual_memory()
+            disk = psutil.disk_usage("C:\\")
+
+            issues = []
+            if cpu > 80:
+                issues.append(f"CPU al {cpu}% — alto")
+            if ram.percent > 85:
+                issues.append(f"RAM al {ram.percent}% — critico")
+            if disk.percent > 90:
+                issues.append(f"Disco al {disk.percent}% — critico")
+
+            # GPU
+            gpu_info = ""
+            try:
+                import subprocess
+                gpu_out = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=utilization.gpu,temperature.gpu,memory.used,memory.total",
+                     "--format=csv,noheader,nounits"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if gpu_out.returncode == 0:
+                    parts = gpu_out.stdout.strip().split(", ")
+                    if len(parts) >= 4:
+                        gpu_info = f"\n  GPU: {parts[0]}% | {parts[2]}/{parts[3]}MB VRAM | {parts[1]}C"
+                        if int(parts[1]) > 85:
+                            issues.append(f"GPU temperatura: {parts[1]}C — peligroso")
+            except Exception:
+                pass
+
+            status = "SALUDABLE" if not issues else f"{len(issues)} ALERTAS"
+            result = (
+                f"  ━━━ DIAGNOSTICO: {status} ━━━\n"
+                f"  CPU: {cpu}%\n"
+                f"  RAM: {ram.percent}% ({ram.used // (1024**3)}/{ram.total // (1024**3)} GB)\n"
+                f"  Disco: {disk.percent}% ({disk.free // (1024**3)} GB libres)"
+                f"{gpu_info}"
+            )
+            if issues:
+                result += "\n\n  ⚠ Problemas:\n" + "\n".join(f"    - {i}" for i in issues)
+
+            notification = f"Sistema: {status}"
+            return result, notification
+
+        except ImportError:
+            return "  psutil no instalado", ""
+
+    def _action_kill_idle(self) -> tuple:
+        """Identifica procesos pesados idle (solo reporta, no mata)."""
+        try:
+            import psutil
+
+            heavy = []
+            for proc in psutil.process_iter(['pid', 'name', 'memory_info', 'cpu_percent']):
+                try:
+                    mem_mb = proc.info['memory_info'].rss / (1024 * 1024)
+                    if mem_mb > 500:
+                        heavy.append({
+                            'pid': proc.info['pid'],
+                            'name': proc.info['name'],
+                            'mem_mb': round(mem_mb, 1),
+                        })
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+
+            heavy.sort(key=lambda x: x['mem_mb'], reverse=True)
+
+            if not heavy:
+                result = "  ━━━ PROCESOS ━━━\n  No hay procesos usando >500MB"
+                notification = "Sin procesos pesados"
+            else:
+                lines = [f"  {p['name']} (PID {p['pid']}): {p['mem_mb']} MB" for p in heavy[:10]]
+                result = f"  ━━━ PROCESOS PESADOS ({len(heavy)}) ━━━\n" + "\n".join(lines)
+                notification = f"{len(heavy)} procesos usando >500MB"
+
+            return result, notification
+
+        except ImportError:
+            return "  psutil no instalado", ""

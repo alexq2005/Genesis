@@ -2,6 +2,11 @@
 # GENESIS — .gitignore
 # ============================================================
 
+# --- Secretos ---
+.env
+.env.local
+.env.production
+
 # --- Python ---
 __pycache__/
 *.py[cod]

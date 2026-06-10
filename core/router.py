@@ -100,8 +100,9 @@ class IntentRouter:
 
     # Secciones base que siempre se incluyen para CHAT
     CHAT_SECTIONS = [
-        "personality", "core_rules", "self_awareness",
+        "personality", "core_rules", "tools", "self_awareness",
         "memory", "emotional", "feedback", "curiosity", "metadata",
+        "custom_tools",
     ]
 
     def __init__(self):

@@ -37,6 +37,10 @@ class CuriosityEngine:
         with open(self.curiosity_file, "w", encoding="utf-8") as f:
             json.dump(self.questions, f, ensure_ascii=False, indent=2)
 
+    def save(self):
+        """Persiste estado a disco."""
+        self._save()
+
     def generate_questions(self, brain: "Brain", conversation_context: str) -> list[str]:
         """
         Analiza la conversacion y genera preguntas que Genesis
@@ -78,6 +82,33 @@ class CuriosityEngine:
 
         self._save()
         return new_questions
+
+    def add_question(self, question: str, priority: float = 0.5):
+        """Agrega una pregunta manual a la cola de curiosidad."""
+        if not question or len(question) < 5:
+            return
+        # Evitar duplicados
+        q_lower = question.lower().strip()
+        for existing in self.questions:
+            if existing["question"].lower().strip() == q_lower:
+                # Si ya existe, solo boostear prioridad
+                existing["priority"] = min(1.0, max(existing["priority"], priority))
+                self._save()
+                return
+        self.questions.append({
+            "question": question[:300],
+            "created": time.time(),
+            "explored": False,
+            "priority": min(1.0, max(0.0, priority)),
+        })
+        self.questions_generated += 1
+        # Mantener máximo 100 preguntas (eliminar exploradas antiguas)
+        if len(self.questions) > 100:
+            explored = [q for q in self.questions if q["explored"]]
+            explored.sort(key=lambda x: x.get("created", 0))
+            while len(self.questions) > 100 and explored:
+                self.questions.remove(explored.pop(0))
+        self._save()
 
     def get_pending_questions(self, limit: int = 5) -> list[dict]:
         """Retorna preguntas pendientes de explorar."""

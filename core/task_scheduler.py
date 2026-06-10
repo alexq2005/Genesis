@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 GENESIS Task Scheduler — Programacion de tareas periodicas tipo cron.
 

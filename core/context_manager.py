@@ -48,7 +48,7 @@ class ContextBudgetManager:
     SECTION_MAX_TOKENS = {
         "personality":      400,
         "core_rules":       200,
-        "tools":            600,
+        "tools":            3000,
         "self_awareness":   300,
         "workspace":        400,
         "active_plan":      300,
@@ -60,6 +60,7 @@ class ContextBudgetManager:
         "emotional":        100,
         "metadata":         50,
         "debate_insights":  200,
+        "custom_tools":     500,
     }
 
     def __init__(self, max_context_tokens: int = 8192,

@@ -1,0 +1,13 @@
+{
+    "name": "Cloud Full",
+    "description": "Máxima calidad usando APIs cloud. Debate activado para razonamiento profundo.",
+    "provider": "gemini",
+    "model": "gemini-2.0-flash",
+    "streaming": true,
+    "debate_enabled": true,
+    "heartbeat_interval_min": 5,
+    "auto_backup_interval": 10,
+    "temperature": 0.8,
+    "max_tokens": 4096,
+    "notes": "Requiere GOOGLE_API_KEY en .env. Debate usa ~3x más tokens por respuesta."
+}
