@@ -1582,6 +1582,334 @@ class GenesisToolsMixin:
 
         return None
 
+    def _detect_builder_dev(self, inp, user_input, path_keywords):
+        """Builder/desarrollo: instalar paquetes, procesar documentos, crear archivos/scripts/proyectos.
+        Extraído de _auto_detect_tool (Fase 2 — descomposición del god-method)."""
+        import re as _re
+        # --- Instalar paquetes ---
+        install_keywords = ["instala ", "instalame ", "instalar ", "instalá ",
+                            "pip install", "npm install", "agrega el paquete ",
+                            "necesito instalar", "quiero instalar"]
+        if any(k in inp for k in install_keywords):
+            # Extraer nombre del paquete
+            package = ""
+            for kw in install_keywords:
+                if kw in inp:
+                    package = inp.split(kw)[-1].strip().rstrip(".,;!?")
+                    break
+
+            if package:
+                import subprocess as _sp
+                # Detectar si es npm o pip
+                if "npm" in inp or any(package.startswith(p) for p in ["react", "express", "next", "vue", "angular"]):
+                    cmd = ["npm", "install", package]
+                    pkg_type = "npm"
+                else:
+                    cmd = [sys.executable, "-m", "pip", "install", package]
+                    pkg_type = "pip"
+
+                if self.show_thinking:
+                    print(f"  [Auto-Install: {pkg_type} install {package}]")
+
+                try:
+                    result = _sp.run(
+                        cmd, capture_output=True, text=True, timeout=120,
+                    )
+                    output = result.stdout + result.stderr
+                    success = result.returncode == 0
+
+                    # Registrar en ActionTracker
+                    try:
+                        self.action_tracker.log_pip_install(package, success=success)
+                    except (AttributeError, OSError):
+                        pass
+
+                    if success:
+                        return (
+                            f"Paquete '{package}' instalado exitosamente via {pkg_type}.\n\n"
+                            f"{output[-500:]}"
+                        )
+                    else:
+                        return (
+                            f"Error instalando '{package}':\n{output[-800:]}"
+                        )
+                except _sp.TimeoutExpired:
+                    return f"[TIMEOUT] La instalación de '{package}' tardó más de 2 minutos."
+                except Exception as e:
+                    return f"[ERROR] No se pudo instalar '{package}': {e}"
+
+        # --- Procesar documento ---
+        # Keywords que activan resumen nivel "study" (material de estudio)
+        study_keywords = [
+            "resumen para estudiar", "resumen de estudio", "resumen academico",
+            "resumen para examen", "material de estudio", "resumen tipo estudio",
+            "resumen con tablas", "resumen con datos", "resumen exhaustivo",
+            "resumen completo para estudiar", "resumen detallado para estudiar",
+            "quiero estudiar", "necesito estudiar", "para estudiar",
+            "resumen con clasificaciones", "resumen con dosis",
+            "resumen con definiciones", "resumelo para estudiar",
+            "resumen tecnico", "resumen clinico", "resumen farmacologico",
+            "resumen con formulas", "resumen con valores",
+        ]
+        is_study_request = any(k in inp for k in study_keywords)
+
+        doc_keywords = ["analiza este documento", "analiza el documento", "procesa este documento",
+                        "procesa el documento", "lee este pdf", "lee este archivo",
+                        "resume este documento", "resumen de este", "resumir documento",
+                        "resumir archivo", "que dice este", "que contiene este",
+                        "extraer datos de", "extrae datos", "extrae entidades",
+                        "extraer informacion de", "analiza este pdf", "lee este excel",
+                        "procesa este pdf", "analiza el pdf", "lee el documento",
+                        "resume el archivo", "resume este pdf", "resume este excel",
+                        "realiza resumen", "realiza un resumen", "hazme un resumen",
+                        "haz un resumen", "dame un resumen", "dame el resumen",
+                        "resumelo", "resumen del documento", "resumen del pdf",
+                        "resumen completo", "resumen mas completo", "resumen detallado",
+                        "no procesa un resumen", "resumen incompleto",
+                        "resume el pdf", "resume el documento", "resumir el pdf",
+                        "resumir el documento", "genera un resumen", "genera resumen",
+                        "necesito un resumen", "quiero un resumen", "quiero resumen"]
+        if is_study_request or any(k in inp for k in doc_keywords):
+            # Extraer ruta del archivo
+            path_match = _re.search(r'[A-Za-z]:[/\\][\w/\\._ \-]+\.\w{2,5}', user_input)
+            if path_match:
+                filepath = path_match.group(0)
+                try:
+                    if is_study_request and self.brain:
+                        # Modo estudio: usar summarize_document con level="study"
+                        summary = self.doc_processor.summarize_document(
+                            filepath, brain=self.brain, level="study", is_text=False,
+                        )
+                        if summary and "[ERROR]" not in summary:
+                            fname = os.path.basename(filepath)
+                            return f"📄 **{fname}**\n\n📝 **Material de Estudio:**\n\n{summary}"
+                        return summary
+                    result = self.doc_processor.process(filepath, brain=self.brain)
+                    if "error" not in result:
+                        return result.get("formatted_output", str(result))
+                    return f"[ERROR] {result['error']}"
+                except Exception as e:
+                    return f"[ERROR] Error procesando documento: {e}"
+            elif hasattr(self, '_last_uploaded_doc') and self._last_uploaded_doc:
+                # Sin ruta pero hay un documento recien subido — resumir con IA
+                doc = self._last_uploaded_doc
+                filename = doc.get("filename", "documento")
+                pages = doc.get("pages", 0)
+                words = doc.get("word_count", 0)
+
+                # Obtener texto completo del cache del procesador
+                doc_id = doc.get("doc_id", "")
+                full_text = self.doc_processor.get_full_text(doc_id) if doc_id else ""
+
+                if not full_text:
+                    full_text = doc.get("summary", "")
+
+                if not full_text.strip():
+                    return f"📄 Documento **{filename}** procesado pero sin contenido de texto extraible."
+
+                # Usar el sistema de resumen Map-Reduce del document_processor
+                # Soporta documentos largos: chunking + resumen parcial + combinacion
+                summary_level = "study" if is_study_request else "detailed"
+                level_label = "Material de Estudio" if is_study_request else "Resumen"
+                header = f"📄 **{filename}** ({pages} pag, {words} palabras)\n\n"
+
+                if self.brain:
+                    try:
+                        summary = self.doc_processor.summarize_document(
+                            full_text, brain=self.brain,
+                            level=summary_level, is_text=True,
+                        )
+                        if summary and "[ERROR]" not in summary:
+                            return header + f"📝 **{level_label}:**\n\n" + summary
+                    except (AttributeError, OSError, ValueError):
+                        pass
+
+                # Fallback sin IA — vista previa del texto
+                return header + f"📝 **Vista previa:**\n{full_text[:2000]}"
+
+        # --- Crear archivo (Auto-Builder directo) ---
+        create_file_keywords = ["crea un archivo", "crear un archivo", "crea archivo",
+                                "creame un archivo", "haceme un archivo", "genera un archivo"]
+        if any(k in inp for k in create_file_keywords):
+            # Determinar ubicación
+            target_dir = "" + _GX_HOME + "/Desktop"
+            for keyword, path in path_keywords.items():
+                if keyword in inp:
+                    target_dir = path
+                    break
+
+            # Extraer nombre de archivo si se menciona
+            name_match = _re.search(r'(?:llamado|nombre|que se llame)\s+["\']?(\S+)["\']?', inp)
+            file_ext = ".txt"
+            if name_match:
+                fname = name_match.group(1)
+                if '.' not in fname:
+                    fname += file_ext
+            else:
+                fname = "archivo_genesis.txt"
+
+            # Extraer contenido — buscar después de "que diga", "con", "contenido"
+            content = ""
+            content_match = _re.search(
+                r'(?:que diga|que contenga|con el texto|con contenido|con)\s+["\']?(.+?)["\']?\s*$',
+                inp
+            )
+            if content_match:
+                content = content_match.group(1).strip()
+            if not content:
+                content = "Archivo creado por Genesis"
+
+            full_path = f"{target_dir}/{fname}"
+            from core.tools import FileTools
+            result = FileTools.write_file(full_path, content)
+            self.metrics.log_tool_use("escribir")
+            return f"Archivo creado: `{full_path}`\nContenido: {content}\n\n{result}"
+
+        # --- ESTADO del build en background ---
+        if _re.search(r'(termin[óo]\s+(el\s+)?build|c[óo]mo\s+va\s+(el\s+)?(build|desarrollo|'
+                      r'proyecto)|estado\s+(del\s+)?(build|desarrollo)|listo\s+(el\s+)?(build|'
+                      r'proyecto)|qu[ée]\s+pas[óo]\s+con\s+(el\s+)?(build|proyecto|desarrollo))', inp):
+            st = getattr(self, "_build_status", None)
+            if not st:
+                return "No tengo ningún desarrollo en curso. Pedime «desarrollá una app que…»."
+            if st.get("running"):
+                return f"🔧 Todavía construyendo «{st['spec']}»… genero, ejecuto y corrijo. Dame un toque."
+            r = st.get("result") or {}
+            if r.get("success"):
+                return (f"✅ Listo «{st['spec']}» — quedó FUNCIONANDO.\n"
+                        f"📁 {r.get('project_dir','')}\n"
+                        f"Archivos: {', '.join(r.get('files', []))}\n"
+                        f"Salida real:\n{(r.get('output','') or '')[:400]}")
+            return (f"⚠️ Construí «{st['spec']}» pero no quedó andando tras los intentos.\n"
+                    f"📁 {r.get('project_dir','')}\n{(r.get('error','') or '')[:300]}")
+
+        # --- DESARROLLO de código real (BuilderEngine en segundo plano) ---
+        # genera → EJECUTA → lee el error real → corrige (qwen-coder, hasta 3 iters)
+        if (_re.search(r'\b(desarroll[áa]r?|constru[íi]r?|program[áa]r?|cod(?:e|ific)[áa]r?)\b', inp)
+                and _re.search(r'\b(app|aplicaci[óo]n|programa|script|juego|herramienta|'
+                               r'bot|cli|calculadora|api|simulador|conversor|generador|'
+                               r'analizador|scraper)\b', inp)):
+            be = getattr(self, "builder_engine", None)
+            if be is not None:
+                spec = user_input.strip()
+                import threading as _th
+                self._build_status = {"running": True, "spec": spec[:70], "result": None}
+
+                def _run_build(_spec=spec):
+                    try:
+                        _r = be.build(_spec, max_iters=3, run_timeout=30)
+                        self._build_status = {"running": False, "spec": _spec[:70],
+                                              "result": _r.to_dict()}
+                    except Exception as _e:
+                        self._build_status = {"running": False, "spec": _spec[:70],
+                                              "result": {"error": str(_e)}}
+                _t = _th.Thread(target=_run_build, daemon=True)
+                _t.start()
+                return (f"🔧 Arranqué a construir «{spec[:70]}». Lo hago en segundo plano: "
+                        f"genero el código, lo EJECUTO y corrijo los errores reales (hasta "
+                        f"3 intentos con qwen-coder). Preguntame «¿terminó el build?» en un "
+                        f"rato y te paso el proyecto.")
+
+        # --- Crear script/programa (Auto-Builder con LLM) ---
+        create_code_keywords = ["crea un script", "crea un programa", "creame un script",
+                                "genera un script", "crea un bot", "crea una app",
+                                "programa que", "script que", "haceme un programa"]
+        if any(k in inp for k in create_code_keywords):
+            # Dejar que el LLM genere el código, pero marcar para auto-ejecución
+            # El _auto_builder post-LLM se encargará de ejecutarlo
+            pass  # Fall through al LLM con flag implícito
+
+        # --- Crear carpeta con proyecto multi-archivo (Auto-Builder Multi-Step) ---
+        create_project_keywords = ["crea en mi", "crea una carpeta", "crear carpeta", "nueva carpeta"]
+        has_multiple_files = any(w in inp for w in ["archivos", "archivo", ".py", ".js", ".html", ".md", ".txt", ".css"])
+        if any(k in inp for k in create_project_keywords):
+            # Determinar carpeta base (portable: escritorio del usuario actual)
+            base_dir = os.path.join(os.path.expanduser("~"), "Desktop").replace("\\", "/")
+            for keyword, path in path_keywords.items():
+                if keyword in inp:
+                    base_dir = path
+                    break
+
+            # Extraer nombre de carpeta (entre comillas, o después de "carpeta")
+            folder_name = None
+            quoted = _re.search(r'["\u201c]([^"\u201d]+)["\u201d]', user_input)
+            if quoted:
+                folder_name = quoted.group(1).strip()
+            if not folder_name:
+                name_match = _re.search(r'(?:carpeta|llamada|nombre)\s+(\S+)', inp)
+                if name_match:
+                    folder_name = name_match.group(1).strip('"\'')
+            if not folder_name:
+                folder_name = "proyecto_genesis"
+
+            project_dir = f"{base_dir}/{folder_name}"
+            import os as _os
+            _os.makedirs(project_dir, exist_ok=True)
+            results = [f"Carpeta creada: `{project_dir}`"]
+
+            # Si hay archivos mencionados, usar LLM para generar contenido
+            if has_multiple_files:
+                # Pedir al LLM que genere los archivos como JSON estructurado
+                file_prompt = (
+                    f"El usuario quiere crear un proyecto en {project_dir}.\n"
+                    f"Solicitud original: {user_input}\n\n"
+                    f"Genera SOLO un JSON con los archivos a crear. Formato exacto:\n"
+                    f'{{"files": [{{"name": "main.py", "content": "print(\'hola mundo\')"}}, '
+                    f'{{"name": "utils.py", "content": "def suma(a, b):\\n    return a + b"}}]}}\n\n'
+                    f"SOLO el JSON, nada más."
+                )
+                try:
+                    import json as _json
+                    llm_response = self.brain.think(
+                        "Eres un generador de archivos. Responde SOLO con JSON valido.",
+                        [{"role": "user", "content": file_prompt}],
+                        temperature=0.3, max_tokens=2048,
+                    )
+                    # Extraer JSON de la respuesta
+                    json_match = _re.search(r'\{[\s\S]*\}', llm_response)
+                    if json_match:
+                        file_data = _json.loads(json_match.group(0))
+                        files_list = file_data.get("files", [])
+                        from core.tools import FileTools
+                        for f_info in files_list:
+                            f_name = f_info.get("name", "")
+                            f_content = f_info.get("content", "")
+                            if f_name:
+                                f_path = f"{project_dir}/{f_name}"
+                                # Crear subdirectorio si es necesario
+                                f_dir = _os.path.dirname(f_path)
+                                if f_dir and not _os.path.exists(f_dir):
+                                    _os.makedirs(f_dir, exist_ok=True)
+                                FileTools.write_file(f_path, f_content)
+                                results.append(f"  Archivo creado: `{f_name}`")
+                                self.metrics.log_tool_use("escribir")
+                        results.append(f"\nProyecto creado: {len(files_list)} archivos en `{project_dir}`")
+                        # Auto-set workspace al proyecto creado
+                        try:
+                            self.workspace.set_path(project_dir)
+                            results.append(f"Workspace configurado: `{project_dir}`")
+                        except (AttributeError, OSError, ValueError):
+                            pass
+                        # Registrar en ActionTracker
+                        try:
+                            self.action_tracker.log_project_created(
+                                project_dir,
+                                [f.get("name", "") for f in files_list],
+                            )
+                        except (AttributeError, OSError):
+                            pass
+                    else:
+                        results.append("[WARN] No pude parsear archivos del LLM — carpeta creada vacía")
+                except Exception as e:
+                    results.append(f"[ERROR] Generación de archivos: {e}")
+            else:
+                # Solo crear carpeta sin archivos
+                results.append("Carpeta vacía lista para usar")
+
+            return "\n".join(results)
+
+        return None
+
     def _auto_detect_tool(self, user_input: str) -> str:
         """
         Auto-detecta si el usuario pide algo del sistema y ejecuta
@@ -2763,327 +3091,10 @@ class GenesisToolsMixin:
                     return (f"No encontré '{target}' como programa instalado, carpeta, ni sitio web. "
                             f"Intentá con el nombre exacto o decime más sobre qué querés abrir.")
 
-        # --- Instalar paquetes ---
-        install_keywords = ["instala ", "instalame ", "instalar ", "instalá ",
-                            "pip install", "npm install", "agrega el paquete ",
-                            "necesito instalar", "quiero instalar"]
-        if any(k in inp for k in install_keywords):
-            # Extraer nombre del paquete
-            package = ""
-            for kw in install_keywords:
-                if kw in inp:
-                    package = inp.split(kw)[-1].strip().rstrip(".,;!?")
-                    break
-
-            if package:
-                import subprocess as _sp
-                # Detectar si es npm o pip
-                if "npm" in inp or any(package.startswith(p) for p in ["react", "express", "next", "vue", "angular"]):
-                    cmd = ["npm", "install", package]
-                    pkg_type = "npm"
-                else:
-                    cmd = [sys.executable, "-m", "pip", "install", package]
-                    pkg_type = "pip"
-
-                if self.show_thinking:
-                    print(f"  [Auto-Install: {pkg_type} install {package}]")
-
-                try:
-                    result = _sp.run(
-                        cmd, capture_output=True, text=True, timeout=120,
-                    )
-                    output = result.stdout + result.stderr
-                    success = result.returncode == 0
-
-                    # Registrar en ActionTracker
-                    try:
-                        self.action_tracker.log_pip_install(package, success=success)
-                    except (AttributeError, OSError):
-                        pass
-
-                    if success:
-                        return (
-                            f"Paquete '{package}' instalado exitosamente via {pkg_type}.\n\n"
-                            f"{output[-500:]}"
-                        )
-                    else:
-                        return (
-                            f"Error instalando '{package}':\n{output[-800:]}"
-                        )
-                except _sp.TimeoutExpired:
-                    return f"[TIMEOUT] La instalación de '{package}' tardó más de 2 minutos."
-                except Exception as e:
-                    return f"[ERROR] No se pudo instalar '{package}': {e}"
-
-        # --- Procesar documento ---
-        # Keywords que activan resumen nivel "study" (material de estudio)
-        study_keywords = [
-            "resumen para estudiar", "resumen de estudio", "resumen academico",
-            "resumen para examen", "material de estudio", "resumen tipo estudio",
-            "resumen con tablas", "resumen con datos", "resumen exhaustivo",
-            "resumen completo para estudiar", "resumen detallado para estudiar",
-            "quiero estudiar", "necesito estudiar", "para estudiar",
-            "resumen con clasificaciones", "resumen con dosis",
-            "resumen con definiciones", "resumelo para estudiar",
-            "resumen tecnico", "resumen clinico", "resumen farmacologico",
-            "resumen con formulas", "resumen con valores",
-        ]
-        is_study_request = any(k in inp for k in study_keywords)
-
-        doc_keywords = ["analiza este documento", "analiza el documento", "procesa este documento",
-                        "procesa el documento", "lee este pdf", "lee este archivo",
-                        "resume este documento", "resumen de este", "resumir documento",
-                        "resumir archivo", "que dice este", "que contiene este",
-                        "extraer datos de", "extrae datos", "extrae entidades",
-                        "extraer informacion de", "analiza este pdf", "lee este excel",
-                        "procesa este pdf", "analiza el pdf", "lee el documento",
-                        "resume el archivo", "resume este pdf", "resume este excel",
-                        "realiza resumen", "realiza un resumen", "hazme un resumen",
-                        "haz un resumen", "dame un resumen", "dame el resumen",
-                        "resumelo", "resumen del documento", "resumen del pdf",
-                        "resumen completo", "resumen mas completo", "resumen detallado",
-                        "no procesa un resumen", "resumen incompleto",
-                        "resume el pdf", "resume el documento", "resumir el pdf",
-                        "resumir el documento", "genera un resumen", "genera resumen",
-                        "necesito un resumen", "quiero un resumen", "quiero resumen"]
-        if is_study_request or any(k in inp for k in doc_keywords):
-            # Extraer ruta del archivo
-            path_match = _re.search(r'[A-Za-z]:[/\\][\w/\\._ \-]+\.\w{2,5}', user_input)
-            if path_match:
-                filepath = path_match.group(0)
-                try:
-                    if is_study_request and self.brain:
-                        # Modo estudio: usar summarize_document con level="study"
-                        summary = self.doc_processor.summarize_document(
-                            filepath, brain=self.brain, level="study", is_text=False,
-                        )
-                        if summary and "[ERROR]" not in summary:
-                            fname = os.path.basename(filepath)
-                            return f"📄 **{fname}**\n\n📝 **Material de Estudio:**\n\n{summary}"
-                        return summary
-                    result = self.doc_processor.process(filepath, brain=self.brain)
-                    if "error" not in result:
-                        return result.get("formatted_output", str(result))
-                    return f"[ERROR] {result['error']}"
-                except Exception as e:
-                    return f"[ERROR] Error procesando documento: {e}"
-            elif hasattr(self, '_last_uploaded_doc') and self._last_uploaded_doc:
-                # Sin ruta pero hay un documento recien subido — resumir con IA
-                doc = self._last_uploaded_doc
-                filename = doc.get("filename", "documento")
-                pages = doc.get("pages", 0)
-                words = doc.get("word_count", 0)
-
-                # Obtener texto completo del cache del procesador
-                doc_id = doc.get("doc_id", "")
-                full_text = self.doc_processor.get_full_text(doc_id) if doc_id else ""
-
-                if not full_text:
-                    full_text = doc.get("summary", "")
-
-                if not full_text.strip():
-                    return f"📄 Documento **{filename}** procesado pero sin contenido de texto extraible."
-
-                # Usar el sistema de resumen Map-Reduce del document_processor
-                # Soporta documentos largos: chunking + resumen parcial + combinacion
-                summary_level = "study" if is_study_request else "detailed"
-                level_label = "Material de Estudio" if is_study_request else "Resumen"
-                header = f"📄 **{filename}** ({pages} pag, {words} palabras)\n\n"
-
-                if self.brain:
-                    try:
-                        summary = self.doc_processor.summarize_document(
-                            full_text, brain=self.brain,
-                            level=summary_level, is_text=True,
-                        )
-                        if summary and "[ERROR]" not in summary:
-                            return header + f"📝 **{level_label}:**\n\n" + summary
-                    except (AttributeError, OSError, ValueError):
-                        pass
-
-                # Fallback sin IA — vista previa del texto
-                return header + f"📝 **Vista previa:**\n{full_text[:2000]}"
-
-        # --- Crear archivo (Auto-Builder directo) ---
-        create_file_keywords = ["crea un archivo", "crear un archivo", "crea archivo",
-                                "creame un archivo", "haceme un archivo", "genera un archivo"]
-        if any(k in inp for k in create_file_keywords):
-            # Determinar ubicación
-            target_dir = "" + _GX_HOME + "/Desktop"
-            for keyword, path in path_keywords.items():
-                if keyword in inp:
-                    target_dir = path
-                    break
-
-            # Extraer nombre de archivo si se menciona
-            name_match = _re.search(r'(?:llamado|nombre|que se llame)\s+["\']?(\S+)["\']?', inp)
-            file_ext = ".txt"
-            if name_match:
-                fname = name_match.group(1)
-                if '.' not in fname:
-                    fname += file_ext
-            else:
-                fname = "archivo_genesis.txt"
-
-            # Extraer contenido — buscar después de "que diga", "con", "contenido"
-            content = ""
-            content_match = _re.search(
-                r'(?:que diga|que contenga|con el texto|con contenido|con)\s+["\']?(.+?)["\']?\s*$',
-                inp
-            )
-            if content_match:
-                content = content_match.group(1).strip()
-            if not content:
-                content = "Archivo creado por Genesis"
-
-            full_path = f"{target_dir}/{fname}"
-            from core.tools import FileTools
-            result = FileTools.write_file(full_path, content)
-            self.metrics.log_tool_use("escribir")
-            return f"Archivo creado: `{full_path}`\nContenido: {content}\n\n{result}"
-
-        # --- ESTADO del build en background ---
-        if _re.search(r'(termin[óo]\s+(el\s+)?build|c[óo]mo\s+va\s+(el\s+)?(build|desarrollo|'
-                      r'proyecto)|estado\s+(del\s+)?(build|desarrollo)|listo\s+(el\s+)?(build|'
-                      r'proyecto)|qu[ée]\s+pas[óo]\s+con\s+(el\s+)?(build|proyecto|desarrollo))', inp):
-            st = getattr(self, "_build_status", None)
-            if not st:
-                return "No tengo ningún desarrollo en curso. Pedime «desarrollá una app que…»."
-            if st.get("running"):
-                return f"🔧 Todavía construyendo «{st['spec']}»… genero, ejecuto y corrijo. Dame un toque."
-            r = st.get("result") or {}
-            if r.get("success"):
-                return (f"✅ Listo «{st['spec']}» — quedó FUNCIONANDO.\n"
-                        f"📁 {r.get('project_dir','')}\n"
-                        f"Archivos: {', '.join(r.get('files', []))}\n"
-                        f"Salida real:\n{(r.get('output','') or '')[:400]}")
-            return (f"⚠️ Construí «{st['spec']}» pero no quedó andando tras los intentos.\n"
-                    f"📁 {r.get('project_dir','')}\n{(r.get('error','') or '')[:300]}")
-
-        # --- DESARROLLO de código real (BuilderEngine en segundo plano) ---
-        # genera → EJECUTA → lee el error real → corrige (qwen-coder, hasta 3 iters)
-        if (_re.search(r'\b(desarroll[áa]r?|constru[íi]r?|program[áa]r?|cod(?:e|ific)[áa]r?)\b', inp)
-                and _re.search(r'\b(app|aplicaci[óo]n|programa|script|juego|herramienta|'
-                               r'bot|cli|calculadora|api|simulador|conversor|generador|'
-                               r'analizador|scraper)\b', inp)):
-            be = getattr(self, "builder_engine", None)
-            if be is not None:
-                spec = user_input.strip()
-                import threading as _th
-                self._build_status = {"running": True, "spec": spec[:70], "result": None}
-
-                def _run_build(_spec=spec):
-                    try:
-                        _r = be.build(_spec, max_iters=3, run_timeout=30)
-                        self._build_status = {"running": False, "spec": _spec[:70],
-                                              "result": _r.to_dict()}
-                    except Exception as _e:
-                        self._build_status = {"running": False, "spec": _spec[:70],
-                                              "result": {"error": str(_e)}}
-                _t = _th.Thread(target=_run_build, daemon=True)
-                _t.start()
-                return (f"🔧 Arranqué a construir «{spec[:70]}». Lo hago en segundo plano: "
-                        f"genero el código, lo EJECUTO y corrijo los errores reales (hasta "
-                        f"3 intentos con qwen-coder). Preguntame «¿terminó el build?» en un "
-                        f"rato y te paso el proyecto.")
-
-        # --- Crear script/programa (Auto-Builder con LLM) ---
-        create_code_keywords = ["crea un script", "crea un programa", "creame un script",
-                                "genera un script", "crea un bot", "crea una app",
-                                "programa que", "script que", "haceme un programa"]
-        if any(k in inp for k in create_code_keywords):
-            # Dejar que el LLM genere el código, pero marcar para auto-ejecución
-            # El _auto_builder post-LLM se encargará de ejecutarlo
-            pass  # Fall through al LLM con flag implícito
-
-        # --- Crear carpeta con proyecto multi-archivo (Auto-Builder Multi-Step) ---
-        create_project_keywords = ["crea en mi", "crea una carpeta", "crear carpeta", "nueva carpeta"]
-        has_multiple_files = any(w in inp for w in ["archivos", "archivo", ".py", ".js", ".html", ".md", ".txt", ".css"])
-        if any(k in inp for k in create_project_keywords):
-            # Determinar carpeta base (portable: escritorio del usuario actual)
-            base_dir = os.path.join(os.path.expanduser("~"), "Desktop").replace("\\", "/")
-            for keyword, path in path_keywords.items():
-                if keyword in inp:
-                    base_dir = path
-                    break
-
-            # Extraer nombre de carpeta (entre comillas, o después de "carpeta")
-            folder_name = None
-            quoted = _re.search(r'["\u201c]([^"\u201d]+)["\u201d]', user_input)
-            if quoted:
-                folder_name = quoted.group(1).strip()
-            if not folder_name:
-                name_match = _re.search(r'(?:carpeta|llamada|nombre)\s+(\S+)', inp)
-                if name_match:
-                    folder_name = name_match.group(1).strip('"\'')
-            if not folder_name:
-                folder_name = "proyecto_genesis"
-
-            project_dir = f"{base_dir}/{folder_name}"
-            import os as _os
-            _os.makedirs(project_dir, exist_ok=True)
-            results = [f"Carpeta creada: `{project_dir}`"]
-
-            # Si hay archivos mencionados, usar LLM para generar contenido
-            if has_multiple_files:
-                # Pedir al LLM que genere los archivos como JSON estructurado
-                file_prompt = (
-                    f"El usuario quiere crear un proyecto en {project_dir}.\n"
-                    f"Solicitud original: {user_input}\n\n"
-                    f"Genera SOLO un JSON con los archivos a crear. Formato exacto:\n"
-                    f'{{"files": [{{"name": "main.py", "content": "print(\'hola mundo\')"}}, '
-                    f'{{"name": "utils.py", "content": "def suma(a, b):\\n    return a + b"}}]}}\n\n'
-                    f"SOLO el JSON, nada más."
-                )
-                try:
-                    import json as _json
-                    llm_response = self.brain.think(
-                        "Eres un generador de archivos. Responde SOLO con JSON valido.",
-                        [{"role": "user", "content": file_prompt}],
-                        temperature=0.3, max_tokens=2048,
-                    )
-                    # Extraer JSON de la respuesta
-                    json_match = _re.search(r'\{[\s\S]*\}', llm_response)
-                    if json_match:
-                        file_data = _json.loads(json_match.group(0))
-                        files_list = file_data.get("files", [])
-                        from core.tools import FileTools
-                        for f_info in files_list:
-                            f_name = f_info.get("name", "")
-                            f_content = f_info.get("content", "")
-                            if f_name:
-                                f_path = f"{project_dir}/{f_name}"
-                                # Crear subdirectorio si es necesario
-                                f_dir = _os.path.dirname(f_path)
-                                if f_dir and not _os.path.exists(f_dir):
-                                    _os.makedirs(f_dir, exist_ok=True)
-                                FileTools.write_file(f_path, f_content)
-                                results.append(f"  Archivo creado: `{f_name}`")
-                                self.metrics.log_tool_use("escribir")
-                        results.append(f"\nProyecto creado: {len(files_list)} archivos en `{project_dir}`")
-                        # Auto-set workspace al proyecto creado
-                        try:
-                            self.workspace.set_path(project_dir)
-                            results.append(f"Workspace configurado: `{project_dir}`")
-                        except (AttributeError, OSError, ValueError):
-                            pass
-                        # Registrar en ActionTracker
-                        try:
-                            self.action_tracker.log_project_created(
-                                project_dir,
-                                [f.get("name", "") for f in files_list],
-                            )
-                        except (AttributeError, OSError):
-                            pass
-                    else:
-                        results.append("[WARN] No pude parsear archivos del LLM — carpeta creada vacía")
-                except Exception as e:
-                    results.append(f"[ERROR] Generación de archivos: {e}")
-            else:
-                # Solo crear carpeta sin archivos
-                results.append("Carpeta vacía lista para usar")
-
-            return "\n".join(results)
+        # Builder/desarrollo: instalar paquetes, procesar documentos, crear archivos/scripts/proyectos (extraído a _detect_builder_dev)
+        _builde_r = self._detect_builder_dev(inp, user_input, path_keywords)
+        if _builde_r is not None:
+            return _builde_r
 
         # --- Mover archivos ---
         move_keywords = ["mueve", "mover", "mueva"]
