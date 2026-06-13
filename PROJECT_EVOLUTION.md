@@ -1144,6 +1144,45 @@ clonada** — 100% local. Próximo foco: orquestador de VRAM y capa de tools (N4
 
 ---
 
+### v7.0.0 — Unbound (Mente Orquestada) 🔜 EN DESARROLLO
+
+**Tema: GENESIS rompe sus límites — usa todos sus recursos sin pelear por ellos, suma
+sentidos en tiempo real, actúa con autonomía y se controla desde cualquier lado.**
+
+**Contexto**: v6.1 sumó sentidos (imagen SD + voz clonada) pero chocaron con el techo de
+**8GB VRAM**. v7.0 ataca eso de raíz y construye sobre la capacidad liberada. 4 tracks
+ordenados — **Track 1 es la base que desbloquea el resto**.
+
+#### 🎛️ Track 1 — Conductor (orquestación de recursos + plataforma de tools) — *base, primero*
+- **`core/vram_manager.py` (NUEVO)**: orquestador de VRAM. Carga/descarga LLM (Ollama),
+  SD y XTTS según la tarea, con prioridades, políticas anti-OOM y telemetría en vivo.
+  → desbloquea **voz + imagen + LLM** funcionando juntos sin colgarse.
+- **Voz clonada integrada al orquestador**: XTTS en GPU cuando hay espacio; fallback
+  automático a CPU (~8s) o a voz Álvaro (edge-tts) — resuelve el pendiente de v6.1.
+- **N4 — Capa de function-calling**: migración *aditiva* del dispatcher por regex a tools
+  declarativas (registro, esquema, validación). Base para escalar capacidades sin regex frágiles.
+
+#### 👁️ Track 2 — Sentidos en tiempo real
+- **Visión continua**: cámara/pantalla en streaming → Genesis describe y reacciona (llava +
+  análisis periódico). Hoy la visión es puntual; pasa a ser continua.
+- **Imágenes en el hub**: mostrar la imagen generada *inline* (hoy devuelve la ruta).
+- Más integraciones de apps + automatización de UI más profunda.
+
+#### 🤖 Track 3 — Autonomía (agente)
+- **Agente multi-paso**: planifica → ejecuta cadenas de tools (sobre Track 1) → verifica.
+- Scheduling avanzado, proactividad fuerte, **alarmas/recordatorios persistentes** entre reinicios.
+
+#### 📱 Track 4 — Alcance (remoto / móvil)
+- **API segura** + control desde el celular (web responsive / app liviana), notificaciones push,
+  sincronización de estado. Genesis accesible fuera de la PC.
+
+**Orden de ejecución**: Track 1 (desbloquea) → Tracks 2 y 3 en paralelo → Track 4 al final.
+**Restricción central**: respetar siempre los principios de escalado (local-first, guardrails de
+auto-modificación, degradación grácil, audit-first). El techo de 8GB VRAM guía todo el diseño
+de Track 1 hasta migrar a más VRAM.
+
+---
+
 ## Resumen del Roadmap
 
 | Version | Tema | Modulos | Tests |
@@ -1169,6 +1208,7 @@ clonada** — 100% local. Próximo foco: orquestador de VRAM y capa de tools (N4
 | v5.9 ✅ | System Mastery | 132 | 5,425 |
 | v6.0 ✅ | Digital Sovereignty | 133 | 5,473 |
 | **v6.1** ✅ | **Senses & Studio (imagen SD + voz clonada + hub)** | **~146** | **5,473+** |
+| **v7.0** 🔜 | **Unbound — orquestación VRAM + tools + sentidos RT + autonomía + remoto** | *en desarrollo* | — |
 
 **GENESIS v6.0 COMPLETADO.** 133 módulos, 125+ auto-detect sections, **router multi-provider
 con failover**, 2 modelos Ollama en producción (Genesis + Qwen Coder), desktop app, project

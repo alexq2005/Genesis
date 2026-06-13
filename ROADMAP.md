@@ -46,34 +46,39 @@ auto-mejora segura — todo offline y bajo control del usuario.
 
 ---
 
-## 🚧 En progreso
-- **Voz clonada vs VRAM (8GB)**: Ollama (6.2GB) + XTTS (2GB) no coexisten en GPU.
-  Opciones en evaluación: XTTS en CPU (~8s/frase), descarga de LLM on-demand, o voz
-  clonada "a pedido" con edge-tts en el día a día. *(Decisión pendiente del usuario.)*
-- **N4 — Arquitectura de tools (function-calling)**: reemplazar el dispatcher por regex
-  por una capa de tools declarativa. Diferido como capa aditiva, no reescritura.
+## 🔜 Próxima evolución — **v7.0 "Unbound" (Mente Orquestada)**
+> En desarrollo. GENESIS rompe sus límites: usa todos sus recursos sin pelear, suma sentidos
+> en tiempo real, actúa con autonomía y se controla desde cualquier lado. 4 tracks ordenados
+> — **Track 1 desbloquea el resto**.
+
+### 🎛️ Track 1 — Conductor (recursos + tools) · *base, primero*
+- **`core/vram_manager.py`**: orquestador de VRAM — carga/descarga LLM/SD/XTTS según tarea,
+  prioridades, anti-OOM, telemetría. Desbloquea **voz + imagen + LLM** juntos (techo de 8GB).
+- **Voz clonada integrada al orquestador**: GPU si hay espacio → fallback CPU (~8s) → Álvaro.
+  *(Resuelve el pendiente de v6.1.)*
+- **N4 — capa de function-calling**: tools declarativas (registro/esquema/validación),
+  migración aditiva sobre el dispatcher regex. Base para escalar sin fragilidad.
+
+### 👁️ Track 2 — Sentidos en tiempo real
+- Visión continua (cámara/pantalla en streaming → describe y reacciona).
+- Mostrar la imagen generada **inline en el hub** (hoy devuelve ruta).
+- Más integraciones de apps + automatización de UI más profunda.
+
+### 🤖 Track 3 — Autonomía (agente)
+- Agente multi-paso: planifica → ejecuta cadenas de tools (sobre Track 1) → verifica.
+- Scheduling avanzado, proactividad fuerte, alarmas/recordatorios **persistentes**.
+
+### 📱 Track 4 — Alcance (remoto / móvil)
+- API segura + control desde el celular (web responsive / app liviana), push, sincronización.
+
+**Orden**: Track 1 → (Tracks 2 y 3 en paralelo) → Track 4.
 
 ---
 
-## 🛣️ Backlog / próximas fases (abierto — el proyecto escala)
-
-### Calidad de medios
-- Voz: aislar muestras con **Demucs** (instalado), evaluar fine-tuning de XTTS.
-- Imágenes: opción **SDXL-Turbo** (1024px) si la VRAM lo permite; mostrar imagen
-  generada **dentro del hub** (hoy devuelve la ruta del archivo).
-
-### Gestión de recursos (clave por el techo de 8GB VRAM)
-- Orquestador de VRAM: cargar/descargar LLM, SD y XTTS según la tarea sin OOM.
-- Telemetría de VRAM en vivo + políticas automáticas de fallback.
-
-### Plataforma
-- Capa de tools/function-calling (N4) como base para crecer sin frágiles regex.
-- Más integraciones de dispositivos y servicios (a demanda del usuario).
-- Persistencia de alarmas/recordatorios entre reinicios.
-
-### Robustez / operación
-- Garantizar **una sola instancia** de la cabina (evitar duplicados venv/sistema).
-- Suite de tests creciente por capacidad.
+## 🌌 Más allá de v7.0 (ideas abiertas)
+- Calidad de medios: fine-tuning de XTTS, SDXL-Turbo (1024px) cuando la VRAM lo permita.
+- Migración a más VRAM (RTX 4060 Ti 16GB) → modelos calientes simultáneos.
+- Garantizar **una sola instancia** de la cabina; suite de tests creciente por capacidad.
 
 ---
 
