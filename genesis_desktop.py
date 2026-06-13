@@ -754,6 +754,19 @@ def main():
                 pass
         threading.Thread(target=_warm_xtts, daemon=True).start()
 
+        # Escucha pasiva (manos libres) auto al arrancar — obedece SOLO tu voz
+        # si hay huella entrenada (voiceprint). Decí «genesis ...» sin tocar nada.
+        def _autostart_handsfree():
+            try:
+                from web_ui import get_genesis
+                from core import handsfree
+                hf = handsfree.get(get_genesis())
+                msg = hf.start()
+                print(f"  [OK]  {msg.splitlines()[0][:70]}")
+            except Exception as e:
+                print(f"  [warn] manos libres no arrancó: {str(e)[:80]}")
+        threading.Thread(target=_autostart_handsfree, daemon=True).start()
+
         print()
         print(f"  Genesis Desktop activo — {HOTKEY.upper()} para toggle")
 

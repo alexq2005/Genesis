@@ -61,12 +61,35 @@ def _speak(genesis, text):
         pass
 
 
+def _pause_handsfree(genesis):
+    """Pausa el manos-libres (si está activo) para que no reaccione a la voz de
+    entrenamiento ni compita por el micrófono. Devuelve el listener o None."""
+    try:
+        from core import handsfree
+        hf = handsfree.get(genesis)
+        if getattr(hf, "running", False):
+            hf.pause()
+            return hf
+    except Exception:
+        pass
+    return None
+
+
+def _resume_handsfree(hf):
+    try:
+        if hf is not None:
+            hf.resume()
+    except Exception:
+        pass
+
+
 def start_enroll(genesis, seconds=15):
     """Entrena la huella de voz del usuario (graba `seconds`, en hilo aparte)."""
     if not available():
         return "🗣️ Falta resemblyzer/sounddevice para el reconocimiento de voz."
 
     def _job():
+        _hf = _pause_handsfree(genesis)
         try:
             _speak(genesis, f"Voy a grabar tu voz {seconds} segundos. Hablá normal, "
                             f"contame algo, ya.")
@@ -85,6 +108,8 @@ def start_enroll(genesis, seconds=15):
             except Exception:
                 pass
             _speak(genesis, "Hubo un problema grabando tu voz.")
+        finally:
+            _resume_handsfree(_hf)
 
     threading.Thread(target=_job, daemon=True).start()
     return (f"🗣️ **Entrenando tu voz** — grabando {seconds}s. **Hablá normal ahora** "
@@ -99,6 +124,7 @@ def start_verify(genesis, seconds=4):
         return "🗣️ Todavía no entrené tu voz. Decí «entrená mi voz» primero."
 
     def _job():
+        _hf = _pause_handsfree(genesis)
         try:
             _speak(genesis, f"Decí algo, te escucho {seconds} segundos.")
             audio = _record(seconds)
@@ -119,19 +145,26 @@ def start_verify(genesis, seconds=4):
                 genesis.log.error(f"[voiceprint] verify error: {e}")
             except Exception:
                 pass
+        finally:
+            _resume_handsfree(_hf)
 
     threading.Thread(target=_job, daemon=True).start()
     return f"🗣️ **Verificando tu voz** — hablá {seconds}s. Te digo por voz si sos vos."
 
 
-def verify_audio(audio_f32):
-    """Verifica un array de audio ya capturado. Devuelve (es_usuario, similitud)."""
+def verify_audio(audio_f32, threshold=None):
+    """Verifica un array de audio (float32 16kHz) contra la huella entrenada.
+    Devuelve (es_usuario, similitud). Si NO hay huella o no se pudo calcular el
+    embedding, devuelve (True, -1.0) → 'no se pudo verificar' (fail-open, no
+    bloquea). Así quien llama distingue 'no sos vos' (sim≥0 y bajo) de 'no
+    pude chequear' (sim<0)."""
+    thr = _THRESHOLD if threshold is None else threshold
     if not enrolled():
-        return (True, 1.0)  # sin huella → no bloquear
+        return (True, -1.0)
     try:
         emb = _embed(audio_f32)
         ref = np.load(_VP_PATH)
         sim = float(np.dot(emb, ref))
-        return (sim >= _THRESHOLD, sim)
+        return (sim >= thr, sim)
     except Exception:
-        return (True, 0.0)
+        return (True, -1.0)

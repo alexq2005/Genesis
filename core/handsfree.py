@@ -36,17 +36,38 @@ def _find_vosk_model():
 class HandsFree:
     # Incluye variantes que vosk-es suele confundir (genesis→gemini/génesis/yénesis).
     WAKE = ("genesis", "génesis", "jarvis", "gemini", "yénesis", "génisis", "jénesis")
+    # Similitud mínima de huella para aceptar el comando como "del dueño".
+    # Más laxo que el verify formal (0.72) porque el mic en uso real es ruidoso.
+    OWNER_MIN = 0.66
 
     def __init__(self, genesis):
         self.genesis = genesis
         self.running = False
         self._thread = None
         self._speaking = False
+        self._paused = False
+        self._owner_only = True   # solo obedecer si la voz coincide con la huella
         self._last = ""
 
     def status(self):
+        modo = " · solo tu voz" if (self._owner_only and self._enrolled()) else ""
         return ("🎙️ Escucha manos libres: " + ("ACTIVA" if self.running else "apagada")
-                + (" · esperando «genesis ...»" if self.running else ""))
+                + (" · esperando «genesis ...»" + modo if self.running else ""))
+
+    @staticmethod
+    def _enrolled():
+        try:
+            from core import voiceprint
+            return voiceprint.enrolled()
+        except Exception:
+            return False
+
+    def pause(self):
+        """Suspende el procesamiento (lo usa el enroll/verify para no pisarse)."""
+        self._paused = True
+
+    def resume(self):
+        self._paused = False
 
     def start(self):
         if self.running:
@@ -76,16 +97,24 @@ class HandsFree:
             vosk.SetLogLevel(-1)
             model = vosk.Model(_find_vosk_model())
             rec = vosk.KaldiRecognizer(model, 16000)
+            utt = bytearray()  # audio crudo de la frase en curso (para huella)
             with sd.RawInputStream(samplerate=16000, blocksize=8000, dtype="int16",
                                    channels=1) as stream:
                 while self.running:
                     data, _ = stream.read(4000)
-                    if self._speaking:
-                        continue  # no escucharse a sí mismo
-                    if rec.AcceptWaveform(bytes(data)):
+                    if self._speaking or self._paused:
+                        utt = bytearray()  # descartar lo capturado mientras no escucha
+                        continue
+                    b = bytes(data)
+                    utt.extend(b)
+                    if rec.AcceptWaveform(b):
                         txt = json.loads(rec.Result()).get("text", "").strip()
+                        audio = bytes(utt)
+                        utt = bytearray()
                         if txt:
-                            self._handle(txt)
+                            self._handle(txt, audio)
+                    elif len(utt) > 16000 * 2 * 18:  # cota ~18s (16k·2bytes)
+                        utt = utt[-16000 * 2 * 9:]
         except Exception as e:
             self.running = False
             try:
@@ -93,7 +122,7 @@ class HandsFree:
             except Exception:
                 pass
 
-    def _handle(self, txt):
+    def _handle(self, txt, audio=b""):
         low = txt.lower().strip()
         try:
             self.genesis.log.debug(f"[handsfree] oído: {low!r}")
@@ -111,6 +140,22 @@ class HandsFree:
         cmd = low[wpos:].strip(" ,.:;")
         if not cmd:
             return
+        # --- VERIFICACIÓN DEL HABLANTE (solo tu voz) ---
+        # Si hay huella entrenada y el modo "solo dueño" está activo, comparo el
+        # audio de la frase contra la huella. Si no coincide → ignoro el comando.
+        if self._owner_only and audio:
+            try:
+                from core import voiceprint
+                if voiceprint.enrolled():
+                    import numpy as np
+                    f32 = np.frombuffer(audio, dtype=np.int16).astype(np.float32) / 32768.0
+                    ok, sim = voiceprint.verify_audio(f32, threshold=self.OWNER_MIN)
+                    if sim >= 0 and not ok:  # sim<0 = no se pudo verificar → permito
+                        self.genesis.log.debug(
+                            f"[handsfree] voz ajena (sim={sim:.2f}) — ignoro: {cmd!r}")
+                        return
+            except Exception:
+                pass  # ante cualquier fallo, no bloquear (fail-open)
         # apagar por voz
         if re.search(r"\b(dej[áa]\s+de\s+escuchar|apag[áa]\s+(la\s+)?escucha|"
                      r"basta|silencio|deten[ée]\s+la\s+escucha)\b", cmd):
