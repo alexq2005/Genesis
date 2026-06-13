@@ -491,7 +491,6 @@ Genera el resumen final COMPLETO y unificado. Cubre TODOS los temas del document
         muestrea contenido representativo de distintas partes.
         Mucho mejor que text[:500] que solo muestra la portada.
         """
-        import re
         lines = text.split("\n")
         total_lines = len(lines)
         word_count = len(text.split())

@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    name: Calidad de código (lint + sintaxis)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar herramientas de lint
+        run: pip install ruff
+
+      - name: Ruff — lint (atrapa bugs reales: nombres indefinidos, redefiniciones, etc.)
+        run: ruff check core/ *.py
+
+      - name: Compilación / chequeo de sintaxis de todo el repo
+        run: python -m compileall -q -x "venv|data|generated_media|models" .

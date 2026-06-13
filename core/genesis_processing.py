@@ -1405,7 +1405,7 @@ class GenesisProcessingMixin:
             from config import SHORT_TERM_LIMIT as _STL
         except Exception:
             _STL = 20  # fallback razonable si no hay config
-        context_usage = len(system_prompt) / 4000.0 if 'system_prompt' in dir() else 0.3
+        context_usage = 0.3  # placeholder: system_prompt no está disponible en este scope
         module_count = 40  # Número aproximado de módulos activos
         self.cognitive_monitor.record_snapshot(
             context_util=min(1.0, context_usage),

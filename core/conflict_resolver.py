@@ -232,7 +232,6 @@ class ConflictResolver:
         if signal.level == "severe":
             return ResolutionStrategy("conceder")
         elif signal.level == "moderate":
-            # Si es un patrón recurrente, ofrecer alternativa
             if self.conflict_patterns.get(signal.trigger, 0) >= 2:
                 return ResolutionStrategy("alternativa")
             return ResolutionStrategy("reformular")

@@ -10,6 +10,7 @@ import json
 import os
 import re
 import time
+from config import GENESIS_NAME, GENESIS_VERSION
 
 
 class GenesisCommandsMixin:
@@ -914,7 +915,7 @@ class GenesisCommandsMixin:
         ]
         stats = self.brain.get_stats()
         lines += [
-            f"  Proveedor: {stats.get('provider', LLM_PROVIDER)}",
+            f"  Proveedor: {stats.get('provider', 'local')}",
             f"  Modelo: {stats.get('model', 'unknown')}",
             f"  Disponible: {'Si' if self.brain.is_available() else 'NO'}",
             f"  Tokens usados: {stats.get('total_tokens', 0)}",

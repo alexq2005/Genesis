@@ -1,0 +1,46 @@
+[project]
+name = "genesis"
+version = "6.1.0"
+description = "GENESIS — Asistente de IA personal, 100% local"
+requires-python = ">=3.10"
+
+# ============================================================
+# Ruff — linter + formatter
+# ============================================================
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = [
+    "venv", ".venv", "data", "generated_media", "generated_docs",
+    "models", "backups", "logs", ".git", "tools_custom",
+    "embeddings_data", "web_data",
+]
+
+[tool.ruff.lint]
+# Reglas activas: errores reales (Pyflakes F), pycodestyle (E/W), isort (I).
+select = ["E", "F", "W", "I"]
+# Ignorados por ahora (estilísticos de alto volumen — limpieza gradual, no bloquean).
+# Se mantienen los detectores de BUGS REALES: F821 (nombre indefinido), F811
+# (redefinición), F-strings rotas, errores de sintaxis (E9).
+ignore = [
+    "E402",  # import no al tope (hay patrones legacy con código entre imports)
+    "E501",  # línea larga
+    "E701", "E702", "E703",  # múltiples sentencias por línea (estilo compacto legacy)
+    "E741",  # nombre de variable ambiguo
+    "E401",  # múltiples imports en una línea
+    "F401",  # import sin usar (limpieza gradual)
+    "F403", "F405",  # import *
+    "F541",  # f-string sin placeholders
+    "F841",  # variable asignada sin usar (limpieza gradual)
+    "W291", "W293", "W605",  # whitespace / escape en regex
+    "I001",  # orden de imports (legacy; se ordena gradualmente)
+]
+
+# ============================================================
+# Pytest — solo recolecta la suite de smoke real (asserts).
+# Los tests legacy (test_v*.py) usan runner casero con print; se migran aparte.
+# ============================================================
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_smoke.py", "test_real_*.py"]
+addopts = "-q"

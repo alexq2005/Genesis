@@ -1,0 +1,10 @@
+# Pre-commit: corre ruff antes de cada commit (lint + auto-fix seguro).
+# Instalar una vez:  pre-commit install
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.17
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+        # solo formatea archivos nuevos/modificados; no reescribe todo el repo

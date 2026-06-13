@@ -10,6 +10,7 @@ import json
 import os
 _GX_HOME = os.path.expanduser("~").replace("\\", "/")  # N7: portabilidad multi-usuario
 import re
+import sys
 import time
 from pathlib import Path
 
