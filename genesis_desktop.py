@@ -741,6 +741,19 @@ def main():
         print("  [3/3] Registrando hotkey y tray...")
         threading.Thread(target=_create_tray_icon, daemon=True).start()
         threading.Thread(target=_setup_hotkey, daemon=True).start()
+
+        # Pre-calentar la voz clonada (XTTS) en segundo plano: evita ~20s de
+        # silencio en el primer enroll/verify/manos-libres (queda caliente en VRAM).
+        def _warm_xtts():
+            try:
+                from core import voice_clone
+                if voice_clone.available():
+                    voice_clone._load()
+                    print("  [OK]  Voz clonada (XTTS) precargada en VRAM")
+            except Exception:
+                pass
+        threading.Thread(target=_warm_xtts, daemon=True).start()
+
         print()
         print(f"  Genesis Desktop activo — {HOTKEY.upper()} para toggle")
 
