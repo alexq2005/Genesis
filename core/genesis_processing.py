@@ -84,7 +84,7 @@ class GenesisProcessingMixin:
         "🖨️", "Qué documento imprimo",
         "🖥️", "Qué abro en esa pantalla",
         "📶", "🔵", "Qué unidad USB", "Qué abro",
-        "📺", "Qué te casteo", "🎬",
+        "📺", "Qué te casteo", "🎬", "🎮",
     )
 
     def _maybe_spontaneous(self, user_input: str, result: str) -> str:

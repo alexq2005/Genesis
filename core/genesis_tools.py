@@ -3157,6 +3157,36 @@ class GenesisToolsMixin:
 
         return None
 
+    def _detect_games(self, inp, user_input):
+        """Lanzador de juegos por voz/nombre (Steam/Epic). Devuelve str o None."""
+        import re as _re
+        from core import game_launcher as _gl
+        # listar juegos instalados
+        if _re.search(r"\b(qu[ée]\s+juegos|mis\s+juegos|juegos\s+(tengo|instalad|que\s+tengo)|"
+                      r"list[áa]r?\s+(los\s+)?juegos|qu[ée]\s+puedo\s+jugar)\b", inp):
+            return _gl.list_text()
+        # "jugá/jugar/juguemos <juego>" → intención explícita de jugar
+        _gm = _re.search(r"\b(?:jug[aáué]\w*|quiero\s+jugar(?:\s+a)?)\s+"
+                         r"(?:al?\s+|el\s+juego\s+|la\s+)?(.+)", inp)
+        if _gm:
+            q = _gm.group(1).strip().rstrip(".?!")
+            if q and q not in ("algo", "un juego", "un rato"):
+                return _gl.launch_game(q)
+            return "🎮 ¿A qué querés jugar? Decime el nombre (o «qué juegos tengo»)."
+        if _re.search(r"\b(quiero\s+jugar|juguemos|vamos\s+a\s+jugar|a\s+jugar)\b", inp):
+            return "🎮 ¿A qué? Decime el juego (o «qué juegos tengo»)."
+        # "abrí/lanzá/poné <X>" SOLO si X es un juego instalado (si no, cae al open genérico)
+        _am = _re.search(r"\b(?:abr[íi]r?|lanz[áa]r?|ejecut[áa]r?|inici[áa]r?|pon[ée]r?|arranc[áa]r?)\s+"
+                         r"(?:el\s+juego\s+|al?\s+)?(.+)", inp)
+        if _am:
+            q = _am.group(1).strip().rstrip(".?!")
+            try:
+                if q and _gl._match(q, _gl.list_games()):
+                    return _gl.launch_game(q)
+            except Exception:
+                pass
+        return None
+
     def _auto_detect_tool(self, user_input: str) -> str:
         """
         Auto-detecta si el usuario pide algo del sistema y ejecuta
@@ -3290,6 +3320,11 @@ class GenesisToolsMixin:
         _ui_res = self._ui_action(inp, user_input)
         if _ui_res is not None:
             return _ui_res
+
+        # === JUEGOS: lanzar por voz/nombre (Steam/Epic) — ANTES del open genérico ===
+        _games_r = self._detect_games(inp, user_input)
+        if _games_r is not None:
+            return _games_r
 
         # Abrir apps/sitios/carpetas y mostrar contenido de carpeta (extraído a _detect_open_apps_folders)
         _open_a_r = self._detect_open_apps_folders(inp, user_input)
