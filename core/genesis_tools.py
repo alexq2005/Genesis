@@ -3196,6 +3196,19 @@ class GenesisToolsMixin:
         inp = user_input.lower().strip()
         import re as _re
 
+        # --- ESCUCHA MANOS LIBRES (always-on con wake-word) — alta prioridad ---
+        if _re.search(r"\b(manos\s+libres|escuch[áa]\s+siempre|modo\s+escucha|"
+                      r"activ[áa]r?\s+(la\s+)?escucha|escucha\s+continua)\b", inp):
+            from core import handsfree as _hf
+            return _hf.get(self).start()
+        if _re.search(r"\b(dej[áa]\s+de\s+escuchar|apag[áa]r?\s+(la\s+)?(escucha|manos\s+libres)|"
+                      r"desactiv[áa]r?\s+(la\s+)?escucha)\b", inp):
+            from core import handsfree as _hf
+            return _hf.get(self).stop()
+        if _re.search(r"\b(est[áa]s?\s+escuchando|estado\s+de\s+la\s+escucha)\b", inp):
+            from core import handsfree as _hf
+            return _hf.get(self).status()
+
         # --- RUTINAS JARVIS (todas las versiones de Iron Man) — alta prioridad ---
         try:
             from core import jarvis_routines as _jr
