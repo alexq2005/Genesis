@@ -1154,6 +1154,79 @@ class GenesisToolsMixin:
 
         return None
 
+    def _detect_email(self, inp, user_input):
+        """Email: enviar (SMTP) y leer bandeja (IMAP). Devuelve str o None.
+        Extraído de _auto_detect_tool (Fase 2)."""
+        import re as _re
+        # --- EMAIL: enviar correo (capacidad de red concedida por humano) ---
+        # Confirmación en 2 pasos: 1) "enviá email a X que diga Y" → muestra y pide
+        # confirmar; 2) "sí/confirmá/dale" → envía. Acción hacia afuera.
+        _pend = getattr(self, "_pending_email", None)
+        if _pend and _re.search(r'^\s*(s[íi]|confirm[áo]?|dale|envialo|envíalo|'
+                                r'manda(lo)?|s[íi]\s+envia|ok|de una)\s*$', inp):
+            from core import email_sender as _es
+            r = _es.send_email(_pend["to"], _pend.get("subject", "Mensaje de Genesis"),
+                               _pend["body"])
+            self._pending_email = None
+            return ("📧 " + r["message"]) if r.get("ok") else ("⚠️ " + r["message"])
+        if _pend and _re.search(r'^\s*(no|cancel[áa]r?|dejalo|olvidalo)\s*$', inp):
+            self._pending_email = None
+            return "Listo, cancelé el envío del email."
+        if _re.search(r'\b(envi[áa]r?|mand[áa]r?|escrib[íi]r?)\b.*\b(e?-?mail|correo)\b', inp) \
+                or _re.search(r'\b(e?-?mail|correo)\b.*\ba\s+\S+@\S+', inp):
+            _addr = _re.search(r'[\w.\-+]+@[\w.\-]+\.\w+', user_input)
+            if not _addr:
+                return "¿A qué dirección de email te lo envío? Decime el correo."
+            to = _addr.group(0)
+            # cuerpo: comillas, o tras "que diga/diciendo/con el mensaje/con el texto"
+            _bm = _re.search(r'["“]([^"”]+)["”]', user_input)
+            if _bm:
+                body = _bm.group(1)
+            else:
+                _bm2 = _re.search(r'(?:que\s+diga|diciendo|con\s+el\s+mensaje|'
+                                  r'con\s+el\s+texto|mensaje:?)\s+(.+)$',
+                                  user_input, _re.IGNORECASE)
+                body = _bm2.group(1).strip() if _bm2 else ""
+            _sm = _re.search(r'(?:con\s+asunto|asunto:?)\s+["“]?([^"”\n]+)', user_input, _re.IGNORECASE)
+            subject = _sm.group(1).strip() if _sm else "Mensaje de Genesis"
+            if not body:
+                return f"¿Qué mensaje le mando a {to}? Decime el texto (ej: que diga «hola»)."
+            from core import email_sender as _es
+            if not _es.is_configured():
+                return ("📧 Tengo todo listo para enviarlo, pero falta configurar el email: "
+                        "generá un App Password de Gmail y poné GMAIL_USER y "
+                        "GMAIL_APP_PASSWORD en el .env. Después repetí el pedido.")
+            self._pending_email = {"to": to, "subject": subject, "body": body}
+            return (f"📧 ¿Confirmás el envío?\n  Para: {to}\n  Asunto: {subject}\n  "
+                    f"Mensaje: «{body}»\nDecime «sí» para enviar o «no» para cancelar.")
+
+        # --- EMAIL: leer bandeja de entrada (IMAP) ---
+        if (_re.search(r'\b(le[ée]r?|leeme|revis[áa]r?|chec(?:k|que[áa]r?)|mostr[áa]r?|'
+                       r'fij[áa]te|tengo)\b.*\b(correos?|emails?|e-?mails?|mails?|'
+                       r'bandeja|casilla)\b', inp)
+                or _re.search(r'\b(correos?|emails?|mails?)\s+(nuevos?|sin\s+leer|recientes?)', inp)
+                or inp.strip() in ("mis correos", "mis emails", "mis mails", "leer correos")):
+            from core import email_reader as _er
+            if not _er.is_configured():
+                return ("📬 Para leer correos necesito credenciales IMAP. Si querés leer "
+                        "TU casilla, generá un App Password de alexq2005@gmail.com y poné "
+                        "GMAIL_READ_USER + GMAIL_READ_APP_PASSWORD en el .env.")
+            _unread = bool(_re.search(r'\b(nuevos?|sin\s+leer|no\s+le[íi]dos?)\b', inp))
+            _r = _er.read_inbox(limit=5, unread_only=_unread)
+            if not _r.get("ok"):
+                return "⚠️ " + _r["message"]
+            ems = _r.get("emails", [])
+            if not ems:
+                return f"📭 No tenés correos {'nuevos' if _unread else 'recientes'} en {_r.get('account','')}."
+            out = [f"📬 Últimos {len(ems)} correos de {_r.get('account','')}:\n"]
+            for i, e in enumerate(ems, 1):
+                snip = (e.get("snippet", "") or "").replace("\n", " ")[:120]
+                out.append(f"{i}. De: {e.get('from','')[:45]}\n   📌 {e.get('subject','')[:70]}"
+                           + (f"\n   « {snip} »" if snip else ""))
+            return "\n".join(out)
+
+        return None
+
     def _auto_detect_tool(self, user_input: str) -> str:
         """
         Auto-detecta si el usuario pide algo del sistema y ejecuta
@@ -2039,72 +2112,10 @@ class GenesisToolsMixin:
             except Exception as e:
                 return f"No pude actualizar los índices: {e}"
 
-        # --- EMAIL: enviar correo (capacidad de red concedida por humano) ---
-        # Confirmación en 2 pasos: 1) "enviá email a X que diga Y" → muestra y pide
-        # confirmar; 2) "sí/confirmá/dale" → envía. Acción hacia afuera.
-        _pend = getattr(self, "_pending_email", None)
-        if _pend and _re.search(r'^\s*(s[íi]|confirm[áo]?|dale|envialo|envíalo|'
-                                r'manda(lo)?|s[íi]\s+envia|ok|de una)\s*$', inp):
-            from core import email_sender as _es
-            r = _es.send_email(_pend["to"], _pend.get("subject", "Mensaje de Genesis"),
-                               _pend["body"])
-            self._pending_email = None
-            return ("📧 " + r["message"]) if r.get("ok") else ("⚠️ " + r["message"])
-        if _pend and _re.search(r'^\s*(no|cancel[áa]r?|dejalo|olvidalo)\s*$', inp):
-            self._pending_email = None
-            return "Listo, cancelé el envío del email."
-        if _re.search(r'\b(envi[áa]r?|mand[áa]r?|escrib[íi]r?)\b.*\b(e?-?mail|correo)\b', inp) \
-                or _re.search(r'\b(e?-?mail|correo)\b.*\ba\s+\S+@\S+', inp):
-            _addr = _re.search(r'[\w.\-+]+@[\w.\-]+\.\w+', user_input)
-            if not _addr:
-                return "¿A qué dirección de email te lo envío? Decime el correo."
-            to = _addr.group(0)
-            # cuerpo: comillas, o tras "que diga/diciendo/con el mensaje/con el texto"
-            _bm = _re.search(r'["“]([^"”]+)["”]', user_input)
-            if _bm:
-                body = _bm.group(1)
-            else:
-                _bm2 = _re.search(r'(?:que\s+diga|diciendo|con\s+el\s+mensaje|'
-                                  r'con\s+el\s+texto|mensaje:?)\s+(.+)$',
-                                  user_input, _re.IGNORECASE)
-                body = _bm2.group(1).strip() if _bm2 else ""
-            _sm = _re.search(r'(?:con\s+asunto|asunto:?)\s+["“]?([^"”\n]+)', user_input, _re.IGNORECASE)
-            subject = _sm.group(1).strip() if _sm else "Mensaje de Genesis"
-            if not body:
-                return f"¿Qué mensaje le mando a {to}? Decime el texto (ej: que diga «hola»)."
-            from core import email_sender as _es
-            if not _es.is_configured():
-                return ("📧 Tengo todo listo para enviarlo, pero falta configurar el email: "
-                        "generá un App Password de Gmail y poné GMAIL_USER y "
-                        "GMAIL_APP_PASSWORD en el .env. Después repetí el pedido.")
-            self._pending_email = {"to": to, "subject": subject, "body": body}
-            return (f"📧 ¿Confirmás el envío?\n  Para: {to}\n  Asunto: {subject}\n  "
-                    f"Mensaje: «{body}»\nDecime «sí» para enviar o «no» para cancelar.")
-
-        # --- EMAIL: leer bandeja de entrada (IMAP) ---
-        if (_re.search(r'\b(le[ée]r?|leeme|revis[áa]r?|chec(?:k|que[áa]r?)|mostr[áa]r?|'
-                       r'fij[áa]te|tengo)\b.*\b(correos?|emails?|e-?mails?|mails?|'
-                       r'bandeja|casilla)\b', inp)
-                or _re.search(r'\b(correos?|emails?|mails?)\s+(nuevos?|sin\s+leer|recientes?)', inp)
-                or inp.strip() in ("mis correos", "mis emails", "mis mails", "leer correos")):
-            from core import email_reader as _er
-            if not _er.is_configured():
-                return ("📬 Para leer correos necesito credenciales IMAP. Si querés leer "
-                        "TU casilla, generá un App Password de alexq2005@gmail.com y poné "
-                        "GMAIL_READ_USER + GMAIL_READ_APP_PASSWORD en el .env.")
-            _unread = bool(_re.search(r'\b(nuevos?|sin\s+leer|no\s+le[íi]dos?)\b', inp))
-            _r = _er.read_inbox(limit=5, unread_only=_unread)
-            if not _r.get("ok"):
-                return "⚠️ " + _r["message"]
-            ems = _r.get("emails", [])
-            if not ems:
-                return f"📭 No tenés correos {'nuevos' if _unread else 'recientes'} en {_r.get('account','')}."
-            out = [f"📬 Últimos {len(ems)} correos de {_r.get('account','')}:\n"]
-            for i, e in enumerate(ems, 1):
-                snip = (e.get("snippet", "") or "").replace("\n", " ")[:120]
-                out.append(f"{i}. De: {e.get('from','')[:45]}\n   📌 {e.get('subject','')[:70]}"
-                           + (f"\n   « {snip} »" if snip else ""))
-            return "\n".join(out)
+        # Email enviar/leer (extraído a _detect_email)
+        _mail_r = self._detect_email(inp, user_input)
+        if _mail_r is not None:
+            return _mail_r
 
         # --- Automatización de UI (menús/clicks/teclado de cualquier app) ---
         # ANTES de open/content: "abrí el menú X" no debe caer en el launcher.
