@@ -1288,10 +1288,10 @@ class GenesisToolsMixin:
         _mvol = _re.search(r"\bvolumen\s+(?:al?\s+)?(\d{1,3})", inp)
         if _mvol:
             return _sc.set_volume(int(_mvol.group(1)))
-        if _re.search(r"\b(sub[íi]|aument[áa]|m[áa]s)\b.*\bvolumen\b", inp) or \
+        if _re.search(r"\b(sub[íie]\w*|aument\w*|m[áa]s)\b.*\bvolumen\b", inp) or \
            _re.search(r"\bvolumen\b.*\b(arriba|m[áa]s alto|fuerte)\b", inp):
             return _sc.volume_up()
-        if _re.search(r"\b(baj[áa]|disminu[íi]|menos)\b.*\bvolumen\b", inp) or \
+        if _re.search(r"\b(baj[áae]\w*|disminu\w*|menos)\b.*\bvolumen\b", inp) or \
            _re.search(r"\bvolumen\b.*\b(abajo|m[áa]s bajo)\b", inp):
             return _sc.volume_down()
         if _re.search(r"\b(silenci[áa]r?|mute[áa]r?|mute[ao]|sin sonido)\b", inp) and \
