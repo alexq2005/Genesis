@@ -925,6 +925,235 @@ class GenesisToolsMixin:
             target += _dt.timedelta(days=1)
         return int((target - now).total_seconds())
 
+    def _detect_device_control(self, inp, user_input):
+        """Control de dispositivos/sistema: volumen, energía, brillo, WiFi/BT/USB,
+        Chromecast/cast y multi-monitor. Devuelve str (resultado) o None si no aplica.
+        Extraído de _auto_detect_tool (Fase 2 — descomposición del god-method)."""
+        import re as _re
+        # === CONTROL DEL SISTEMA (volumen / energía / brillo / bloqueo) ===
+        from core import system_control as _sc
+        # Confirmación pendiente de acción destructiva (apagar/reiniciar)
+        _pp = getattr(self, "_pending_power", None)
+        if _pp and _re.search(r"^\s*(s[íi]|confirm[áo]?|dale|hacelo|ok|de una)\s*$", inp):
+            self._pending_power = None
+            return getattr(_sc, _pp)()
+        if _pp and _re.search(r"^\s*(no|cancel[áa]r?|dejalo|olvidalo)\s*$", inp):
+            self._pending_power = None
+            return "Listo, cancelé eso."
+        # VOLUMEN
+        _mvol = _re.search(r"\bvolumen\s+(?:al?\s+)?(\d{1,3})", inp)
+        if _mvol:
+            return _sc.set_volume(int(_mvol.group(1)))
+        if _re.search(r"\b(sub[íi]|aument[áa]|m[áa]s)\b.*\bvolumen\b", inp) or \
+           _re.search(r"\bvolumen\b.*\b(arriba|m[áa]s alto|fuerte)\b", inp):
+            return _sc.volume_up()
+        if _re.search(r"\b(baj[áa]|disminu[íi]|menos)\b.*\bvolumen\b", inp) or \
+           _re.search(r"\bvolumen\b.*\b(abajo|m[áa]s bajo)\b", inp):
+            return _sc.volume_down()
+        if _re.search(r"\b(silenci[áa]r?|mute[áa]r?|mute[ao]|sin sonido)\b", inp) and \
+           not any(w in inp for w in ("musica", "música", "cancion", "canción",
+                                      "reproduc", "tema")):  # no chocar con pausa de música
+            return _sc.volume_mute()
+        # BRILLO
+        _mbri = _re.search(r"\bbrillo\s+(?:al?\s+)?(\d{1,3})", inp)
+        if _mbri:
+            return _sc.set_brightness(int(_mbri.group(1)))
+        # ENERGÍA
+        if _re.search(r"\b(bloque[áa]r?|lock|trab[áa])\b.*\b(pc|compu|computadora|pantalla|sistema|sesi[óo]n)\b", inp) \
+           or inp.strip() in ("bloquea", "bloqueá", "bloquear pc", "lock"):
+            return _sc.lock()
+        if _re.search(r"\b(suspend[ée]r?|dorm[íi]|hibern[áa]r?|modo\s+suspensi[óo]n)\b", inp) \
+           and ("pc" in inp or "compu" in inp or "sistema" in inp or "computadora" in inp):
+            return _sc.sleep()
+        if _re.search(r"\bcancel[áa]r?\b.*\b(apagado|reinicio|apagar|reiniciar)\b", inp):
+            return _sc.cancel_shutdown()
+        if _re.search(r"\b(cerr[áa]r?\s+(la\s+)?sesi[óo]n|log\s*off|logoff)\b", inp):
+            return _sc.logoff()
+        if _re.search(r"\b(apag[áa]r?|apaga)\b.*\b(pc|compu|computadora|sistema|equipo|m[áa]quina)\b", inp):
+            self._pending_power = "shutdown"
+            return "🔌 ¿Seguro que apago la PC? Decime «sí» para confirmar o «no» para cancelar."
+        if _re.search(r"\b(reinici[áa]r?|reinicia|reset)\b.*\b(pc|compu|computadora|sistema|equipo|m[áa]quina)\b", inp):
+            self._pending_power = "restart"
+            return "🔄 ¿Seguro que reinicio la PC? Decime «sí» para confirmar o «no» para cancelar."
+        # IMPRESORAS (listar) — el "imprimí X" se maneja en la sección de archivos
+        if _re.search(r"\b(qu[ée]\s+impresoras?|impresoras?\s+(hay|tengo|disponibles|"
+                      r"instaladas)|list[áa]r?\s+impresoras|mis\s+impresoras)\b", inp):
+            return _sc.list_printers()
+
+        # === CONEXIONES: WiFi / Bluetooth / USB ===
+        from core import connections as _cx
+        # WiFi: encender/apagar
+        if _re.search(r"\b(apag[áa]r?|desactiv[áa]r?|prend[ée]r?|encend[ée]r?|activ[áa]r?)\b.*\bwifi\b", inp) \
+                or _re.search(r"\bwifi\b.*\b(on|off)\b", inp):
+            _on = bool(_re.search(r"\b(prend[ée]|encend[ée]|activ[áa])", inp) or _re.search(r"\bon\b", inp))
+            return _cx.wifi_toggle(_on)
+        # WiFi: conectar a una red
+        _wc = _re.search(r"\bconect[áa]r?(?:te|me)?\s+a(?:l)?\s+(?:la\s+)?(?:red\s+|wifi\s+)?(.+)$", inp)
+        if _wc and ("wifi" in inp or "red" in inp):
+            ssid = _wc.group(1).strip().rstrip(".?!").strip('"\'')
+            return _cx.wifi_connect(ssid)
+        # WiFi: listar redes
+        if _re.search(r"\b(redes?\s+wifi|wifi\s+(disponibles?|cercan|que hay)|"
+                      r"escane[áa]r?\s+wifi|list[áa]r?\s+(redes|wifi)|qu[ée]\s+redes)\b", inp):
+            return _cx.wifi_list()
+        # Bluetooth: encender/apagar
+        if _re.search(r"\b(apag[áa]r?|desactiv[áa]r?|prend[ée]r?|encend[ée]r?|activ[áa]r?)\b.*\b(bluetooth|bt)\b", inp):
+            _on = bool(_re.search(r"\b(prend[ée]|encend[ée]|activ[áa])", inp))
+            return _cx.bluetooth_toggle(_on)
+        # Bluetooth: listar
+        if _re.search(r"\b(dispositivos?\s+bluetooth|bluetooth\s+(conectados?|emparejados?|que hay)|"
+                      r"qu[ée]\s+bluetooth|list[áa]r?\s+bluetooth|mis?\s+bluetooth)\b", inp):
+            return _cx.bluetooth_list()
+        # USB: expulsar
+        _ue = _re.search(r"\b(expuls[áa]r?|sac[áa]r?|desconect[áa]r?|extrae?r?)\b.*\b(usb|pendrive|"
+                         r"unidad)\b\s*([a-zA-Z])?", inp)
+        if _ue and _re.search(r"\b(usb|pendrive)\b", inp) and \
+           _re.search(r"\b(expuls|sac|desconect|extrae)", inp):
+            _dl = _re.search(r"\b([d-zD-Z]):?\b(?:\s|$)", inp)
+            if _dl:
+                return _cx.usb_eject(_dl.group(1))
+            return "🔌 ¿Qué unidad USB expulso? Decime la letra (ej: E)."
+        # USB: listar
+        if _re.search(r"\b(dispositivos?\s+usb|usb\s+(conectados?|que hay)|qu[ée]\s+usb|"
+                      r"unidades?\s+usb|pendrives?)\b", inp):
+            return _cx.usb_list()
+
+        # === CHROMECAST / CAST a la TV ===
+        _is_cast = bool(_re.search(r"\b(chromecast|chrome\s*cast|caste\w*|transmit\w*|cast|"
+                                   r"tv|tele|televisi[óo]n|pantalla\s+grande|dormitorio)\b", inp))
+        if _is_cast and "netflix" in inp:
+            # Netflix → Chromecast vía NAVEGADOR (Chrome cast), no pychromecast.
+            from core import netflix as _nf
+            from core import casting as _ct
+            import time as _tm
+            # resolver dispositivo destino (nombre real del Chromecast)
+            _known = _ct._CACHE.get("devices") or _ct.discover()
+            _dev = None
+            for _d in _known:
+                for _w in _d["name"].lower().split():
+                    if len(_w) > 3 and _w in inp:
+                        _dev = _d["name"]
+                        break
+                if _dev:
+                    break
+            if not _dev and _known:
+                _dev = _known[0]["name"]
+            # ¿pidió reproducir un título antes de castear?
+            _pm2 = _re.search(r"perfil\s+(?:de\s+)?([a-záéíóúñ0-9]+)", inp)
+            _prof2 = _pm2.group(1).strip() if _pm2 else None
+            _pl2 = _re.search(r"(?:repro\w*|pon[ée]r?|mir[áa]r?|ve[ar]?|pas[áa]r?)\s+"
+                              r"(?:a\s+|la\s+|el\s+)?(?:pel[íi]cula\s+|serie\s+)?"
+                              r"(.+?)\s+en\s+netflix", inp)
+            _q2 = _pl2.group(1).strip() if _pl2 else ""
+            _q2 = "" if _q2 in ("algo", "una", "una pelicula", "una película",
+                                "una serie") else _q2
+            # Preferir la APP (logueada como Alex) → castea sin pedir login extra.
+            if _nf.app_installed():
+                _res = _nf.cast_app(_dev)
+                if _q2:
+                    _res += (f"\nℹ️ En la app no puedo buscar «{_q2}» por código — ponelo "
+                             f"vos en la app y casteo lo que estés viendo.")
+                return _res
+            # app no instalada → vía Chrome (puede pedir login 1 vez)
+            if _q2:
+                _r = _nf.play(_q2, _prof2)
+                if _r.startswith("[ERROR]") or "iniciar sesión" in _r or "no encontré" in _r.lower():
+                    return _r
+                _tm.sleep(5)
+                return _nf.cast(_dev)
+            return _nf.cast(_dev)
+        if _is_cast:
+            from core import casting as _ct
+            # Identificar / listar
+            if _re.search(r"\b(identific[áa]r?|busc[áa]r?|detect[áa]r?|encontr[áa]r?|"
+                          r"list[áa]r?|qu[ée]|hay|tengo|dispositivos?\s+(de\s+)?cast)\b", inp) \
+               and not _re.search(r"\b(reproduc|caste|mand[áa]|tir[áa]|pon[ée]|deten|par[áa]|volumen)\b", inp):
+                return _ct.list_devices()
+            # Detener
+            if _re.search(r"\b(deten[ée]r?|par[áa]r?|fren[áa]r?|cort[áa]r?|stop)\b", inp):
+                return _ct.cast_stop()
+            # Volumen del cast
+            _cv = _re.search(r"\bvolumen\b.*?(\d{1,3})", inp)
+            if _cv and _re.search(r"\b(chromecast|tv|tele)\b", inp):
+                return _ct.cast_volume(int(_cv.group(1)))
+            # Castear contenido (YouTube)
+            _cm = _re.search(r"(?:caste\w*|repro\w*|pon[ée]|mand[áa]r?|tir[áa]r?|"
+                             r"mostr[áa]r?|mir[áa]r?)\s+(.+?)\s+(?:en|a|al|por)\s+"
+                             r"(?:el\s+|la\s+)?(?:chromecast|tv|tele|televisi[óo]n)", inp)
+            if _cm:
+                _cq = _cm.group(1).strip().rstrip(".?!")
+                if _cq and _cq not in ("algo", "musica", "música", "un video", "una pelicula"):
+                    return _ct.cast_youtube(_cq)
+                return "📺 ¿Qué te casteo a la TV? Decime el tema o video."
+
+        # NETFLIX: SIEMPRE la app de la Store (decisión del usuario, 2026-06-12).
+        #   Una sola Netflix → nunca abre dos. La app no busca por código (WebView
+        #   no automatizable) → si pide un título, abre la app y avisa.
+        if "netflix" in inp:
+            from core import netflix as _nf
+            # pausar/reanudar/detener → sobre la app
+            if _re.search(r"\b(pausa|pausá|pausar|reanud[áa]r?|deten[ée]r?|par[áa]r?|"
+                          r"fren[áa]r?|cort[áa]r?)\b", inp):
+                return _nf.app_playpause()
+            # ¿mencionó un título?
+            _pl = _re.search(r"(?:repro\w*|pon[ée]r?|mir[áa]r?|ve[ar]?|pas[áa]r?|busc[áa]r?|"
+                             r"dale?\s+play)\s+(?:a\s+|la\s+|el\s+)?"
+                             r"(?:pel[íi]cula\s+|serie\s+)?(.+?)\s+en\s+netflix", inp)
+            _qp = _pl.group(1).strip() if _pl else ""
+            _qp = "" if _qp in ("algo", "una", "una pelicula", "una película",
+                                "una serie", "peliculas", "películas") else _qp
+            _r = _nf.launch_app()
+            if _qp:
+                _r += (f"\nℹ️ Buscá **{_qp}** en la app y dale play (dentro de la app no "
+                       f"puedo buscar por código). ¿Querés que la castee a la TV?")
+            return _r
+
+        # ABRIR EN OTRA PANTALLA (multi-monitor): "poné netflix en la segunda pantalla"
+        if _re.search(r"\b(segunda|2da|otra|secundaria|primera|1ra|tercera|3ra)\s+pantalla\b", inp) \
+                or _re.search(r"\b(pantalla|monitor)\s*([123])\b", inp):
+            scr = 2
+            _mn = _re.search(r"\b(?:pantalla|monitor)\s*([123])\b", inp)
+            if _mn:
+                scr = int(_mn.group(1))
+            elif _re.search(r"\b(primera|1ra)\s+pantalla\b", inp):
+                scr = 1
+            elif _re.search(r"\b(tercera|3ra)\s+pantalla\b", inp):
+                scr = 3
+            _STREAM = {
+                "youtube music": "https://music.youtube.com",
+                "netflix": "https://www.netflix.com",
+                "youtube": "https://www.youtube.com",
+                "disney": "https://www.disneyplus.com",
+                "prime video": "https://www.primevideo.com",
+                "prime": "https://www.primevideo.com",
+                "hbo max": "https://www.max.com", "hbo": "https://www.max.com",
+                "max": "https://www.max.com", "twitch": "https://www.twitch.tv",
+                "crunchyroll": "https://www.crunchyroll.com",
+            }
+            _url = None
+            for k in sorted(_STREAM, key=len, reverse=True):
+                if k in inp:
+                    _url = _STREAM[k]
+                    # Netflix + nombre de peli → búsqueda
+                    if k == "netflix":
+                        _mfx = (_re.search(r"(?:repro\w*|pon[ée]|mir[áa]|ve[ar]?|pas[áa]|busc[áa])\s+(?:la\s+|el\s+)?(?:pel[íi]cula\s+|serie\s+)?(.+?)\s+en\s+netflix", inp)
+                                or _re.search(r"netflix\s+(.+?)\s+(?:en|a)\s+(?:la\s+)?(?:segunda|2|otra|primera|tercera|pantalla|monitor)", inp))
+                        _q = _mfx.group(1).strip() if _mfx else ""
+                        if _q and _q not in ("una", "una pelicula", "una película",
+                                             "algo", "peliculas", "películas", "una serie"):
+                            import urllib.parse as _up
+                            _url = "https://www.netflix.com/search?q=" + _up.quote(_q)
+                    break
+            if not _url:
+                _du = _re.search(r"https?://\S+", user_input)
+                _url = _du.group(0) if _du else None
+            if _url:
+                return _sc.open_on_screen(_url, scr)
+            return ("¿Qué abro en esa pantalla? Decime el servicio (Netflix, YouTube…) "
+                    "o una URL.")
+
+        return None
+
     def _auto_detect_tool(self, user_input: str) -> str:
         """
         Auto-detecta si el usuario pide algo del sistema y ejecuta
@@ -1219,227 +1448,10 @@ class GenesisToolsMixin:
         )
         from core.tools import FileTools, SystemInfoTool
 
-        # === CONTROL DEL SISTEMA (volumen / energía / brillo / bloqueo) ===
-        from core import system_control as _sc
-        # Confirmación pendiente de acción destructiva (apagar/reiniciar)
-        _pp = getattr(self, "_pending_power", None)
-        if _pp and _re.search(r"^\s*(s[íi]|confirm[áo]?|dale|hacelo|ok|de una)\s*$", inp):
-            self._pending_power = None
-            return getattr(_sc, _pp)()
-        if _pp and _re.search(r"^\s*(no|cancel[áa]r?|dejalo|olvidalo)\s*$", inp):
-            self._pending_power = None
-            return "Listo, cancelé eso."
-        # VOLUMEN
-        _mvol = _re.search(r"\bvolumen\s+(?:al?\s+)?(\d{1,3})", inp)
-        if _mvol:
-            return _sc.set_volume(int(_mvol.group(1)))
-        if _re.search(r"\b(sub[íi]|aument[áa]|m[áa]s)\b.*\bvolumen\b", inp) or \
-           _re.search(r"\bvolumen\b.*\b(arriba|m[áa]s alto|fuerte)\b", inp):
-            return _sc.volume_up()
-        if _re.search(r"\b(baj[áa]|disminu[íi]|menos)\b.*\bvolumen\b", inp) or \
-           _re.search(r"\bvolumen\b.*\b(abajo|m[áa]s bajo)\b", inp):
-            return _sc.volume_down()
-        if _re.search(r"\b(silenci[áa]r?|mute[áa]r?|mute[ao]|sin sonido)\b", inp) and \
-           not any(w in inp for w in ("musica", "música", "cancion", "canción",
-                                      "reproduc", "tema")):  # no chocar con pausa de música
-            return _sc.volume_mute()
-        # BRILLO
-        _mbri = _re.search(r"\bbrillo\s+(?:al?\s+)?(\d{1,3})", inp)
-        if _mbri:
-            return _sc.set_brightness(int(_mbri.group(1)))
-        # ENERGÍA
-        if _re.search(r"\b(bloque[áa]r?|lock|trab[áa])\b.*\b(pc|compu|computadora|pantalla|sistema|sesi[óo]n)\b", inp) \
-           or inp.strip() in ("bloquea", "bloqueá", "bloquear pc", "lock"):
-            return _sc.lock()
-        if _re.search(r"\b(suspend[ée]r?|dorm[íi]|hibern[áa]r?|modo\s+suspensi[óo]n)\b", inp) \
-           and ("pc" in inp or "compu" in inp or "sistema" in inp or "computadora" in inp):
-            return _sc.sleep()
-        if _re.search(r"\bcancel[áa]r?\b.*\b(apagado|reinicio|apagar|reiniciar)\b", inp):
-            return _sc.cancel_shutdown()
-        if _re.search(r"\b(cerr[áa]r?\s+(la\s+)?sesi[óo]n|log\s*off|logoff)\b", inp):
-            return _sc.logoff()
-        if _re.search(r"\b(apag[áa]r?|apaga)\b.*\b(pc|compu|computadora|sistema|equipo|m[áa]quina)\b", inp):
-            self._pending_power = "shutdown"
-            return "🔌 ¿Seguro que apago la PC? Decime «sí» para confirmar o «no» para cancelar."
-        if _re.search(r"\b(reinici[áa]r?|reinicia|reset)\b.*\b(pc|compu|computadora|sistema|equipo|m[áa]quina)\b", inp):
-            self._pending_power = "restart"
-            return "🔄 ¿Seguro que reinicio la PC? Decime «sí» para confirmar o «no» para cancelar."
-        # IMPRESORAS (listar) — el "imprimí X" se maneja en la sección de archivos
-        if _re.search(r"\b(qu[ée]\s+impresoras?|impresoras?\s+(hay|tengo|disponibles|"
-                      r"instaladas)|list[áa]r?\s+impresoras|mis\s+impresoras)\b", inp):
-            return _sc.list_printers()
-
-        # === CONEXIONES: WiFi / Bluetooth / USB ===
-        from core import connections as _cx
-        # WiFi: encender/apagar
-        if _re.search(r"\b(apag[áa]r?|desactiv[áa]r?|prend[ée]r?|encend[ée]r?|activ[áa]r?)\b.*\bwifi\b", inp) \
-                or _re.search(r"\bwifi\b.*\b(on|off)\b", inp):
-            _on = bool(_re.search(r"\b(prend[ée]|encend[ée]|activ[áa])", inp) or _re.search(r"\bon\b", inp))
-            return _cx.wifi_toggle(_on)
-        # WiFi: conectar a una red
-        _wc = _re.search(r"\bconect[áa]r?(?:te|me)?\s+a(?:l)?\s+(?:la\s+)?(?:red\s+|wifi\s+)?(.+)$", inp)
-        if _wc and ("wifi" in inp or "red" in inp):
-            ssid = _wc.group(1).strip().rstrip(".?!").strip('"\'')
-            return _cx.wifi_connect(ssid)
-        # WiFi: listar redes
-        if _re.search(r"\b(redes?\s+wifi|wifi\s+(disponibles?|cercan|que hay)|"
-                      r"escane[áa]r?\s+wifi|list[áa]r?\s+(redes|wifi)|qu[ée]\s+redes)\b", inp):
-            return _cx.wifi_list()
-        # Bluetooth: encender/apagar
-        if _re.search(r"\b(apag[áa]r?|desactiv[áa]r?|prend[ée]r?|encend[ée]r?|activ[áa]r?)\b.*\b(bluetooth|bt)\b", inp):
-            _on = bool(_re.search(r"\b(prend[ée]|encend[ée]|activ[áa])", inp))
-            return _cx.bluetooth_toggle(_on)
-        # Bluetooth: listar
-        if _re.search(r"\b(dispositivos?\s+bluetooth|bluetooth\s+(conectados?|emparejados?|que hay)|"
-                      r"qu[ée]\s+bluetooth|list[áa]r?\s+bluetooth|mis?\s+bluetooth)\b", inp):
-            return _cx.bluetooth_list()
-        # USB: expulsar
-        _ue = _re.search(r"\b(expuls[áa]r?|sac[áa]r?|desconect[áa]r?|extrae?r?)\b.*\b(usb|pendrive|"
-                         r"unidad)\b\s*([a-zA-Z])?", inp)
-        if _ue and _re.search(r"\b(usb|pendrive)\b", inp) and \
-           _re.search(r"\b(expuls|sac|desconect|extrae)", inp):
-            _dl = _re.search(r"\b([d-zD-Z]):?\b(?:\s|$)", inp)
-            if _dl:
-                return _cx.usb_eject(_dl.group(1))
-            return "🔌 ¿Qué unidad USB expulso? Decime la letra (ej: E)."
-        # USB: listar
-        if _re.search(r"\b(dispositivos?\s+usb|usb\s+(conectados?|que hay)|qu[ée]\s+usb|"
-                      r"unidades?\s+usb|pendrives?)\b", inp):
-            return _cx.usb_list()
-
-        # === CHROMECAST / CAST a la TV ===
-        _is_cast = bool(_re.search(r"\b(chromecast|chrome\s*cast|caste\w*|transmit\w*|cast|"
-                                   r"tv|tele|televisi[óo]n|pantalla\s+grande|dormitorio)\b", inp))
-        if _is_cast and "netflix" in inp:
-            # Netflix → Chromecast vía NAVEGADOR (Chrome cast), no pychromecast.
-            from core import netflix as _nf
-            from core import casting as _ct
-            import time as _tm
-            # resolver dispositivo destino (nombre real del Chromecast)
-            _known = _ct._CACHE.get("devices") or _ct.discover()
-            _dev = None
-            for _d in _known:
-                for _w in _d["name"].lower().split():
-                    if len(_w) > 3 and _w in inp:
-                        _dev = _d["name"]
-                        break
-                if _dev:
-                    break
-            if not _dev and _known:
-                _dev = _known[0]["name"]
-            # ¿pidió reproducir un título antes de castear?
-            _pm2 = _re.search(r"perfil\s+(?:de\s+)?([a-záéíóúñ0-9]+)", inp)
-            _prof2 = _pm2.group(1).strip() if _pm2 else None
-            _pl2 = _re.search(r"(?:repro\w*|pon[ée]r?|mir[áa]r?|ve[ar]?|pas[áa]r?)\s+"
-                              r"(?:a\s+|la\s+|el\s+)?(?:pel[íi]cula\s+|serie\s+)?"
-                              r"(.+?)\s+en\s+netflix", inp)
-            _q2 = _pl2.group(1).strip() if _pl2 else ""
-            _q2 = "" if _q2 in ("algo", "una", "una pelicula", "una película",
-                                "una serie") else _q2
-            # Preferir la APP (logueada como Alex) → castea sin pedir login extra.
-            if _nf.app_installed():
-                _res = _nf.cast_app(_dev)
-                if _q2:
-                    _res += (f"\nℹ️ En la app no puedo buscar «{_q2}» por código — ponelo "
-                             f"vos en la app y casteo lo que estés viendo.")
-                return _res
-            # app no instalada → vía Chrome (puede pedir login 1 vez)
-            if _q2:
-                _r = _nf.play(_q2, _prof2)
-                if _r.startswith("[ERROR]") or "iniciar sesión" in _r or "no encontré" in _r.lower():
-                    return _r
-                _tm.sleep(5)
-                return _nf.cast(_dev)
-            return _nf.cast(_dev)
-        if _is_cast:
-            from core import casting as _ct
-            # Identificar / listar
-            if _re.search(r"\b(identific[áa]r?|busc[áa]r?|detect[áa]r?|encontr[áa]r?|"
-                          r"list[áa]r?|qu[ée]|hay|tengo|dispositivos?\s+(de\s+)?cast)\b", inp) \
-               and not _re.search(r"\b(reproduc|caste|mand[áa]|tir[áa]|pon[ée]|deten|par[áa]|volumen)\b", inp):
-                return _ct.list_devices()
-            # Detener
-            if _re.search(r"\b(deten[ée]r?|par[áa]r?|fren[áa]r?|cort[áa]r?|stop)\b", inp):
-                return _ct.cast_stop()
-            # Volumen del cast
-            _cv = _re.search(r"\bvolumen\b.*?(\d{1,3})", inp)
-            if _cv and _re.search(r"\b(chromecast|tv|tele)\b", inp):
-                return _ct.cast_volume(int(_cv.group(1)))
-            # Castear contenido (YouTube)
-            _cm = _re.search(r"(?:caste\w*|repro\w*|pon[ée]|mand[áa]r?|tir[áa]r?|"
-                             r"mostr[áa]r?|mir[áa]r?)\s+(.+?)\s+(?:en|a|al|por)\s+"
-                             r"(?:el\s+|la\s+)?(?:chromecast|tv|tele|televisi[óo]n)", inp)
-            if _cm:
-                _cq = _cm.group(1).strip().rstrip(".?!")
-                if _cq and _cq not in ("algo", "musica", "música", "un video", "una pelicula"):
-                    return _ct.cast_youtube(_cq)
-                return "📺 ¿Qué te casteo a la TV? Decime el tema o video."
-
-        # NETFLIX: SIEMPRE la app de la Store (decisión del usuario, 2026-06-12).
-        #   Una sola Netflix → nunca abre dos. La app no busca por código (WebView
-        #   no automatizable) → si pide un título, abre la app y avisa.
-        if "netflix" in inp:
-            from core import netflix as _nf
-            # pausar/reanudar/detener → sobre la app
-            if _re.search(r"\b(pausa|pausá|pausar|reanud[áa]r?|deten[ée]r?|par[áa]r?|"
-                          r"fren[áa]r?|cort[áa]r?)\b", inp):
-                return _nf.app_playpause()
-            # ¿mencionó un título?
-            _pl = _re.search(r"(?:repro\w*|pon[ée]r?|mir[áa]r?|ve[ar]?|pas[áa]r?|busc[áa]r?|"
-                             r"dale?\s+play)\s+(?:a\s+|la\s+|el\s+)?"
-                             r"(?:pel[íi]cula\s+|serie\s+)?(.+?)\s+en\s+netflix", inp)
-            _qp = _pl.group(1).strip() if _pl else ""
-            _qp = "" if _qp in ("algo", "una", "una pelicula", "una película",
-                                "una serie", "peliculas", "películas") else _qp
-            _r = _nf.launch_app()
-            if _qp:
-                _r += (f"\nℹ️ Buscá **{_qp}** en la app y dale play (dentro de la app no "
-                       f"puedo buscar por código). ¿Querés que la castee a la TV?")
-            return _r
-
-        # ABRIR EN OTRA PANTALLA (multi-monitor): "poné netflix en la segunda pantalla"
-        if _re.search(r"\b(segunda|2da|otra|secundaria|primera|1ra|tercera|3ra)\s+pantalla\b", inp) \
-                or _re.search(r"\b(pantalla|monitor)\s*([123])\b", inp):
-            scr = 2
-            _mn = _re.search(r"\b(?:pantalla|monitor)\s*([123])\b", inp)
-            if _mn:
-                scr = int(_mn.group(1))
-            elif _re.search(r"\b(primera|1ra)\s+pantalla\b", inp):
-                scr = 1
-            elif _re.search(r"\b(tercera|3ra)\s+pantalla\b", inp):
-                scr = 3
-            _STREAM = {
-                "youtube music": "https://music.youtube.com",
-                "netflix": "https://www.netflix.com",
-                "youtube": "https://www.youtube.com",
-                "disney": "https://www.disneyplus.com",
-                "prime video": "https://www.primevideo.com",
-                "prime": "https://www.primevideo.com",
-                "hbo max": "https://www.max.com", "hbo": "https://www.max.com",
-                "max": "https://www.max.com", "twitch": "https://www.twitch.tv",
-                "crunchyroll": "https://www.crunchyroll.com",
-            }
-            _url = None
-            for k in sorted(_STREAM, key=len, reverse=True):
-                if k in inp:
-                    _url = _STREAM[k]
-                    # Netflix + nombre de peli → búsqueda
-                    if k == "netflix":
-                        _mfx = (_re.search(r"(?:repro\w*|pon[ée]|mir[áa]|ve[ar]?|pas[áa]|busc[áa])\s+(?:la\s+|el\s+)?(?:pel[íi]cula\s+|serie\s+)?(.+?)\s+en\s+netflix", inp)
-                                or _re.search(r"netflix\s+(.+?)\s+(?:en|a)\s+(?:la\s+)?(?:segunda|2|otra|primera|tercera|pantalla|monitor)", inp))
-                        _q = _mfx.group(1).strip() if _mfx else ""
-                        if _q and _q not in ("una", "una pelicula", "una película",
-                                             "algo", "peliculas", "películas", "una serie"):
-                            import urllib.parse as _up
-                            _url = "https://www.netflix.com/search?q=" + _up.quote(_q)
-                    break
-            if not _url:
-                _du = _re.search(r"https?://\S+", user_input)
-                _url = _du.group(0) if _du else None
-            if _url:
-                return _sc.open_on_screen(_url, scr)
-            return ("¿Qué abro en esa pantalla? Decime el servicio (Netflix, YouTube…) "
-                    "o una URL.")
+        # Control de dispositivos/sistema (extraído a _detect_device_control)
+        _dev_r = self._detect_device_control(inp, user_input)
+        if _dev_r is not None:
+            return _dev_r
 
         # --- Listar archivos ---
         list_keywords = ["lista", "muestra", "que hay en", "archivos en", "que tiene",
