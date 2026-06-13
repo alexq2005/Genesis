@@ -85,6 +85,8 @@ class GenesisProcessingMixin:
         "🖥️", "Qué abro en esa pantalla",
         "📶", "🔵", "Qué unidad USB", "Qué abro",
         "📺", "Qué te casteo", "🎬", "🎮", "🎙️", "🗣️",
+        # Clima/pronóstico: respuesta ya natural con datos — no reformular
+        "☀️", "🌤️", "⛅", "☁️", "🌧️", "🌦️", "⛈️", "🌩️", "❄️", "🌫️", "🌡️", "🌬️",
     )
 
     def _maybe_spontaneous(self, user_input: str, result: str) -> str:

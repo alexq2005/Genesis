@@ -4292,7 +4292,11 @@ class GenesisToolsMixin:
         if any(k in inp for k in ["clima", "tiempo en", "temperatura en",
                                     "weather", "clima en", "datos del clima",
                                     "cómo está el clima", "como esta el clima",
-                                    "hace frio", "hace calor", "va a llover",
+                                    "estado del tiempo", "el tiempo", "qué tiempo",
+                                    "que tiempo", "cómo está el tiempo",
+                                    "como esta el tiempo", "qué temperatura",
+                                    "que temperatura", "cuántos grados", "cuantos grados",
+                                    "hace frio", "hace frío", "hace calor", "va a llover",
                                     "está lloviendo", "esta lloviendo"]):
             from core.weather import weather_service
             import re as _re
