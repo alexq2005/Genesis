@@ -993,6 +993,10 @@ a{color:var(--g);text-decoration:none}
   </div>
  </div>
 </div>
+<div class="pan" style="margin-top:12px">
+ <div class="h">ESTRUCTURA MULTI-AGENTE <span id="agcount" style="color:#5a7d8c;font-weight:400;font-size:9px"></span></div>
+ <div id="agentstruct" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:10px;margin-top:4px"></div>
+</div>
 </div>
 <script>
 function $(i){return document.getElementById(i)}
@@ -1000,10 +1004,20 @@ function clk(){var d=new Date();$('utc').textContent=d.toISOString().substr(11,8
 clk();setInterval(clk,1000);
 var MODS=[['JARVIS Core','core'],['Memoria','mem'],['Evolución','evo'],['Visión · llava','vis'],['Voz · vosk/edge','voz'],['Loop Autónomo','auto'],['Builder · qwen','build'],['Red / Web','net']];
 function tel(l,val,unit){return '<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;font-size:10px;color:#7fa3b4;margin-bottom:3px"><span>'+l+'</span><span>'+val+(unit||'')+'</span></div><div class="bar"><i style="width:'+Math.min(100,val)+'%"></i></div></div>';}
-var AGENTS=[['Crítico','revisando','var(--g)'],['Creativo','en espera','#7fa3b4'],['Lógico','analizando','var(--g)'],['Nova · Analytics','en reunión','#ffd24d']];
+function agColor(en){return en?'var(--g)':'#5a7d8c';}
+function renderAgents(d){var ags=d.agents||[];var c=$('agcount');if(c)c.textContent='· '+(d.active||0)+'/'+(d.total||0)+' activos';
+ $('agents').innerHTML=ags.map(function(a){var col=agColor(a.enabled);return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(120,160,180,.07)"><span class="dot" style="background:'+col+';box-shadow:0 0 6px '+col+'"></span><div style="flex:1"><div style="color:#aebfcb;font-size:11px">'+a.name+'</div><div style="font-size:9px;color:#5a7d8c">'+a.role+'</div></div><span style="font-size:9px;color:#5a7d8c">'+a.tasks_completed+'t</span></div>';}).join('');
+ $('agentstruct').innerHTML=ags.map(function(a){var on=a.enabled;var col=agColor(on);
+  var caps=(a.capabilities||[]).map(function(x){return '<span style="display:inline-block;background:rgba(45,255,174,.08);border:1px solid rgba(45,255,174,.2);border-radius:4px;padding:1px 6px;margin:2px 2px 0 0;font-size:9px;color:#9fe9c9">'+x+'</span>';}).join('');
+  return '<div style="border:1px solid rgba(45,255,174,'+(on?'.25':'.1')+');border-radius:8px;padding:10px;background:rgba(7,18,16,.5)">'
+   +'<div style="display:flex;justify-content:space-between;align-items:center"><span style="color:'+col+';font-size:13px;font-weight:600">'+a.name+'</span>'
+   +'<span onclick="agToggle(\''+a.name+'\')" title="activar/desactivar" style="cursor:pointer;font-size:8px;letter-spacing:.1em;border:1px solid '+col+';border-radius:4px;padding:2px 6px;color:'+col+'">'+(on?'ON':'OFF')+'</span></div>'
+   +'<div style="font-size:10px;color:#7fa3b4;margin:2px 0 6px">'+a.role+'</div><div style="margin-bottom:6px">'+caps+'</div>'
+   +'<div style="display:flex;flex-wrap:wrap;gap:8px;font-size:9px;color:#5a7d8c;border-top:1px solid rgba(120,160,180,.08);padding-top:6px"><span>🌡 temp '+a.temperature+'</span><span>⬆ prioridad '+a.priority+'</span><span>✓ '+a.tasks_completed+' tareas</span><span>⏱ '+a.avg_time+'s</span></div></div>';}).join('');}
+function pollAgents(){fetch('/api/agents').then(function(r){return r.json();}).then(renderAgents).catch(function(){});}
+function agToggle(name){fetch('/api/agents/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})}).then(function(r){return r.json();}).then(function(){pollAgents();}).catch(function(){});}
 function renderStatic(){
  $('modules').innerHTML=MODS.map(function(m){return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(120,160,180,.07)"><span class="dot" style="background:var(--g);box-shadow:0 0 6px var(--g);animation:blink 3s infinite"></span><span style="color:#aebfcb;font-size:11px">'+m[0]+'</span><span style="margin-left:auto;font-size:9px;color:#5a7d8c">ONLINE</span></div>';}).join('');
- $('agents').innerHTML=AGENTS.map(function(a){return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0"><span class="dot" style="background:'+a[2]+'"></span><div><div style="color:#aebfcb;font-size:11px">'+a[0]+'</div><div style="font-size:9px;color:#5a7d8c">'+a[1]+'</div></div></div>';}).join('');
 }
 renderStatic();
 function pollSys(){fetch('/api/system').then(r=>r.json()).then(function(d){
@@ -1021,8 +1035,33 @@ function pollHud(){fetch('/api/hud').then(r=>r.json()).then(function(d){
 var flt='ALL';
 function setFlt(f){flt=f;document.querySelectorAll('.flt').forEach(function(e){e.classList.toggle('on',e.dataset.f===f);});drawLog();}
 function drawLog(){var rows=allLog.filter(function(x){return flt==='ALL'||x.cat===flt;});if(!rows.length){$('log').innerHTML='<div style="color:#3f5b6a">sin eventos</div>';return;}var col={CORE:'var(--g)',SYS:'#7fa3b4',ALERTA:'#ff5d5d'};$('log').innerHTML=rows.map(function(x){return '<div style="display:flex;gap:8px;border-left:2px solid '+(col[x.cat]||'#5a7d8c')+';padding:3px 8px;background:rgba(120,160,180,.03)"><span style="color:'+(col[x.cat]||'#5a7d8c')+';font-size:9px;min-width:46px">'+x.cat+'</span><span style="color:#9fb4c4;font-size:10px">'+(x.act+' '+x.det).slice(0,60)+'</span></div>';}).join('');}
-pollSys();pollHud();setInterval(pollSys,4000);setInterval(pollHud,5000);
+pollSys();pollHud();pollAgents();setInterval(pollSys,4000);setInterval(pollHud,5000);setInterval(pollAgents,6000);
 </script></body></html>"""
+
+
+@app.route("/api/agents")
+def api_agents():
+    """Estructura real de los agentes (sistema multi-agente)."""
+    try:
+        agsys = get_genesis().agent_system
+        agents = [a.to_dict() for a in agsys.agents.values()]
+        agents.sort(key=lambda a: (-a.get("priority", 0), a.get("name", "")))
+        return jsonify({"agents": agents, "total": len(agents),
+                        "active": sum(1 for a in agents if a.get("enabled"))})
+    except Exception as e:
+        return jsonify({"agents": [], "total": 0, "active": 0, "error": str(e)[:120]})
+
+
+@app.route("/api/agents/toggle", methods=["POST"])
+def api_agents_toggle():
+    """Activa/desactiva un agente por nombre."""
+    data = request.get_json() or {}
+    name = (data.get("name") or "").strip().lower()
+    try:
+        msg = get_genesis().agent_system.toggle_agent(name)
+        return jsonify({"ok": True, "msg": msg})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:120]}), 400
 
 
 @app.route("/mission")
