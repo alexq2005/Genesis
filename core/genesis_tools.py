@@ -150,6 +150,180 @@ def _abs_or_resolve(name, allow_folder=True):
     return None, f"No encontré «{name}»."
 
 
+def _resolve_folder(name: str) -> str:
+    """Resuelve un nombre de carpeta a su ruta real. Retorna path o None."""
+    _genesis_dir = os.path.dirname(os.path.abspath(__file__))
+    folder_map = {
+        # Carpetas del usuario
+        "documentos": "" + _GX_HOME + "/Documents",
+        "documents": "" + _GX_HOME + "/Documents",
+        "mis documentos": "" + _GX_HOME + "/Documents",
+        "escritorio": "" + _GX_HOME + "/Desktop",
+        "desktop": "" + _GX_HOME + "/Desktop",
+        "mi escritorio": "" + _GX_HOME + "/Desktop",
+        "descargas": "" + _GX_HOME + "/Downloads",
+        "downloads": "" + _GX_HOME + "/Downloads",
+        "mis descargas": "" + _GX_HOME + "/Downloads",
+        "imagenes": "" + _GX_HOME + "/Pictures",
+        "pictures": "" + _GX_HOME + "/Pictures",
+        "fotos": "" + _GX_HOME + "/Pictures",
+        "mis imagenes": "" + _GX_HOME + "/Pictures",
+        "musica": "" + _GX_HOME + "/Music",
+        "music": "" + _GX_HOME + "/Music",
+        "mi musica": "" + _GX_HOME + "/Music",
+        "videos": "" + _GX_HOME + "/Videos",
+        "mis videos": "" + _GX_HOME + "/Videos",
+        # Carpetas del sistema
+        "disco c": "C:/", "disco d": "D:/", "disco f": "F:/",
+        "unidad c": "C:/", "c:": "C:/", "d:": "D:/", "f:": "F:/",
+        "home": "" + _GX_HOME + "",
+        "mi carpeta": "" + _GX_HOME + "",
+        "mi usuario": "" + _GX_HOME + "",
+        "perfil": "" + _GX_HOME + "",
+        "appdata": "" + _GX_HOME + "/AppData",
+        "temp": "" + _GX_HOME + "/AppData/Local/Temp",
+        "temporal": "" + _GX_HOME + "/AppData/Local/Temp",
+        # Carpetas del proyecto
+        "genesis": _genesis_dir,
+        "mi proyecto": _genesis_dir,
+        "proyecto genesis": _genesis_dir,
+        # Programas
+        "archivos de programa": "C:/Program Files",
+        "program files": "C:/Program Files",
+    }
+    # Limpiar prefijos
+    clean = name.lower().strip()
+    for prefix in ["carpeta de ", "carpeta ", "folder de ", "folder ",
+                   "directorio de ", "directorio "]:
+        if clean.startswith(prefix):
+            clean = clean[len(prefix):]
+
+    # 0. Carpeta en una UNIDAD específica: "descargas de la unidad F",
+    #    "documentos en D", "F:/algo". Antes "descargas" SIEMPRE iba a C:.
+    _drive = None
+    _fname = clean
+    _dm = _re.match(r'^([a-zA-Z]):[\\/]?(.*)$', name.strip())
+    if _dm:
+        _drive, _fname = _dm.group(1).upper(), _dm.group(2).strip().lower()
+    else:
+        _mu = _re.search(
+            r'(?:de\s+la\s+|de\s+|en\s+la\s+|en\s+)?(?:unidad|disco|drive)\s+([a-zA-Z])\b',
+            clean)
+        if not _mu:
+            _mu = _re.search(r'\ben\s+([a-zA-Z]):?(?:\s|$)', clean)
+        if _mu:
+            _drive = _mu.group(1).upper()
+            _fname = (clean[:_mu.start()] + clean[_mu.end():]).strip()
+    if _drive:
+        _root = _drive + ":/"
+        # Limpiar conectores residuales: "prueba que se encuentra" → "prueba",
+        # "proyecto ubicado" → "proyecto", "la carpeta x" → "x".
+        _fname = _re.sub(
+            r'\b(que\s+se\s+encuentr[ao]|que\s+se\s+halla|que\s+est[áa]n?|'
+            r'que\s+tengo|que\s+hay|ubicad[oa]s?|localizad[oa]s?|guardad[oa]s?|'
+            r'situad[oa]s?|llamad[oa]|de\s+nombre)\b', '', _fname)
+        _fname = _re.sub(r'^(la\s+|el\s+|los\s+|las\s+)?(carpeta|directorio|folder)\s+',
+                         '', _fname)
+        _fname = _re.sub(r'\s+', ' ', _fname).strip().strip('"\'')
+        if not _fname:
+            return _root if os.path.isdir(_root) else None
+        _aliases = {
+            "descargas": ["Descargas", "Downloads"],
+            "downloads": ["Downloads", "Descargas"],
+            "documentos": ["Documentos", "Documents"],
+            "documents": ["Documents", "Documentos"],
+            "imagenes": ["Imágenes", "Imagenes", "Pictures"],
+            "fotos": ["Imágenes", "Imagenes", "Pictures"],
+            "musica": ["Música", "Musica", "Music"],
+            "videos": ["Vídeos", "Videos"],
+            "escritorio": ["Escritorio", "Desktop"],
+            "desktop": ["Desktop", "Escritorio"],
+        }
+        _cands = _aliases.get(_fname, []) + [_fname]
+        for _c in _cands:
+            _p = os.path.join(_root, _c)
+            if os.path.isdir(_p):
+                return _p
+        try:
+            _items = os.listdir(_root)
+            for _it in _items:  # match exacto case-insensitive
+                if _it.lower().replace(" ", "") == _fname.replace(" ", ""):
+                    _fp = os.path.join(_root, _it)
+                    if os.path.isdir(_fp):
+                        return _fp
+            for _it in _items:  # fuzzy: alias/nombre contenido
+                for _c in _cands:
+                    if _c.lower() in _it.lower() and os.path.isdir(os.path.join(_root, _it)):
+                        return os.path.join(_root, _it)
+        except OSError:
+            pass
+        # No está en la raíz → buscar en subcarpetas (depth 2), saltando
+        # dirs de sistema. Ej: "prueba en F" → F:/programas/prueba.
+        _skip = {"$recycle.bin", "system volume information", "msdownld.tmp",
+                 "config.msi", "recovery", "$winreagent"}
+        _fkey = _fname.replace(" ", "")
+        _partial = None
+        try:
+            for _top in os.listdir(_root):
+                if _top.lower() in _skip:
+                    continue
+                _tp = os.path.join(_root, _top)
+                if not os.path.isdir(_tp):
+                    continue
+                try:
+                    for _sub in os.listdir(_tp):
+                        _sl = _sub.lower()
+                        _sp = os.path.join(_tp, _sub)
+                        if not os.path.isdir(_sp):
+                            continue
+                        if _sl.replace(" ", "") == _fkey:
+                            return _sp  # match exacto gana
+                        if _partial is None and _fkey in _sl.replace(" ", ""):
+                            _partial = _sp
+                except OSError:
+                    continue
+        except OSError:
+            pass
+        return _partial
+
+    # 1. Buscar en mapa
+    path = folder_map.get(clean) or folder_map.get(name.lower())
+    if path and os.path.exists(path):
+        return path
+    # 2. Ruta directa (C:/...)
+    if _re.match(r'^[A-Za-z]:[/\\]', name) and os.path.exists(name):
+        return name
+    # 3. Busqueda inteligente: buscar en Desktop, Documents, discos
+    search_dirs = [
+        "" + _GX_HOME + "/Desktop", "" + _GX_HOME + "/Documents",
+        "" + _GX_HOME + "/Downloads", "" + _GX_HOME + "",
+        "F:/programas", "F:/programas/playground",
+        "D:/",
+    ]
+    for sd in search_dirs:
+        try:
+            if not os.path.isdir(sd):
+                continue
+            for item in os.listdir(sd):
+                if item.lower() == clean or item.lower().replace(" ", "") == clean.replace(" ", ""):
+                    full = os.path.join(sd, item)
+                    if os.path.isdir(full):
+                        return full
+        except OSError:
+            pass
+    # 4. Busqueda fuzzy parcial
+    for sd in search_dirs:
+        try:
+            if not os.path.isdir(sd):
+                continue
+            for item in os.listdir(sd):
+                if clean in item.lower() and os.path.isdir(os.path.join(sd, item)):
+                    return os.path.join(sd, item)
+        except OSError:
+            pass
+    return None
+
+
 class GenesisToolsMixin:
     """Mixin con auto-detección de herramientas y filtros de calidad."""
 
@@ -2043,6 +2217,136 @@ class GenesisToolsMixin:
 
         return None
 
+    def _detect_file_ops(self, inp, user_input):
+        """Manejo de archivos conversacional: imprimir, mover, copiar, renombrar,
+        editar, eliminar (papelera), disco, leer, crear, info. Devuelve str o None.
+        Extraído de _auto_detect_tool (Fase 2)."""
+        import re as _re
+        from core.device_tools import disk_analyzer, file_manager
+        # === MANEJO DE ARCHIVOS conversacional (mover/copiar/renombrar/editar/borrar) ===
+
+        # --- Imprimir documento ---
+        if _re.search(r'\b(imprim[íi]r?|imprime|mand[áa]\s+a\s+imprimir|sac[áa]\s+(una\s+)?'
+                      r'impresi[óo]n\s+de)\b', inp):
+            from core import system_control as _scp
+            _pm = _re.search(r'(?:imprim[íi]r?|imprime|imprimir|impresi[óo]n\s+de)\s+'
+                             r'(?:el\s+|la\s+|un\s+|una\s+|archivo\s+|documento\s+|'
+                             r'el\s+archivo\s+|el\s+documento\s+)?(.+)$', inp)
+            if not _pm:
+                return "¿Qué documento imprimo? Decime el nombre o la ruta."
+            _pname = _pm.group(1).strip()
+            # quitar "en la impresora X" del final si aparece
+            _pr = None
+            _prm = _re.search(r'\s+en\s+(?:la\s+impresora\s+)?(.+)$', _pname)
+            src, err = _abs_or_resolve(_pname, allow_folder=False)
+            if err:
+                return err
+            return _scp.print_document(src)
+
+        # --- Mover archivo/carpeta ---
+        _mv = _re.search(r'(?:mov[ée]r?|muev[ae]|mov[ée])\s+(?:el\s+|la\s+|los\s+|las\s+|'
+                         r'mi\s+|archivo\s+|carpeta\s+)?(.+?)\s+(?:a|hacia|para|al|a la)\s+(.+)$', inp)
+        if _mv and _re.search(r'\bmov', inp):
+            src, err = _abs_or_resolve(_mv.group(1))
+            if err:
+                return err
+            dst = _resolve_folder(_mv.group(2).strip()) or _mv.group(2).strip()
+            return "📦 " + file_manager.move(src, dst)
+
+        # --- Copiar archivo/carpeta ---
+        _cp = _re.search(r'(?:copi[áa]r?|duplic[áa]r?)\s+(?:el\s+|la\s+|los\s+|las\s+|'
+                         r'mi\s+|archivo\s+|carpeta\s+)?(.+?)\s+(?:a|hacia|para|al|en)\s+(.+)$', inp)
+        if _cp and _re.search(r'\b(copi|duplic)', inp):
+            src, err = _abs_or_resolve(_cp.group(1))
+            if err:
+                return err
+            dst = _resolve_folder(_cp.group(2).strip()) or _cp.group(2).strip()
+            return "📋 " + file_manager.copy(src, dst)
+
+        # --- Renombrar archivo/carpeta ---
+        _rn = _re.search(r'(?:renombr[áa]r?|camb[ií][áa]?\s+el\s+nombre\s+de)\s+'
+                         r'(?:el\s+|la\s+|archivo\s+|carpeta\s+)?(.+?)\s+(?:a|por|como)\s+(.+)$', inp)
+        if _rn and ("renombr" in inp or "nombre" in inp):
+            src, err = _abs_or_resolve(_rn.group(1))
+            if err:
+                return err
+            new_name = _rn.group(2).strip().strip('"\'').rstrip(".?!")
+            return "✏️ " + file_manager.rename(src, new_name)
+
+        # --- Editar archivo (buscar/reemplazar) ---
+        if "reemplaz" in inp and (" por " in inp or " con " in inp):
+            qs = _re.findall(r'["“]([^"”]+)["”]', user_input)
+            _fm = (_re.search(r'\ben\s+(?:el\s+|la\s+)?(?:archivo\s+)?([^\s"]+\.\w+)', inp)
+                   or _re.search(r'(?:edit[áa]r?|archivo)\s+([^\s"]+\.\w+)', inp))
+            if len(qs) >= 2 and _fm:
+                from core.tools import FileTools as _FT
+                src, err = _abs_or_resolve(_fm.group(1), allow_folder=False)
+                if err:
+                    return err
+                return "✏️ " + _FT.edit_file(src, qs[0], qs[1])
+            if len(qs) < 2:
+                return ('Para editar decime: reemplazá "texto viejo" por "texto nuevo" '
+                        'en <archivo>. (Usá comillas en ambos textos.)')
+
+        # --- Eliminar (SIEMPRE a la papelera — recuperable) ---
+        # Acepta voseo con acento: borrá/eliminá/borralo, etc.
+        _del_m = _re.search(r'\b(?:elimin[áa]r?|borr[áa]r?|elimin[áa]l[oa]|'
+                            r'borr[áa]l[oa]|mand[áa]\s+a\s+la\s+papelera)\b\s*(.*)$', inp)
+        if _del_m:
+            path_match = _re.search(r'[A-Za-z]:[/\\][\w/\\.\- ]+', user_input)
+            if path_match:
+                tp = path_match.group(0).strip()
+            else:
+                rest = _del_m.group(1).strip()
+                if not rest:
+                    return "¿Qué borro? Pasame el nombre o la ruta."
+                tp, err = _abs_or_resolve(rest)
+                if err:
+                    return err
+            if not tp:
+                return "No entendí qué borrar. Pasame el nombre o la ruta."
+            res = file_manager.delete(tp)
+            if res.startswith("[ERROR]"):
+                return res
+            return ("🗑️ " + res +
+                    "\n(Está en la papelera — lo podés recuperar si fue un error.)")
+
+        # --- Disco / espacio ---
+        disk_keywords = ["espacio en disco", "uso de disco", "cuanto espacio",
+                         "archivos grandes", "que ocupa mas"]
+        if any(k in inp for k in disk_keywords):
+            return disk_analyzer.analyze()
+
+        # --- Leer archivo ---
+        read_keywords = ["lee ", "leer ", "muestra el contenido", "contenido del archivo",
+                         "que dice el archivo", "abre el archivo"]
+        if any(k in inp for k in read_keywords):
+            from core.tools import FileTools
+            path_match = _re.search(r'[A-Za-z]:[/\\][\w/\\._ -]+', user_input)
+            if path_match:
+                return FileTools.read_file(path_match.group(0))
+
+        # --- Crear archivo ---
+        create_file_keywords = ["crea un archivo", "crear archivo", "nuevo archivo",
+                                "crea un documento", "crear documento"]
+        if any(k in inp for k in create_file_keywords):
+            # El LLM puede manejar esto con [TOOL:escribir] — no interceptar
+            return ""
+
+        # --- Info de archivo específico ---
+        info_keywords = ["cuanto pesa", "tamaño de", "info de", "información de",
+                         "detalles de"]
+        if any(k in inp for k in info_keywords):
+            path_match = _re.search(r'[A-Za-z]:[/\\][\w/\\._ -]+', user_input)
+            if path_match:
+                return file_manager.file_info(path_match.group(0))
+
+        # =====================================================================
+        # PHASE 19: Smart Productivity — Notas, Recordatorios, Red, Acciones
+        # =====================================================================
+
+        return None
+
     def _auto_detect_tool(self, user_input: str) -> str:
         """
         Auto-detecta si el usuario pide algo del sistema y ejecuta
@@ -2423,178 +2727,6 @@ class GenesisToolsMixin:
             return duplicate_finder.find("" + _GX_HOME + "")
 
         # --- Helper: resolver nombre de carpeta a ruta ---
-        def _resolve_folder(name: str) -> str:
-            """Resuelve un nombre de carpeta a su ruta real. Retorna path o None."""
-            _genesis_dir = os.path.dirname(os.path.abspath(__file__))
-            folder_map = {
-                # Carpetas del usuario
-                "documentos": "" + _GX_HOME + "/Documents",
-                "documents": "" + _GX_HOME + "/Documents",
-                "mis documentos": "" + _GX_HOME + "/Documents",
-                "escritorio": "" + _GX_HOME + "/Desktop",
-                "desktop": "" + _GX_HOME + "/Desktop",
-                "mi escritorio": "" + _GX_HOME + "/Desktop",
-                "descargas": "" + _GX_HOME + "/Downloads",
-                "downloads": "" + _GX_HOME + "/Downloads",
-                "mis descargas": "" + _GX_HOME + "/Downloads",
-                "imagenes": "" + _GX_HOME + "/Pictures",
-                "pictures": "" + _GX_HOME + "/Pictures",
-                "fotos": "" + _GX_HOME + "/Pictures",
-                "mis imagenes": "" + _GX_HOME + "/Pictures",
-                "musica": "" + _GX_HOME + "/Music",
-                "music": "" + _GX_HOME + "/Music",
-                "mi musica": "" + _GX_HOME + "/Music",
-                "videos": "" + _GX_HOME + "/Videos",
-                "mis videos": "" + _GX_HOME + "/Videos",
-                # Carpetas del sistema
-                "disco c": "C:/", "disco d": "D:/", "disco f": "F:/",
-                "unidad c": "C:/", "c:": "C:/", "d:": "D:/", "f:": "F:/",
-                "home": "" + _GX_HOME + "",
-                "mi carpeta": "" + _GX_HOME + "",
-                "mi usuario": "" + _GX_HOME + "",
-                "perfil": "" + _GX_HOME + "",
-                "appdata": "" + _GX_HOME + "/AppData",
-                "temp": "" + _GX_HOME + "/AppData/Local/Temp",
-                "temporal": "" + _GX_HOME + "/AppData/Local/Temp",
-                # Carpetas del proyecto
-                "genesis": _genesis_dir,
-                "mi proyecto": _genesis_dir,
-                "proyecto genesis": _genesis_dir,
-                # Programas
-                "archivos de programa": "C:/Program Files",
-                "program files": "C:/Program Files",
-            }
-            # Limpiar prefijos
-            clean = name.lower().strip()
-            for prefix in ["carpeta de ", "carpeta ", "folder de ", "folder ",
-                           "directorio de ", "directorio "]:
-                if clean.startswith(prefix):
-                    clean = clean[len(prefix):]
-
-            # 0. Carpeta en una UNIDAD específica: "descargas de la unidad F",
-            #    "documentos en D", "F:/algo". Antes "descargas" SIEMPRE iba a C:.
-            _drive = None
-            _fname = clean
-            _dm = _re.match(r'^([a-zA-Z]):[\\/]?(.*)$', name.strip())
-            if _dm:
-                _drive, _fname = _dm.group(1).upper(), _dm.group(2).strip().lower()
-            else:
-                _mu = _re.search(
-                    r'(?:de\s+la\s+|de\s+|en\s+la\s+|en\s+)?(?:unidad|disco|drive)\s+([a-zA-Z])\b',
-                    clean)
-                if not _mu:
-                    _mu = _re.search(r'\ben\s+([a-zA-Z]):?(?:\s|$)', clean)
-                if _mu:
-                    _drive = _mu.group(1).upper()
-                    _fname = (clean[:_mu.start()] + clean[_mu.end():]).strip()
-            if _drive:
-                _root = _drive + ":/"
-                # Limpiar conectores residuales: "prueba que se encuentra" → "prueba",
-                # "proyecto ubicado" → "proyecto", "la carpeta x" → "x".
-                _fname = _re.sub(
-                    r'\b(que\s+se\s+encuentr[ao]|que\s+se\s+halla|que\s+est[áa]n?|'
-                    r'que\s+tengo|que\s+hay|ubicad[oa]s?|localizad[oa]s?|guardad[oa]s?|'
-                    r'situad[oa]s?|llamad[oa]|de\s+nombre)\b', '', _fname)
-                _fname = _re.sub(r'^(la\s+|el\s+|los\s+|las\s+)?(carpeta|directorio|folder)\s+',
-                                 '', _fname)
-                _fname = _re.sub(r'\s+', ' ', _fname).strip().strip('"\'')
-                if not _fname:
-                    return _root if os.path.isdir(_root) else None
-                _aliases = {
-                    "descargas": ["Descargas", "Downloads"],
-                    "downloads": ["Downloads", "Descargas"],
-                    "documentos": ["Documentos", "Documents"],
-                    "documents": ["Documents", "Documentos"],
-                    "imagenes": ["Imágenes", "Imagenes", "Pictures"],
-                    "fotos": ["Imágenes", "Imagenes", "Pictures"],
-                    "musica": ["Música", "Musica", "Music"],
-                    "videos": ["Vídeos", "Videos"],
-                    "escritorio": ["Escritorio", "Desktop"],
-                    "desktop": ["Desktop", "Escritorio"],
-                }
-                _cands = _aliases.get(_fname, []) + [_fname]
-                for _c in _cands:
-                    _p = os.path.join(_root, _c)
-                    if os.path.isdir(_p):
-                        return _p
-                try:
-                    _items = os.listdir(_root)
-                    for _it in _items:  # match exacto case-insensitive
-                        if _it.lower().replace(" ", "") == _fname.replace(" ", ""):
-                            _fp = os.path.join(_root, _it)
-                            if os.path.isdir(_fp):
-                                return _fp
-                    for _it in _items:  # fuzzy: alias/nombre contenido
-                        for _c in _cands:
-                            if _c.lower() in _it.lower() and os.path.isdir(os.path.join(_root, _it)):
-                                return os.path.join(_root, _it)
-                except OSError:
-                    pass
-                # No está en la raíz → buscar en subcarpetas (depth 2), saltando
-                # dirs de sistema. Ej: "prueba en F" → F:/programas/prueba.
-                _skip = {"$recycle.bin", "system volume information", "msdownld.tmp",
-                         "config.msi", "recovery", "$winreagent"}
-                _fkey = _fname.replace(" ", "")
-                _partial = None
-                try:
-                    for _top in os.listdir(_root):
-                        if _top.lower() in _skip:
-                            continue
-                        _tp = os.path.join(_root, _top)
-                        if not os.path.isdir(_tp):
-                            continue
-                        try:
-                            for _sub in os.listdir(_tp):
-                                _sl = _sub.lower()
-                                _sp = os.path.join(_tp, _sub)
-                                if not os.path.isdir(_sp):
-                                    continue
-                                if _sl.replace(" ", "") == _fkey:
-                                    return _sp  # match exacto gana
-                                if _partial is None and _fkey in _sl.replace(" ", ""):
-                                    _partial = _sp
-                        except OSError:
-                            continue
-                except OSError:
-                    pass
-                return _partial
-
-            # 1. Buscar en mapa
-            path = folder_map.get(clean) or folder_map.get(name.lower())
-            if path and os.path.exists(path):
-                return path
-            # 2. Ruta directa (C:/...)
-            if _re.match(r'^[A-Za-z]:[/\\]', name) and os.path.exists(name):
-                return name
-            # 3. Busqueda inteligente: buscar en Desktop, Documents, discos
-            search_dirs = [
-                "" + _GX_HOME + "/Desktop", "" + _GX_HOME + "/Documents",
-                "" + _GX_HOME + "/Downloads", "" + _GX_HOME + "",
-                "F:/programas", "F:/programas/playground",
-                "D:/",
-            ]
-            for sd in search_dirs:
-                try:
-                    if not os.path.isdir(sd):
-                        continue
-                    for item in os.listdir(sd):
-                        if item.lower() == clean or item.lower().replace(" ", "") == clean.replace(" ", ""):
-                            full = os.path.join(sd, item)
-                            if os.path.isdir(full):
-                                return full
-                except OSError:
-                    pass
-            # 4. Busqueda fuzzy parcial
-            for sd in search_dirs:
-                try:
-                    if not os.path.isdir(sd):
-                        continue
-                    for item in os.listdir(sd):
-                        if clean in item.lower() and os.path.isdir(os.path.join(sd, item)):
-                            return os.path.join(sd, item)
-                except OSError:
-                    pass
-            return None
 
 
 
@@ -3132,127 +3264,10 @@ class GenesisToolsMixin:
         if any(k in inp for k in move_keywords) and ("a " in inp or "al " in inp or "hacia " in inp):
             return ""  # Dejar al LLM con herramientas
 
-        # === MANEJO DE ARCHIVOS conversacional (mover/copiar/renombrar/editar/borrar) ===
-
-        # --- Imprimir documento ---
-        if _re.search(r'\b(imprim[íi]r?|imprime|mand[áa]\s+a\s+imprimir|sac[áa]\s+(una\s+)?'
-                      r'impresi[óo]n\s+de)\b', inp):
-            from core import system_control as _scp
-            _pm = _re.search(r'(?:imprim[íi]r?|imprime|imprimir|impresi[óo]n\s+de)\s+'
-                             r'(?:el\s+|la\s+|un\s+|una\s+|archivo\s+|documento\s+|'
-                             r'el\s+archivo\s+|el\s+documento\s+)?(.+)$', inp)
-            if not _pm:
-                return "¿Qué documento imprimo? Decime el nombre o la ruta."
-            _pname = _pm.group(1).strip()
-            # quitar "en la impresora X" del final si aparece
-            _pr = None
-            _prm = _re.search(r'\s+en\s+(?:la\s+impresora\s+)?(.+)$', _pname)
-            src, err = _abs_or_resolve(_pname, allow_folder=False)
-            if err:
-                return err
-            return _scp.print_document(src)
-
-        # --- Mover archivo/carpeta ---
-        _mv = _re.search(r'(?:mov[ée]r?|muev[ae]|mov[ée])\s+(?:el\s+|la\s+|los\s+|las\s+|'
-                         r'mi\s+|archivo\s+|carpeta\s+)?(.+?)\s+(?:a|hacia|para|al|a la)\s+(.+)$', inp)
-        if _mv and _re.search(r'\bmov', inp):
-            src, err = _abs_or_resolve(_mv.group(1))
-            if err:
-                return err
-            dst = _resolve_folder(_mv.group(2).strip()) or _mv.group(2).strip()
-            return "📦 " + file_manager.move(src, dst)
-
-        # --- Copiar archivo/carpeta ---
-        _cp = _re.search(r'(?:copi[áa]r?|duplic[áa]r?)\s+(?:el\s+|la\s+|los\s+|las\s+|'
-                         r'mi\s+|archivo\s+|carpeta\s+)?(.+?)\s+(?:a|hacia|para|al|en)\s+(.+)$', inp)
-        if _cp and _re.search(r'\b(copi|duplic)', inp):
-            src, err = _abs_or_resolve(_cp.group(1))
-            if err:
-                return err
-            dst = _resolve_folder(_cp.group(2).strip()) or _cp.group(2).strip()
-            return "📋 " + file_manager.copy(src, dst)
-
-        # --- Renombrar archivo/carpeta ---
-        _rn = _re.search(r'(?:renombr[áa]r?|camb[ií][áa]?\s+el\s+nombre\s+de)\s+'
-                         r'(?:el\s+|la\s+|archivo\s+|carpeta\s+)?(.+?)\s+(?:a|por|como)\s+(.+)$', inp)
-        if _rn and ("renombr" in inp or "nombre" in inp):
-            src, err = _abs_or_resolve(_rn.group(1))
-            if err:
-                return err
-            new_name = _rn.group(2).strip().strip('"\'').rstrip(".?!")
-            return "✏️ " + file_manager.rename(src, new_name)
-
-        # --- Editar archivo (buscar/reemplazar) ---
-        if "reemplaz" in inp and (" por " in inp or " con " in inp):
-            qs = _re.findall(r'["“]([^"”]+)["”]', user_input)
-            _fm = (_re.search(r'\ben\s+(?:el\s+|la\s+)?(?:archivo\s+)?([^\s"]+\.\w+)', inp)
-                   or _re.search(r'(?:edit[áa]r?|archivo)\s+([^\s"]+\.\w+)', inp))
-            if len(qs) >= 2 and _fm:
-                from core.tools import FileTools as _FT
-                src, err = _abs_or_resolve(_fm.group(1), allow_folder=False)
-                if err:
-                    return err
-                return "✏️ " + _FT.edit_file(src, qs[0], qs[1])
-            if len(qs) < 2:
-                return ('Para editar decime: reemplazá "texto viejo" por "texto nuevo" '
-                        'en <archivo>. (Usá comillas en ambos textos.)')
-
-        # --- Eliminar (SIEMPRE a la papelera — recuperable) ---
-        # Acepta voseo con acento: borrá/eliminá/borralo, etc.
-        _del_m = _re.search(r'\b(?:elimin[áa]r?|borr[áa]r?|elimin[áa]l[oa]|'
-                            r'borr[áa]l[oa]|mand[áa]\s+a\s+la\s+papelera)\b\s*(.*)$', inp)
-        if _del_m:
-            path_match = _re.search(r'[A-Za-z]:[/\\][\w/\\.\- ]+', user_input)
-            if path_match:
-                tp = path_match.group(0).strip()
-            else:
-                rest = _del_m.group(1).strip()
-                if not rest:
-                    return "¿Qué borro? Pasame el nombre o la ruta."
-                tp, err = _abs_or_resolve(rest)
-                if err:
-                    return err
-            if not tp:
-                return "No entendí qué borrar. Pasame el nombre o la ruta."
-            res = file_manager.delete(tp)
-            if res.startswith("[ERROR]"):
-                return res
-            return ("🗑️ " + res +
-                    "\n(Está en la papelera — lo podés recuperar si fue un error.)")
-
-        # --- Disco / espacio ---
-        disk_keywords = ["espacio en disco", "uso de disco", "cuanto espacio",
-                         "archivos grandes", "que ocupa mas"]
-        if any(k in inp for k in disk_keywords):
-            return disk_analyzer.analyze()
-
-        # --- Leer archivo ---
-        read_keywords = ["lee ", "leer ", "muestra el contenido", "contenido del archivo",
-                         "que dice el archivo", "abre el archivo"]
-        if any(k in inp for k in read_keywords):
-            from core.tools import FileTools
-            path_match = _re.search(r'[A-Za-z]:[/\\][\w/\\._ -]+', user_input)
-            if path_match:
-                return FileTools.read_file(path_match.group(0))
-
-        # --- Crear archivo ---
-        create_file_keywords = ["crea un archivo", "crear archivo", "nuevo archivo",
-                                "crea un documento", "crear documento"]
-        if any(k in inp for k in create_file_keywords):
-            # El LLM puede manejar esto con [TOOL:escribir] — no interceptar
-            return ""
-
-        # --- Info de archivo específico ---
-        info_keywords = ["cuanto pesa", "tamaño de", "info de", "información de",
-                         "detalles de"]
-        if any(k in inp for k in info_keywords):
-            path_match = _re.search(r'[A-Za-z]:[/\\][\w/\\._ -]+', user_input)
-            if path_match:
-                return file_manager.file_info(path_match.group(0))
-
-        # =====================================================================
-        # PHASE 19: Smart Productivity — Notas, Recordatorios, Red, Acciones
-        # =====================================================================
+        # Manejo de archivos conversacional (extraído a _detect_file_ops)
+        _fops_r = self._detect_file_ops(inp, user_input)
+        if _fops_r is not None:
+            return _fops_r
 
         # --- Notas rápidas ---
         # "nota: comprar leche" → guarda nota
