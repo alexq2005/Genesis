@@ -1420,32 +1420,10 @@ class GenesisToolsMixin:
 
         return None
 
-    def _auto_detect_tool(self, user_input: str) -> str:
-        """
-        Auto-detecta si el usuario pide algo del sistema y ejecuta
-        la herramienta correspondiente sin depender del LLM.
-        Retorna el resultado o cadena vacia si no aplica.
-        """
-        inp = user_input.lower().strip()
+    def _detect_datetime_sysinfo(self, inp, user_input):
+        """Fecha, hora y datos básicos del sistema.
+        Extraído de _auto_detect_tool (Fase 2 — descomposición del god-method)."""
         import re as _re
-
-        # --- RUTINAS JARVIS (todas las versiones de Iron Man) — alta prioridad ---
-        try:
-            from core import jarvis_routines as _jr
-            if inp in ("rutinas", "rutinas jarvis", "protocolos", "que rutinas tenes",
-                       "qué rutinas tenés", "lista de rutinas"):
-                return _jr.listar()
-            _rk = _jr.detectar(inp)
-            if _rk:
-                return _jr.ejecutar(self, _rk)
-        except Exception as _e:
-            self.log.debug(f"Rutinas JARVIS skip: {_e}")
-
-        # Capacidades de Genesis: voces disponibles, qué puede hacer, etc (extraído a _detect_capabilities)
-        _capabi_r = self._detect_capabilities(inp, user_input)
-        if _capabi_r is not None:
-            return _capabi_r
-
         # --- Fecha, Hora, Datos basicos del sistema (respuesta instantanea) ---
         import datetime as _dt
         _now = _dt.datetime.now()
@@ -1530,6 +1508,12 @@ class GenesisToolsMixin:
                     result += "\n🌍 **IP Pública**: No se pudo obtener"
             return result
 
+        return None
+
+    def _detect_calculator(self, inp, user_input):
+        """Calculadora: operaciones aritméticas.
+        Extraído de _auto_detect_tool (Fase 2 — descomposición del god-method)."""
+        import re as _re
         # --- Calculadora ---
         # Detectar expresiones matematicas simples
         math_keywords = ["cuanto es", "cuánto es", "calcula", "calculame", "calculá",
@@ -1568,6 +1552,12 @@ class GenesisToolsMixin:
                 except (SyntaxError, NameError, TypeError, ValueError, ArithmeticError):
                     pass  # No es una expresion valida, continuar al LLM
 
+        return None
+
+    def _detect_identity(self, inp, user_input):
+        """Identidad de Genesis (quién sos, tu nombre, etc.).
+        Extraído de _auto_detect_tool (Fase 2 — descomposición del god-method)."""
+        import re as _re
         # --- Identidad de Genesis ---
         identity_keywords = ["que modelo eres", "qué modelo eres", "como te llamas",
                              "cómo te llamas", "que eres", "qué eres", "tu nombre",
@@ -1589,6 +1579,49 @@ class GenesisToolsMixin:
                     f"▸ Tengo acceso real a tu sistema: archivos, apps, hardware, internet\n"
                     f"▸ 22 voces TTS, STT por micrófono, memoria persistente\n"
                     f"▸ Creado para ser un asistente funcional sin fabulación")
+
+        return None
+
+    def _auto_detect_tool(self, user_input: str) -> str:
+        """
+        Auto-detecta si el usuario pide algo del sistema y ejecuta
+        la herramienta correspondiente sin depender del LLM.
+        Retorna el resultado o cadena vacia si no aplica.
+        """
+        inp = user_input.lower().strip()
+        import re as _re
+
+        # --- RUTINAS JARVIS (todas las versiones de Iron Man) — alta prioridad ---
+        try:
+            from core import jarvis_routines as _jr
+            if inp in ("rutinas", "rutinas jarvis", "protocolos", "que rutinas tenes",
+                       "qué rutinas tenés", "lista de rutinas"):
+                return _jr.listar()
+            _rk = _jr.detectar(inp)
+            if _rk:
+                return _jr.ejecutar(self, _rk)
+        except Exception as _e:
+            self.log.debug(f"Rutinas JARVIS skip: {_e}")
+
+        # Capacidades de Genesis: voces disponibles, qué puede hacer, etc (extraído a _detect_capabilities)
+        _capabi_r = self._detect_capabilities(inp, user_input)
+        if _capabi_r is not None:
+            return _capabi_r
+
+        # Fecha, hora y datos básicos del sistema (extraído a _detect_datetime_sysinfo)
+        _dateti_r = self._detect_datetime_sysinfo(inp, user_input)
+        if _dateti_r is not None:
+            return _dateti_r
+
+        # Calculadora: operaciones aritméticas (extraído a _detect_calculator)
+        _calcul_r = self._detect_calculator(inp, user_input)
+        if _calcul_r is not None:
+            return _calcul_r
+
+        # Identidad de Genesis (quién sos, tu nombre, etc (extraído a _detect_identity)
+        _identi_r = self._detect_identity(inp, user_input)
+        if _identi_r is not None:
+            return _identi_r
 
         # --- Contar archivos / tamano de carpeta ---
         count_keywords = ["cuantos archivos", "cuántos archivos", "cuantas carpetas",
