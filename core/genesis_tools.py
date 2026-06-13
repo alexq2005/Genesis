@@ -1227,6 +1227,141 @@ class GenesisToolsMixin:
 
         return None
 
+    def _detect_media_playback(self, inp, user_input):
+        """Reproducción de música/video: pausar, reanudar, detener y reproducir.
+        Extraído de _auto_detect_tool (Fase 2 — descomposición del god-method)."""
+        import re as _re
+        # --- Control de reproducción: pausar / reanudar / cerrar (ANTES del play) ---
+        _re2 = __import__("re")
+        _obj = (r"(m[úu]sica|cancion|canci[óo]n|tema|reproducci[óo]n|reproductor|player|"
+                r"video|sonido|audio|lo que estabas|la que estabas)")
+        def _media(fn):
+            # Control de la app de YouTube Music vía tecla multimedia / cierre.
+            try:
+                from core import music_player as _mpc
+                getattr(_mpc, fn)()
+            except Exception:
+                pass
+        # SIGUIENTE / ANTERIOR canción
+        if _re2.search(r"\b(siguiente|próxim[ao]|proxim[ao]|pasa(?:la)?|"
+                       r"otra)\b.*(cancion|canci[óo]n|tema|m[úu]sica)", inp) \
+                or inp.strip() in ("siguiente", "próxima", "proxima", "pasala", "next"):
+            _media("media_next")
+            return "⏭️ Siguiente tema."
+        if _re2.search(r"\b(anterior|previa|volv[ée]|atr[áa]s)\b.*(cancion|canci[óo]n|tema|m[úu]sica)", inp) \
+                or inp.strip() in ("anterior", "previa", "atrás", "atras", "prev"):
+            _media("media_prev")
+            return "⏮️ Tema anterior."
+        # REANUDAR / continuar (tecla play/pause + marcador de cabina)
+        if (_re2.search(r"\b(continu[áa]|segu[íi]|reanud[áa]|resum[íi]|retom[áa])\b", inp)
+                and _re2.search(_obj, inp)) or inp.strip() in (
+                "continua", "continuá", "segui", "seguí", "dale", "reanuda",
+                "reanudá", "resume", "segui dale", "dale play"):
+            _media("media_playpause")
+            return "▶️ Sigo donde quedó.\n[[RESUME]]"
+        # CERRAR el reproductor (cierra la ventana de YouTube Music + marcador)
+        if _re2.search(r"\b(cerr[áa]|sac[áa]|quit[áa]|saca|cerrar)\b.*" + _obj, inp) \
+                or _re2.search(r"\bcerr[áa]\s+(el\s+)?reproductor\b", inp):
+            _media("stop_app")
+            return "⏹️ Cierro el reproductor.\n[[STOP]]"
+        # PAUSAR (resumible) — "detené/pará/pausá la música"
+        _pause_re = _re2.search(
+            r"\b(deten[ée]r?|par[áa]|fren[áa]|stop|basta|pausa|paus[áa]|"
+            r"silenci[oa]|c[áa]llate)\b.*" + _obj, inp)
+        if _pause_re or inp.strip() in (
+                "stop", "basta", "pará", "para", "silencio", "callate",
+                "cállate", "pausa", "pausá", "pausalo"):
+            _media("media_playpause")
+            return "⏸️ Pausado. Decime 'continuá' para seguir.\n[[PAUSE]]"
+
+        # --- Reproducir música/video (ANTES del open genérico, que lo rompía) ---
+        _music_verbs = ["reproduce ", "reproducí ", "reproduci ", "reproducir ",
+                        "reproducime ", "reproduzca ", "reproduzca ", "pone ", "poné ",
+                        "pon ", "poner ", "ponme ", "poneme ", "ponémela ", "pasame ",
+                        "escuchar ", "escucha ", "escuchá ", "quiero escuchar ",
+                        "quiero oir ", "play "]
+        if any(inp.startswith(v) or f" {v}" in inp for v in _music_verbs):
+            import re as _mre, urllib.parse as _up, webbrowser as _wb
+            q = inp
+            for v in _music_verbs:
+                if q.startswith(v): q = q[len(v):]; break
+                if f" {v}" in q: q = q.split(v, 1)[-1]; break
+            # Detectar plataforma y limpiarla del query
+            plat, base = "youtube_music", "https://music.youtube.com/search?q={}"
+            if _mre.search(r"\bspotify\b", q):
+                plat, base = "spotify", "https://open.spotify.com/search/{}"
+            elif _mre.search(r"\byoutube music|youtube\s*music|yt\s*music\b", q):
+                plat, base = "youtube_music", "https://music.youtube.com/search?q={}"
+            elif _mre.search(r"\byoutube|yt\b", q):
+                plat, base = "youtube", "https://www.youtube.com/results?search_query={}"
+            # Quitar "en <plataforma>" y palabras de relleno
+            q = _mre.sub(r"\s+(en|por|desde)\s+(youtube\s*music|youtube|yt\s*music|yt|spotify).*$", "", q, flags=_mre.I)
+            q = _mre.sub(r"\b(la\s+canci[oó]n|el\s+tema|musica|música|cancion|canci[oó]n)\b", "", q, flags=_mre.I)
+            q = q.strip().strip("\"'").rstrip(".,;!?").strip()
+            if q:
+                # Spotify: sin API/login no se puede autoreproducir → abrir búsqueda (honesto).
+                if plat == "spotify":
+                    try:
+                        _wb.open(base.format(_up.quote(q)))
+                        return (f"🎵 Te abrí la búsqueda de «{q}» en Spotify. Para "
+                                f"reproducir un tema puntual automático necesito tu login "
+                                f"de Spotify (su API). Dale play vos, o pedímelo en YouTube "
+                                f"Music que ahí sí lo pongo a sonar solo.")
+                    except Exception as e:
+                        return f"[ERROR] No pude abrir Spotify: {e}"
+                # PRIORIDAD: app de YouTube Music (PWA logueada del usuario).
+                # Reproduce sin yt-dlp/cookies/anti-bot — es la YT Music real. La
+                # cabina (stream propio) queda como fallback si no está Chrome/YTM.
+                try:
+                    from core import music_player as _mp
+                    if _mp.ytmusic_available():
+                        _r = _mp.play_in_app(q)
+                        if _r.get("ok"):
+                            _art = f" de {_r['uploader']}" if _r.get("uploader") else ""
+                            _dur = _fmt = ""
+                            try:
+                                _s = int(_r.get("duration") or 0)
+                                if _s:
+                                    _dur = f" ({_s // 60}:{_s % 60:02d})"
+                            except Exception:
+                                pass
+                            return (f"🎵 Reproduciendo **{_r['title']}**{_art}{_dur} "
+                                    f"en YouTube Music.")
+                        # si la app falló, seguimos al fallback de cabina
+                except Exception:
+                    pass
+
+                # FALLBACK: búsqueda REAL + reproducción DENTRO de la cabina (stream).
+                try:
+                    from core.music_player import play as _play
+                    res = _play(q, platform=("youtube" if plat == "youtube" else "youtube_music"),
+                                open_browser=False)
+                except Exception as e:
+                    return f"[ERROR] No pude reproducir: {e}"
+
+                if res.get("reason") == "not_found":
+                    return (f"🔎 Busqué «{q}» en YouTube y no encontré nada que coincida. "
+                            f"¿Lo escribí bien? Probá con el artista + nombre del tema.")
+                if not res.get("ok"):
+                    return (f"🔎 Encontré el tema pero no pude abrir el reproductor "
+                            f"({res.get('detail', res.get('reason'))}).")
+
+                tr = res["track"]
+                artista = f" de {tr['uploader']}" if tr.get("uploader") else ""
+                # Razonamiento: ¿el resultado coincide con lo pedido?
+                if res["match"] >= 0.6:
+                    razona = "Coincide con lo que pediste."
+                elif res["match"] >= 0.3:
+                    razona = "No estoy 100% seguro que sea exactamente ese, pero es el mejor match."
+                else:
+                    razona = "Ojo: el resultado no se parece mucho a lo que pediste, fijate si es."
+                # El marcador [[PLAY:id]] lo lee el HUD para embeber el reproductor
+                # DENTRO de la cabina. Si se usa fuera del HUD, queda como texto inocuo.
+                return (f"🎵 Reproduciendo **{tr['title']}**{artista} ({res['duration_fmt']}). "
+                        f"{razona}\n[[PLAY:{res['video_id']}]]")
+
+        return None
+
     def _auto_detect_tool(self, user_input: str) -> str:
         """
         Auto-detecta si el usuario pide algo del sistema y ejecuta
@@ -2148,134 +2283,10 @@ class GenesisToolsMixin:
                     return _list_folder_contents(folder_path)
                 return f"No encontré una carpeta llamada '{rest}'. Intenta con el nombre exacto o la ruta completa."
 
-        # --- Control de reproducción: pausar / reanudar / cerrar (ANTES del play) ---
-        _re2 = __import__("re")
-        _obj = (r"(m[úu]sica|cancion|canci[óo]n|tema|reproducci[óo]n|reproductor|player|"
-                r"video|sonido|audio|lo que estabas|la que estabas)")
-        def _media(fn):
-            # Control de la app de YouTube Music vía tecla multimedia / cierre.
-            try:
-                from core import music_player as _mpc
-                getattr(_mpc, fn)()
-            except Exception:
-                pass
-        # SIGUIENTE / ANTERIOR canción
-        if _re2.search(r"\b(siguiente|próxim[ao]|proxim[ao]|pasa(?:la)?|"
-                       r"otra)\b.*(cancion|canci[óo]n|tema|m[úu]sica)", inp) \
-                or inp.strip() in ("siguiente", "próxima", "proxima", "pasala", "next"):
-            _media("media_next")
-            return "⏭️ Siguiente tema."
-        if _re2.search(r"\b(anterior|previa|volv[ée]|atr[áa]s)\b.*(cancion|canci[óo]n|tema|m[úu]sica)", inp) \
-                or inp.strip() in ("anterior", "previa", "atrás", "atras", "prev"):
-            _media("media_prev")
-            return "⏮️ Tema anterior."
-        # REANUDAR / continuar (tecla play/pause + marcador de cabina)
-        if (_re2.search(r"\b(continu[áa]|segu[íi]|reanud[áa]|resum[íi]|retom[áa])\b", inp)
-                and _re2.search(_obj, inp)) or inp.strip() in (
-                "continua", "continuá", "segui", "seguí", "dale", "reanuda",
-                "reanudá", "resume", "segui dale", "dale play"):
-            _media("media_playpause")
-            return "▶️ Sigo donde quedó.\n[[RESUME]]"
-        # CERRAR el reproductor (cierra la ventana de YouTube Music + marcador)
-        if _re2.search(r"\b(cerr[áa]|sac[áa]|quit[áa]|saca|cerrar)\b.*" + _obj, inp) \
-                or _re2.search(r"\bcerr[áa]\s+(el\s+)?reproductor\b", inp):
-            _media("stop_app")
-            return "⏹️ Cierro el reproductor.\n[[STOP]]"
-        # PAUSAR (resumible) — "detené/pará/pausá la música"
-        _pause_re = _re2.search(
-            r"\b(deten[ée]r?|par[áa]|fren[áa]|stop|basta|pausa|paus[áa]|"
-            r"silenci[oa]|c[áa]llate)\b.*" + _obj, inp)
-        if _pause_re or inp.strip() in (
-                "stop", "basta", "pará", "para", "silencio", "callate",
-                "cállate", "pausa", "pausá", "pausalo"):
-            _media("media_playpause")
-            return "⏸️ Pausado. Decime 'continuá' para seguir.\n[[PAUSE]]"
-
-        # --- Reproducir música/video (ANTES del open genérico, que lo rompía) ---
-        _music_verbs = ["reproduce ", "reproducí ", "reproduci ", "reproducir ",
-                        "reproducime ", "reproduzca ", "reproduzca ", "pone ", "poné ",
-                        "pon ", "poner ", "ponme ", "poneme ", "ponémela ", "pasame ",
-                        "escuchar ", "escucha ", "escuchá ", "quiero escuchar ",
-                        "quiero oir ", "play "]
-        if any(inp.startswith(v) or f" {v}" in inp for v in _music_verbs):
-            import re as _mre, urllib.parse as _up, webbrowser as _wb
-            q = inp
-            for v in _music_verbs:
-                if q.startswith(v): q = q[len(v):]; break
-                if f" {v}" in q: q = q.split(v, 1)[-1]; break
-            # Detectar plataforma y limpiarla del query
-            plat, base = "youtube_music", "https://music.youtube.com/search?q={}"
-            if _mre.search(r"\bspotify\b", q):
-                plat, base = "spotify", "https://open.spotify.com/search/{}"
-            elif _mre.search(r"\byoutube music|youtube\s*music|yt\s*music\b", q):
-                plat, base = "youtube_music", "https://music.youtube.com/search?q={}"
-            elif _mre.search(r"\byoutube|yt\b", q):
-                plat, base = "youtube", "https://www.youtube.com/results?search_query={}"
-            # Quitar "en <plataforma>" y palabras de relleno
-            q = _mre.sub(r"\s+(en|por|desde)\s+(youtube\s*music|youtube|yt\s*music|yt|spotify).*$", "", q, flags=_mre.I)
-            q = _mre.sub(r"\b(la\s+canci[oó]n|el\s+tema|musica|música|cancion|canci[oó]n)\b", "", q, flags=_mre.I)
-            q = q.strip().strip("\"'").rstrip(".,;!?").strip()
-            if q:
-                # Spotify: sin API/login no se puede autoreproducir → abrir búsqueda (honesto).
-                if plat == "spotify":
-                    try:
-                        _wb.open(base.format(_up.quote(q)))
-                        return (f"🎵 Te abrí la búsqueda de «{q}» en Spotify. Para "
-                                f"reproducir un tema puntual automático necesito tu login "
-                                f"de Spotify (su API). Dale play vos, o pedímelo en YouTube "
-                                f"Music que ahí sí lo pongo a sonar solo.")
-                    except Exception as e:
-                        return f"[ERROR] No pude abrir Spotify: {e}"
-                # PRIORIDAD: app de YouTube Music (PWA logueada del usuario).
-                # Reproduce sin yt-dlp/cookies/anti-bot — es la YT Music real. La
-                # cabina (stream propio) queda como fallback si no está Chrome/YTM.
-                try:
-                    from core import music_player as _mp
-                    if _mp.ytmusic_available():
-                        _r = _mp.play_in_app(q)
-                        if _r.get("ok"):
-                            _art = f" de {_r['uploader']}" if _r.get("uploader") else ""
-                            _dur = _fmt = ""
-                            try:
-                                _s = int(_r.get("duration") or 0)
-                                if _s:
-                                    _dur = f" ({_s // 60}:{_s % 60:02d})"
-                            except Exception:
-                                pass
-                            return (f"🎵 Reproduciendo **{_r['title']}**{_art}{_dur} "
-                                    f"en YouTube Music.")
-                        # si la app falló, seguimos al fallback de cabina
-                except Exception:
-                    pass
-
-                # FALLBACK: búsqueda REAL + reproducción DENTRO de la cabina (stream).
-                try:
-                    from core.music_player import play as _play
-                    res = _play(q, platform=("youtube" if plat == "youtube" else "youtube_music"),
-                                open_browser=False)
-                except Exception as e:
-                    return f"[ERROR] No pude reproducir: {e}"
-
-                if res.get("reason") == "not_found":
-                    return (f"🔎 Busqué «{q}» en YouTube y no encontré nada que coincida. "
-                            f"¿Lo escribí bien? Probá con el artista + nombre del tema.")
-                if not res.get("ok"):
-                    return (f"🔎 Encontré el tema pero no pude abrir el reproductor "
-                            f"({res.get('detail', res.get('reason'))}).")
-
-                tr = res["track"]
-                artista = f" de {tr['uploader']}" if tr.get("uploader") else ""
-                # Razonamiento: ¿el resultado coincide con lo pedido?
-                if res["match"] >= 0.6:
-                    razona = "Coincide con lo que pediste."
-                elif res["match"] >= 0.3:
-                    razona = "No estoy 100% seguro que sea exactamente ese, pero es el mejor match."
-                else:
-                    razona = "Ojo: el resultado no se parece mucho a lo que pediste, fijate si es."
-                # El marcador [[PLAY:id]] lo lee el HUD para embeber el reproductor
-                # DENTRO de la cabina. Si se usa fuera del HUD, queda como texto inocuo.
-                return (f"🎵 Reproduciendo **{tr['title']}**{artista} ({res['duration_fmt']}). "
-                        f"{razona}\n[[PLAY:{res['video_id']}]]")
+        # Reproducción de música/video: pausar, reanudar, detener y reproducir (extraído a _detect_media_playback)
+        _media__r = self._detect_media_playback(inp, user_input)
+        if _media__r is not None:
+            return _media__r
 
         # --- Abrir ---
         open_keywords = ["abre ", "abrir ", "ejecuta ", "lanza ", "abri ",
