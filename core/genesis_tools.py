@@ -3209,6 +3209,17 @@ class GenesisToolsMixin:
             from core import handsfree as _hf
             return _hf.get(self).status()
 
+        # --- HUELLA DE VOZ (reconocimiento del hablante) ---
+        if _re.search(r"\b(entren[áa]r?|registr[áa]r?|aprend[ée]r?|guard[áa]r?)\s+"
+                      r"(mi\s+|la\s+|tu\s+)?voz\b", inp) or \
+           _re.search(r"\breconoc[ée]r?\s+mi\s+voz\b", inp):
+            from core import voiceprint as _vp
+            return _vp.start_enroll(self)
+        if _re.search(r"\b(verific[áa]r?\s+(mi\s+)?voz|reconoc[ée]r?\s+qui[ée]n\s+soy|"
+                      r"sabes\s+qui[ée]n\s+soy|esta?\s+es\s+mi\s+voz)\b", inp):
+            from core import voiceprint as _vp
+            return _vp.start_verify(self)
+
         # --- RUTINAS JARVIS (todas las versiones de Iron Man) — alta prioridad ---
         try:
             from core import jarvis_routines as _jr
