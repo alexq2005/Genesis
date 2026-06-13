@@ -1,7 +1,7 @@
 # GENESIS v6.0.0 — IA Auto-Evolutiva 100% Local
 
-Sistema de IA autónomo que evoluciona, aprende e investiga. Desktop app tipo Copilot con 132 módulos cognitivos.
-**Desde v6.0 corre 100% local por defecto** — cero dependencia de APIs externas gracias a Ollama + Qwen + Llama.
+Sistema de IA autónomo que evoluciona, aprende e investiga. Desktop app tipo Copilot con 140 módulos cognitivos.
+**Desde v6.0 la estrategia de routing es `local_first`** — prioriza Ollama + Qwen + Llama. Nota: si configurás una API key (`GOOGLE_API_KEY`), el provider legacy `auto` puede seleccionar cloud; para 100% local no configures keys o forzá `GENESIS_PROVIDER=ollama`.
 
 ## Características
 
@@ -20,6 +20,13 @@ Sistema de IA autónomo que evoluciona, aprende e investiga. Desktop app tipo Co
 - **Desktop App** — PyWebView sidebar tipo Copilot, system tray, hotkey Ctrl+Shift+G
 - **Voz** — TTS neural (Edge-TTS, 45 voces en español) + STT offline (Vosk)
 - **Documentos** — PDF, DOCX, PPTX, XLSX, imágenes (OCR), audio, video. Resúmenes Map-Reduce con nivel estudio
+- **Índice de programas** — Escanea los programas instalados (Start Menu + registro App Paths) UNA vez y los cachea en `data/installed_programs.json`; "abrí steam/brave/…" pasa de ~30-56s a ~1ms. Se refresca solo desde el heartbeat (re-escanea si el cache tiene >24h). Apps instaladas tienen prioridad sobre el mapa web (match fuerte)
+- **Índice de carpetas** — Escanea C:/perfil + F: (profundidad acotada) y cachea en `data/folder_index.json` (~5400 carpetas, ~470 KB); "abrí la carpeta X" en ~1ms en vez de un walk en vivo. Auto-mantenimiento: refresco por heartbeat (~3h), **prune-on-access** (las que borrás se limpian solas del índice al buscarlas) y **rescan-on-miss** (las nuevas se captan al intentar abrirlas). Comando manual: "actualizá el índice de carpetas"
+- **Núcleo de plasma** — La cabina (`/core`) muestra un núcleo de plasma en canvas que vive en reposo y **erupciona reaccionando a la amplitud real de la voz** cuando Genesis habla (WebAudio AnalyserNode sobre el TTS)
+- **Control de UI** — Maneja menús, botones y teclado de **cualquier app** vía UI Automation de Windows (semántico, por nombre de elemento). Comandos: "abrí el menú Archivo > Guardar de notepad", "clickeá el botón X", "escribí 'texto' en el bloc de notas", "apretá ctrl+s", "mostrame los menús de X", "qué ventanas hay abiertas". Freno de pánico: mover el mouse a la esquina (0,0) aborta. Requiere Node para el render de la cabina, no para esto.
+- **Manejo de archivos conversacional** — "renombrá X a Y", "mové X a documentos", "copiá X a Y", `reemplazá "viejo" por "nuevo" en archivo.txt`, "borrá X" (**siempre a la papelera**, recuperable). Resuelve archivos **por nombre** (sin ruta completa) con búsqueda acotada (presupuesto 3s). **Backup automático** antes de sobrescribir.
+- **Desarrollo de código real** — "desarrollá una app/script/juego que…" dispara el BuilderEngine en segundo plano: genera con qwen-coder → **EJECUTA** → lee el error real → corrige (hasta 3 iteraciones). Preguntás "¿terminó el build?" y te pasa el proyecto verificado por ejecución. Containment + guard de patrones peligrosos.
+- **Email** — "enviá un email a X que diga «…»" → confirmás → manda vía Gmail SMTP desde una cuenta dedicada. Requiere App Password de Gmail en `.env` (`GMAIL_USER` + `GMAIL_APP_PASSWORD`; la contraseña normal NO sirve — Gmail exige App Password con verificación en 2 pasos).
 
 ## Requisitos
 
@@ -110,6 +117,27 @@ Configurable via env vars: `GENESIS_LLM_STRATEGY`, `GENESIS_OLLAMA_CODING`, `GEN
 | 11 | v5.8 | 4 | Autonomous Orchestration (file watcher, scheduler) |
 | 12 | v5.9 | 4 | System Mastery (scaffolder, snippets, profiler) |
 | 13 | **v6.0** | 1 | **Digital Sovereignty (ProviderRouter + multi-model Ollama)** |
+
+## Autonomía y auto-mejora
+
+Genesis corre un **loop de fondo** (heartbeat) que trabaja aunque no le hables:
+investiga su curiosidad (read-only), consolida memoria (REM), persiste el
+aprendizaje, hace avanzar tareas programadas y —en modo agresivo— **mejora su
+propio código** de forma autónoma.
+
+**La auto-mejora de código es segura por diseño:**
+- Solo toca módulos NO críticos/inmutables (los guardrails nunca se auto-editan).
+- Valida AST + patrones peligrosos antes de aplicar.
+- Corre la suite de tests como **gate**: si fallan, **auto-revierte** al backup.
+- Los archivos críticos (`genesis.py`, `config.py`, `brain.py`...) requieren
+  aprobación humana explícita (`/apply`).
+
+**Killswitches** (crear el archivo en la raíz del proyecto):
+| Acción | Efecto |
+|--------|--------|
+| `PAUSE` | Frena TODO el loop de fondo (investigación, consolidación, auto-mejora) |
+| `PAUSE_SELFIMPROVE` | Frena SOLO la auto-mejora de código (lo demás sigue) |
+| `GENESIS_SELF_IMPROVE=false` (env) | Desactiva la auto-mejora por configuración |
 
 ## Comandos principales
 

@@ -122,8 +122,33 @@ class ToolCreator:
             self._load_tool(filepath)
 
     def _load_tool(self, filepath: Path) -> bool:
-        """Carga una tool desde un archivo .py."""
+        """Carga una tool desde un archivo .py.
+
+        SEGURIDAD: valida el código con _check_security ANTES de ejecutarlo
+        (exec_module corre el código a nivel de módulo). Un .py planteado en
+        tools_custom/ por cualquier vía no se ejecuta si tiene imports/patrones
+        prohibidos. Esto cierra el bypass de auto-carga sin validación.
+        """
         try:
+            # Validación previa al exec (no ejecutar código no confiable)
+            try:
+                code = filepath.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                return False
+            warnings = self._check_security(code)
+            if any(w.startswith("[BLOCKED]") for w in warnings):
+                blocked = "; ".join(w for w in warnings if w.startswith("[BLOCKED]"))
+                try:
+                    print(f"  [ToolCreator] Tool NO cargada (seguridad) {filepath.name}: {blocked}")
+                except Exception:
+                    pass
+                return False
+            # Además: debe parsear como Python válido
+            try:
+                ast.parse(code)
+            except SyntaxError:
+                return False
+
             spec = importlib.util.spec_from_file_location(
                 f"genesis_tool_{filepath.stem}", str(filepath)
             )

@@ -21,12 +21,48 @@ class WeatherService:
         self._cache: dict = {}
         self._cache_ttl = 600  # 10 minutos
         self._lock = threading.RLock()
-        self._default_location = "Buenos Aires"
+        self._default_location = ""   # vacío → geolocaliza por IP real
+        self._geo_cache = None        # (lat, lon, ciudad) cacheado por sesión
+
+    def _geolocate_ip(self):
+        """Geolocaliza por la IP pública real del usuario (sin API key).
+
+        Devuelve 'lat,lon' (preciso para wttr.in) o None. Cachea por sesión.
+        Antes el clima dependía del nearest_area de wttr.in (devolvía barrios
+        raros como 'Villa Crespo'); ahora parte de la ubicación REAL.
+        """
+        if self._geo_cache:
+            return self._geo_cache
+        import urllib.request, json as _json
+        servicios = [
+            "https://ipapi.co/json/",
+            "http://ip-api.com/json/",
+        ]
+        for url in servicios:
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=6) as r:
+                    d = _json.loads(r.read().decode("utf-8", "replace"))
+                lat = d.get("latitude") or d.get("lat")
+                lon = d.get("longitude") or d.get("lon")
+                ciudad = d.get("city") or d.get("regionName") or d.get("region") or ""
+                if lat and lon:
+                    self._geo_cache = f"{lat},{lon}"
+                    return self._geo_cache
+                if ciudad:
+                    self._geo_cache = ciudad
+                    return self._geo_cache
+            except Exception:
+                continue
+        return None
 
     # ── Clima actual ──────────────────────────────────
     def current(self, location: str = "") -> str:
         """Obtiene el clima actual de una ubicación."""
-        location = (location or self._default_location).strip()
+        # Sin ubicación explícita → geolocalizar por IP real, luego default.
+        location = (location or "").strip()
+        if not location:
+            location = self._geolocate_ip() or self._default_location or "Buenos Aires"
         if not location:
             return "🌤️ Necesito una ubicación. Ejemplo: 'clima Buenos Aires'"
 
@@ -51,7 +87,9 @@ class WeatherService:
     # ── Pronóstico extendido ──────────────────────────
     def forecast(self, location: str = "", days: int = 3) -> str:
         """Pronóstico de varios días."""
-        location = (location or self._default_location).strip()
+        location = (location or "").strip()
+        if not location:
+            location = self._geolocate_ip() or self._default_location or "Buenos Aires"
         if not location:
             return "🌤️ Necesito una ubicación."
 
@@ -111,22 +149,29 @@ class WeatherService:
             weather_code = int(current.get("weatherCode", 0))
             emoji = self._weather_emoji(weather_code)
 
-            lines = [
-                f"{emoji} **CLIMA EN {city.upper()}**" + (f", {region}" if region else "") + (f" — {country}" if country else ""),
-                f"",
-                f"  🌡️ Temperatura: **{temp_c}°C** (sensación {feels_like}°C)",
-                f"  ☁️ {desc_es}",
-                f"  💧 Humedad: {humidity}%",
-                f"  💨 Viento: {wind_kmph} km/h {wind_dir}",
-                f"  🌧️ Precipitación: {precip_mm} mm",
-                f"  ☁️ Nubosidad: {cloud_cover}%",
-                f"  👁️ Visibilidad: {visibility} km",
-                f"  🔆 Índice UV: {uv_index}",
-                f"  📊 Presión: {pressure} hPa",
-                f"",
-                f"  ⏰ Actualizado: {datetime.now().strftime('%H:%M:%S')}",
-            ]
-            return "\n".join(lines)
+            # Tono casual argentino: una o dos frases naturales, no un reporte.
+            lugar = city + (f", {region}" if region and region != city else "")
+            try:
+                t = float(temp_c); fl = float(feels_like); h = float(humidity); w = float(wind_kmph)
+            except (TypeError, ValueError):
+                t = fl = h = w = 0
+            # Comentario según temperatura
+            if t <= 8: tip = "Abrigate bien que está fresco 🧥"
+            elif t <= 15: tip = "Llevá una campera por las dudas"
+            elif t <= 24: tip = "Lindo clima, ni frío ni calor"
+            elif t <= 30: tip = "Hace calorcito, andá liviano"
+            else: tip = "Un horno — hidratate 💧"
+            extra = ""
+            if abs(fl - t) >= 3:
+                extra += f" (se siente como {feels_like}°)"
+            detalle = []
+            if w >= 25: detalle.append(f"viento fuerte ({wind_kmph} km/h)")
+            elif w >= 1: detalle.append(f"viento {wind_kmph} km/h")
+            if h >= 80: detalle.append(f"húmedo ({humidity}%)")
+            if float(precip_mm or 0) > 0: detalle.append(f"lluvia {precip_mm} mm")
+            cola = (". " + ", ".join(detalle).capitalize() + ".") if detalle else "."
+            return (f"{emoji} En {lugar} hay {temp_c}°C{extra} y está {desc_es.lower()}{cola} "
+                    f"{tip}.")
 
         except Exception:
             return None

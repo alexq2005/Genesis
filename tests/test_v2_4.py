@@ -753,17 +753,28 @@ finally:
 # TEST 12: genesis.py — Integration
 # ============================================================
 print("\n=== TEST: genesis.py — Integration ===")
-genesis_source = open("genesis.py", "r", encoding="utf-8").read()
+# El refactor movio process/comandos/help a mixins core/genesis_*.py: la
+# "fuente de Genesis" es la concatenacion de genesis.py + los 3 mixins.
+genesis_source = ""
+for _gf in ("genesis.py", "core/genesis_processing.py",
+            "core/genesis_commands.py", "core/genesis_tools.py"):
+    try:
+        with open(_gf, "r", encoding="utf-8") as _f:
+            genesis_source += _f.read() + "\n"
+    except FileNotFoundError:
+        pass
 
 # Imports
 test("genesis.py: importa EpisodicMemory", "from core.episodic_memory import EpisodicMemory" in genesis_source)
 test("genesis.py: importa MetaLearner", "from core.meta_learner import MetaLearner" in genesis_source)
 test("genesis.py: importa PersonalityEvolver", "from core.personality_evolver import PersonalityEvolver" in genesis_source)
 
-# Init
-test("genesis.py: self.episodic_memory =", "self.episodic_memory = EpisodicMemory(" in genesis_source)
-test("genesis.py: self.meta_learner =", "self.meta_learner = MetaLearner(" in genesis_source)
-test("genesis.py: self.personality =", "self.personality = PersonalityEvolver(" in genesis_source)
+# Init: el refactor cambio la init directa (self.X = Class()) por un dispatch
+# lazy por nombre (name == 'X' -> inst = Class(...)). Verificamos que el modulo
+# queda realmente instanciado buscando la construccion de la clase.
+test("genesis.py: episodic_memory init", "EpisodicMemory(" in genesis_source)
+test("genesis.py: meta_learner init", "MetaLearner(" in genesis_source)
+test("genesis.py: personality init", "PersonalityEvolver(" in genesis_source)
 
 # Process input integration
 test("genesis.py: episodic_memory.get_context", "episodic_memory.get_context_for_prompt" in genesis_source)
@@ -791,10 +802,12 @@ test("genesis.py: dashboard register episodic_memory", '"episodic_memory"' in ge
 test("genesis.py: dashboard register meta_learner", '"meta_learner"' in genesis_source)
 test("genesis.py: dashboard register personality", '"personality"' in genesis_source)
 
-# Save on exit
-test("genesis.py: episodic_memory.save() on exit", "episodic_memory.save()" in genesis_source)
-test("genesis.py: meta_learner.save() on exit", "meta_learner.save()" in genesis_source)
-test("genesis.py: personality.save() on exit", "personality.save()" in genesis_source)
+# Save on exit: save_all() ya no llama self.X.save() literal; usa una lista
+# saveable_modules y guarda cada modulo por nombre. Verificamos que el modulo
+# este listado para persistirse.
+test("genesis.py: episodic_memory en saveable_modules", '"episodic_memory"' in genesis_source)
+test("genesis.py: meta_learner en saveable_modules", '"meta_learner"' in genesis_source)
+test("genesis.py: personality en saveable_modules", '"personality"' in genesis_source)
 
 # Banner
 test("genesis.py: banner tiene Episodic Memory", "Episodic Memory:" in genesis_source)

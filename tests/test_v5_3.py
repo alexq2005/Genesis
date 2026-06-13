@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 passed = 0
 failed = 0
+skipped = 0
 
 def test(name, condition):
     global passed, failed
@@ -29,6 +30,26 @@ def test(name, condition):
     else:
         print(f"  ✗ {name}")
         failed += 1
+
+def skip(name, reason):
+    """Salta un test que requiere una dependencia opcional ausente (no cuenta como fallo)."""
+    global skipped
+    print(f"  ⊘ SKIP {name} ({reason})")
+    skipped += 1
+
+def _has(mod):
+    try:
+        __import__(mod)
+        return True
+    except ImportError:
+        return False
+
+# Dependencias opcionales de lectura de documentos. Si faltan, core/document_reader.py
+# degrada con un dict {"error": "... no instalado"} (fallback grácil, no crashea).
+HAS_FITZ = _has("fitz")       # PyMuPDF (PDF)
+HAS_DOCX = _has("docx")       # python-docx (DOCX)
+HAS_OPENPYXL = _has("openpyxl")  # XLSX
+HAS_PIL = _has("PIL")         # Pillow (imagenes/OCR)
 
 
 # ============================================================
@@ -52,10 +73,22 @@ test("ProcessedDocument importable", True)
 # ============================================================
 print("\n--- Required Packages ---")
 
-test("PyMuPDF (fitz) importable", (lambda: (__import__('fitz'), True)[-1])())
-test("python-docx importable", (lambda: (__import__('docx'), True)[-1])())
-test("openpyxl importable", (lambda: (__import__('openpyxl'), True)[-1])())
-test("Pillow importable", (lambda: (__import__('PIL'), True)[-1])())
+if HAS_FITZ:
+    test("PyMuPDF (fitz) importable", True)
+else:
+    skip("PyMuPDF (fitz) importable", "PyMuPDF no instalado")
+if HAS_DOCX:
+    test("python-docx importable", True)
+else:
+    skip("python-docx importable", "python-docx no instalado")
+if HAS_OPENPYXL:
+    test("openpyxl importable", True)
+else:
+    skip("openpyxl importable", "openpyxl no instalado")
+if HAS_PIL:
+    test("Pillow importable", True)
+else:
+    skip("Pillow importable", "Pillow no instalado")
 
 
 # ============================================================
@@ -80,6 +113,19 @@ test("Read nonexistent file returns error", "error" in result)
 # Test unsupported format
 result = reader.read("file.xyz")
 test("Read unsupported format returns error", "error" in result)
+
+# Fallback grácil de PDF: si falta PyMuPDF, leer un PDF existente debe devolver
+# un error claro (no crashear). Si PyMuPDF esta presente, se omite esta verificacion.
+if not HAS_FITZ:
+    with tempfile.NamedTemporaryFile(mode='wb', suffix='.pdf', delete=False) as f:
+        f.write(b"%PDF-1.4\n% fake pdf for fallback test\n")
+        tmp_pdf = f.name
+    pdf_result = reader.read(tmp_pdf)
+    test("PDF fallback sin PyMuPDF: error claro",
+         "error" in pdf_result and "PyMuPDF" in pdf_result["error"])
+    os.unlink(tmp_pdf)
+else:
+    skip("PDF fallback sin PyMuPDF: error claro", "PyMuPDF instalado")
 
 # Test reading a TXT file
 with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
@@ -377,7 +423,7 @@ test("Frontend auto-activates TTS on voice", "lastMessageWasVoice" in html_src)
 
 # ============================================================
 print(f"\n{'='*60}")
-print(f"RESULTADOS: {passed}/{passed+failed} passed, {failed} failed")
+print(f"RESULTADOS: {passed}/{passed+failed} passed, {failed} failed, {skipped} skipped (dep ausente)")
 print(f"{'='*60}")
 
 if failed > 0:

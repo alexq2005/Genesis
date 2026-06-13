@@ -189,10 +189,18 @@ class AgentSystem:
         self.enabled = True
         self.history = []  # Historial de delegaciones
         self.max_history = 50
+        # Hook opcional: AutoLearner para sesgar la selección de agente por
+        # rendimiento aprendido. Lo setea Genesis. Cierra el loop de auto_learner.
+        self.auto_learner = None
 
         # Cargar agentes predefinidos
         for name, agent in self.DEFAULT_AGENTS.items():
             self.agents[name] = agent
+
+    def set_auto_learner(self, auto_learner):
+        """Conecta un AutoLearner para que detect_agent use el rendimiento
+        histórico aprendido como desempate (loop cerrado de aprendizaje)."""
+        self.auto_learner = auto_learner
 
     def detect_agent(self, user_input: str) -> Optional[str]:
         """
@@ -220,6 +228,17 @@ class AgentSystem:
 
         if not scores:
             return None
+
+        # LOOP CERRADO auto_learner: aplicar bonus/penalización por rendimiento
+        # histórico aprendido (antes se calculaba pero nadie lo usaba al elegir).
+        if self.auto_learner is not None:
+            try:
+                adj = self.auto_learner.get_agent_adjustments()
+                for name, delta in adj.items():
+                    if name in scores:
+                        scores[name] += delta
+            except Exception:
+                pass
 
         # Desempate por prioridad del agente
         best = max(scores.items(), key=lambda x: (x[1], self.agents[x[0]].priority))

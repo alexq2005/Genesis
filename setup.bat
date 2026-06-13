@@ -1,48 +1,61 @@
 @echo off
-echo ══════════════════════════════════════════════════
-echo          GENESIS — Setup de Instalacion
-echo ══════════════════════════════════════════════════
+chcp 65001 >nul 2>&1
+cd /d "%~dp0"
+echo ==================================================
+echo          GENESIS - Setup de Instalacion
+echo ==================================================
 echo.
 
-REM Verificar Python
-python --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [ERROR] Python no esta instalado.
+REM --- Buscar Python 3.12 o 3.11 (requerido: numpy/torch no soportan 3.13+) ---
+set "PYEXE="
+for %%V in (3.12 3.11) do (
+    if not defined PYEXE (
+        py -%%V --version >nul 2>&1 && set "PYEXE=py -%%V"
+    )
+)
+if not defined PYEXE (
+    echo [ERROR] No se encontro Python 3.11 o 3.12.
+    echo Genesis necesita 3.11/3.12 ^(numpy/torch no tienen wheels para 3.13+^).
     echo Descargalo de: https://python.org/downloads
-    echo Asegurate de marcar "Add to PATH" durante la instalacion.
     pause
     exit /b 1
 )
-
-echo [OK] Python encontrado:
-python --version
+echo [OK] Usando: %PYEXE%
+%PYEXE% --version
 echo.
 
-REM Verificar si Ollama esta instalado
+REM --- Crear entorno virtual ---
+if not exist "venv\Scripts\python.exe" (
+    echo Creando entorno virtual ^(venv^)...
+    %PYEXE% -m venv venv
+) else (
+    echo [OK] El entorno virtual ya existe.
+)
+
+REM --- Instalar dependencias en el venv ---
+echo.
+echo Instalando dependencias ^(puede tardar varios minutos: torch es grande^)...
+"venv\Scripts\python.exe" -m pip install --upgrade pip
+"venv\Scripts\python.exe" -m pip install -r requirements.txt
+echo.
+
+REM --- Verificar Ollama ---
 ollama --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo [INFO] Ollama no esta instalado.
-    echo Para usar Genesis con IA local gratuita:
     echo   1. Descarga Ollama: https://ollama.com/download
     echo   2. Instala y ejecuta: ollama serve
-    echo   3. Descarga un modelo: ollama pull llama3.1
-    echo.
-    echo Alternativa: Configura una API key en config.py
-    echo   - OpenAI: set OPENAI_API_KEY=tu-key
-    echo   - Anthropic: set ANTHROPIC_API_KEY=tu-key
+    echo   3. Descarga modelos: ollama pull llama3.1 ^&^& ollama pull qwen2.5-coder:7b
 ) else (
     echo [OK] Ollama encontrado:
     ollama --version
-    echo.
-    echo Descargando modelo llama3.1 (puede tardar unos minutos)...
-    ollama pull llama3.1
 )
 
 echo.
-echo ══════════════════════════════════════════════════
+echo ==================================================
 echo  Setup completado. Para iniciar Genesis:
-echo.
-echo    python genesis.py
-echo.
-echo ══════════════════════════════════════════════════
+echo    run.bat              ^(terminal^)
+echo    GENESIS_DESKTOP.bat  ^(app de escritorio^)
+echo    venv\Scripts\python web_ui.py   ^(web^)
+echo ==================================================
 pause

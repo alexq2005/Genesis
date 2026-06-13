@@ -404,20 +404,33 @@ print("\n=== TEST: Imports v1.5 en genesis.py ===")
 import importlib
 
 # Verificar que genesis.py importa los nuevos modulos
+# NOTA: tras el refactor a mixins + lazy-loading, la integracion vive en
+# genesis.py (lazy loader _init_lazy_module) y los comandos en core/genesis_commands.py.
+# Concatenamos las fuentes para localizar la integracion donde realmente esta.
 genesis_source = open("genesis.py", "r", encoding="utf-8").read()
-test("Import RAGSystem", "from core.rag import RAGSystem" in genesis_source)
-test("Import ModelRouter", "from core.model_router import ModelRouter" in genesis_source)
-test("Import VoiceSystem", "from core.voice import VoiceSystem" in genesis_source)
+_mixin_files = [
+    "core/genesis_processing.py",
+    "core/genesis_commands.py",
+    "core/genesis_tools.py",
+]
+combined_source = genesis_source
+for _mf in _mixin_files:
+    if os.path.exists(_mf):
+        combined_source += "\n" + open(_mf, "r", encoding="utf-8").read()
 
-# Verificar integracion
-test("self.rag en __init__", "self.rag = RAGSystem" in genesis_source)
-test("self.model_router en __init__", "self.model_router = ModelRouter" in genesis_source)
-test("self.voice en __init__", "self.voice = VoiceSystem" in genesis_source)
+test("Import RAGSystem", "from core.rag import RAGSystem" in combined_source)
+test("Import ModelRouter", "from core.model_router import ModelRouter" in combined_source)
+test("Import VoiceSystem", "from core.voice import VoiceSystem" in combined_source)
 
-# Comandos registrados
-test("Comando /rag", '"/rag"' in genesis_source or "== \"/rag\"" in genesis_source or 'cmd == "/rag' in genesis_source)
-test("Comando /models", '"/models"' in genesis_source)
-test("Comando /voice", '"/voice"' in genesis_source)
+# Verificar integracion (lazy-loading: instanciacion en _init_lazy_module)
+test("RAGSystem instanciado", "RAGSystem(base_dir=" in combined_source)
+test("ModelRouter instanciado", "ModelRouter(models_dir=" in combined_source)
+test("VoiceSystem instanciado", "VoiceSystem(vosk_model_path=" in combined_source)
+
+# Comandos registrados (movidos a core/genesis_commands.py)
+test("Comando /rag", '"/rag"' in combined_source or 'cmd == "/rag' in combined_source)
+test("Comando /models", '"/models"' in combined_source)
+test("Comando /voice", '"/voice"' in combined_source)
 
 
 # ============================================================

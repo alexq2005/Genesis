@@ -1088,6 +1088,62 @@ configurar Gemini como backup silencioso (gratis 15 RPM).
 
 ---
 
+### v6.1.0 — Senses & Studio (2026-06-13)
+
+**Tema: GENESIS gana sentidos creativos locales (imagen + voz clonada) y una cabina
+rediseñada — todo offline, en la GPU del usuario.**
+
+**Contexto**: tras v6.0 (soberanía del cerebro), esta fase suma **medios generativos
+locales** y control de dispositivos/UX, manteniendo la regla de 8GB VRAM como restricción
+de diseño central.
+
+**Generación de imágenes (Stable Diffusion local)**:
+- Pollinations.ai (gratis) pasó a pago (HTTP 402) → migración a **SD local**.
+- `core/media_generator._try_local_sd`: pipeline **sd-turbo** (diffusers, fp16, CUDA,
+  attention_slicing), cacheado en VRAM. Prioridad sobre Pollinations; placeholder solo como
+  último recurso.
+- torch reinstalado a **2.5.1+cu121** (venía +cpu). 1ª imagen ~20s (carga), **warm ~0.6s**.
+
+**Voz clonada local (XTTS-v2)**:
+- `core/voice_clone.py`: clonación con **coqui-tts** (XTTS-v2) en GPU. `clone_say` (defaults)
+  y `clone_say_hq` (API bajo nivel: `gpt_cond_len=30` + `temperature` ajustable).
+- Shim `_patch_transformers()` resuelve incompatibilidad `isin_mps_friendly` (transformers 5.x)
+  sin downgradear.
+- Voz **JARVIS/Milton** clonada desde muestra limpia (editada por el usuario en Audacity).
+  Wired a `/api/tts/speak` con `voice="clon:milton"` + fallback a `es-ES-AlvaroNeural`.
+- **Demucs** instalado para aislar voz de música/efectos en muestras.
+
+**Cabina rediseñada (hub `/core`)**:
+- Layout "JARVIS MARK 5" centrado: núcleo de plasma reactivo, **dock de 6 botones**
+  (BUSCAR/WEBS/MÚSICA/CREAR/VER/NÚCLEO) con modales, tablero de evidencias flotante,
+  barra de stats GPU/CPU. Todo desbloqueado (sin gating PRO).
+
+**Control de dispositivos / medios**:
+- `core/system_control.py` (volumen, brillo, energía, impresión, multi-monitor),
+  `core/connections.py` (WiFi/BT/USB), `core/casting.py` (Chromecast/YouTube),
+  `core/netflix.py` (app Store: abrir/reproducir/castear, unificado en una sola app),
+  `core/email_sender.py` + `core/email_reader.py` (Gmail), despertador con voz + música,
+  `core/folder_index.py` + `core/program_index.py` (abrir apps/carpetas por nombre).
+
+**Robustez**:
+- Fix parpadeo `nvidia-smi` (`CREATE_NO_WINDOW`) y cabina duplicada (matar TODAS las
+  instancias antes de relanzar).
+- Regex de intención tolerante a voseo/typos (stems `repro\w*`, `caste\w*`).
+
+**VRAM (RTX 3060 Ti 8GB) — restricción central**:
+- Ollama (6.2GB) + XTTS (2GB) NO coexisten → la voz clonada cae a CPU (~8s/frase) o se
+  evalúa orquestación de carga/descarga. *(Decisión de UX pendiente.)*
+
+**Archivos nuevos**: `core/{casting,connections,netflix,voice_clone,system_control,`
+`folder_index,program_index,email_sender,email_reader,jarvis_routines,music_player,`
+`ui_automation,builder_engine}.py`, `ROADMAP.md`, `SETUP.md`,
+`tests/test_v3_0_capabilities.py`.
+
+**Resultado**: GENESIS ve (analiza imágenes), **crea** (imágenes SD) y **habla con voz
+clonada** — 100% local. Próximo foco: orquestador de VRAM y capa de tools (N4).
+
+---
+
 ## Resumen del Roadmap
 
 | Version | Tema | Modulos | Tests |
@@ -1111,7 +1167,8 @@ configurar Gemini como backup silencioso (gratis 15 RPM).
 | v5.7 ✅ | JARVIS Intelligence | 124 | 5,197 |
 | v5.8 ✅ | Autonomous Orchestration | 128 | 5,320 |
 | v5.9 ✅ | System Mastery | 132 | 5,425 |
-| **v6.0** ✅ | **Digital Sovereignty** | **133** | **5,473** |
+| v6.0 ✅ | Digital Sovereignty | 133 | 5,473 |
+| **v6.1** ✅ | **Senses & Studio (imagen SD + voz clonada + hub)** | **~146** | **5,473+** |
 
 **GENESIS v6.0 COMPLETADO.** 133 módulos, 125+ auto-detect sections, **router multi-provider
 con failover**, 2 modelos Ollama en producción (Genesis + Qwen Coder), desktop app, project

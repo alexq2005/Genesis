@@ -569,6 +569,148 @@
 
 ---
 
+## ERR-054: Auditoría 2026-06-10 — 12 bugs C1 corregidos en batch
+- **Fecha:** 2026-06-10
+- **Contexto:** Auditoría integral del proyecto (ver `docs/AUDITORIA_2026-06-10.md`). Se encontraron y corrigieron 12 bugs de confianza C1.
+- **Errores corregidos:**
+  1. `self.log.warning(...)` en 4 sitios (genesis_processing.py:76,764,1024; genesis.py:566) — GenesisLogger NO tiene `.warning`, solo `.info/.error/.debug`. Dentro de except handlers lanzaba AttributeError secundario que tumbaba la respuesta. → `.error`.
+  2. `self.feedback.positive_count` (genesis_processing.py) — FeedbackSystem guarda en `self.data["positive_count"]`, no como atributo. ReflectionEngine arranca enabled con interval=25 → crash garantizado en la interacción 25. → `self.feedback.data["positive_count"]` + bloque envuelto en try/except.
+  3. `render_template_string` y `Path` no importados en web_ui.py → `/dashboard`, `/dashboard/live`, `/api/media/download` devolvían 500 siempre (NameError). → agregados a los imports.
+  4. `BackupManager.restore_backup` (safe_io.py:227) — `name.split("_",1)` parte mal `memory_data_x.json` (dir_name="memory" nunca matchea "memory_data") → recovery devolvía True sin restaurar nada. → match por prefijo `data_dir.name + "_"`.
+  5. `brain.think(prompt, system_prompt=...)` (genesis.py:986) — firma real es `think(system_prompt, messages)`; el posicional colisionaba → TypeError, `/doc` generaba siempre placeholder. → `think(system_prompt=..., messages=[...])`.
+  6. Mensaje de usuario duplicado en short_term (genesis_processing.py:124) — se agregaba en línea 80 y otra vez en el retorno directo de auto-tool → contexto contaminado. → quitada la 2ª.
+  7. `len(memory.short_term)` sin `__len__` (5 call-sites) → Live Dashboard/health_monitor/proactive con TypeError. → `__len__` agregado a ShortTermMemory.
+  8. `LongTermMemory._save`/`EmotionalMemory._save` usaban `open(w)` directo, no atómico — corrupción con threads daemon (heartbeat, curiosity-gen) + Flask. → `safe_write_json(create_backup=False)`.
+  9. `safe_write_json` sin `fsync` antes del rename → no durable ante corte de energía. → `f.flush()+os.fsync()` (requirió `import os`).
+  10. Versión runtime `5.9.0` vs docs `6.0.0`; texto hardcodeado "v5.7" en genesis_tools.py:686. → `GENESIS_VERSION="6.0.0"` (single source) + interpolación.
+  11. Higiene repo: 318 archivos del WebView2 (Cookies, Login Data, History) + data/embeddings/generated_media + modelo Vosk 60MB + zip/mp3 trackeados. → `git rm --cached` + `.gitignore` extendido.
+  12. Basura en disco: `nul`, `core/anomaly_detector.py.bak`. → borrados.
+- **Prevención:** (a) GenesisLogger sin `.warning` es intencional — usar `.error`/`.info`. (b) Todos los `_save()` de módulos calientes deben usar `safe_write_json`, nunca `open(w)`. (c) Verificar firma de `brain.think` (system_prompt primero). (d) NUNCA trackear `data/` (contiene perfil del webview con credenciales).
+- **Pendientes (NO resueltos, requieren decisión):** cadena prompt-injection→RCE (S1-S6), suite de tests rota (T1), `smart_scheduler` muerto (C1), god-methods (A1-A2). Ver `docs/AUDITORIA_2026-06-10.md`.
+
+---
+
+## ERR-055: Auditoría 2026-06-10 (parte 2) — Hardening anti prompt-injection/RCE
+- **Fecha:** 2026-06-10
+- **Contexto:** La auditoría (ERR-054) detectó la cadena crítica: contenido externo no confiable (web/documento) → prompt del LLM → `[TOOL:python]`/`[TOOL:shell]` auto-ejecutados sin confirmación → RCE local. Se aplicaron 3 mitigaciones.
+- **Cambios:**
+  1. **Guard de contexto contaminado** (genesis_processing.py): nuevo flag `self._context_tainted` que se activa cuando se inyecta contenido externo (resultados web `needs_llm`, RAG de documentos, `learn_context`). El helper `_guard_tool()` bloquea las tools de `DANGEROUS_TOOLS` (`python`, `shell`, `editar_codigo`, `escribir`, `insertar`, `editar`) cuando el contexto está contaminado. Aplicado en el multi-tool loop y el single-tool loop. Las tools de solo-lectura (`leer`, `listar`, `web`, `sistema`...) siguen permitidas. El flag se resetea por interacción.
+  2. **Auto-pip con allowlist** (genesis_processing.py): el auto pip-install ya NO instala nombres arbitrarios derivados del código del LLM (anti typosquatting/dependency-confusion). Solo instala paquetes en `_pip_allowlist` (valores de `pip_name_map` + ~25 paquetes comunes conocidos) y NUNCA si el contexto está contaminado. Fuera de la allowlist → cae al flujo normal de corrección del LLM.
+  3. **Anti-SSRF en WebReader** (web_intelligence.py): nueva función `is_safe_public_url()` que valida esquema (solo http/https) y resuelve el host por DNS rechazando loopback/privadas/link-local/reserved/metadata cloud (169.254.169.254). `read()` valida la URL inicial y sigue redirects manualmente (máx 5) revalidando cada hop (evita redirect→IP interna).
+- **Verificación:** tests aislados — anti-SSRF 9/9 casos OK, guard de tools OK (limpio permite, contaminado bloquea sistema y permite lectura), `test_provider_router` 48/48 sin regresión, py_compile OK en 8 archivos.
+- **Prevención:** toda nueva tool que mute el sistema o ejecute código debe agregarse a `DANGEROUS_TOOLS`. Toda fuente nueva de contenido externo debe setear `self._context_tainted = True`. Nunca instalar paquetes con nombre derivado del LLM sin allowlist.
+- **Pendientes:** sandbox real (denylist sigue siendo evadible si el contexto NO está contaminado y el usuario ejecuta código directo — riesgo aceptado en PC personal), SelfModifier `IMMUTABLE_FILES` vacío (S5), PathValidator no aplica a device_tools (S6). Ver `docs/AUDITORIA_2026-06-10.md`.
+
+---
+
+## ERR-056: Autonomía + auto-mejora (5 fases) — 2026-06-10
+- **Fecha:** 2026-06-10
+- **Contexto:** Pedido "que Genesis sea autónomo, aprenda y se mejore constantemente". Auditoría previa reveló que el 60% de la maquinaria de autonomía/aprendizaje era decorativa (loops abiertos). Plan aprobado: AGRESIVO + completo. 5 fases.
+- **FASE 0 — Guardrails de auto-modificación** (`core/self_modifier.py`, `core/tools.py`, `core/tool_creator.py`, `core/genesis_processing.py`):
+  - `IMMUTABLE_FILES` poblado con los archivos de guardrails (self_modifier, autonomous_mode, tools, genesis_processing, safe_io) — ineditables incluso vía /apply.
+  - `CRITICAL_FILES` ampliado; `apply_change(human_approved=False)` BLOQUEA críticos en modo autónomo (solo /apply humano).
+  - Patrones peligrosos NUEVOS (delta vs original) → rechazo duro (antes solo advertía).
+  - `tools.py::SelfModifier.edit_own_code` (LLM-facing) ahora valida AST + inmutables/críticos + patrones (antes bypasaba todo).
+  - `tool_creator._load_tool` valida con `_check_security` ANTES del `exec_module` (antes ejecutaba código no validado al cargar).
+- **FASE 1 — Loops de aprendizaje cerrados** (`core/genesis_processing.py`, `core/agents.py`, `genesis.py`):
+  - `meta_learner.get_recommendation` ahora MEZCLA su temperatura recomendada con el auto-tuner (antes nadie la leía).
+  - `adaptive_prompts`: experimento real "estilo_respuesta" con epsilon-greedy; recompensa = score del self_evaluator (antes desconectado).
+  - `auto_learner.get_agent_adjustments` sesga `agents.detect_agent` (antes solo en reportes manuales).
+- **FASE 2 — Suite de tests reparada** (37 archivos): de 317→0 fallos. Causas: runner con `os.chdir(tests/)` rompía rutas relativas (fix: correr desde raíz) + regex incompleto; asserts de integración grep sobre genesis.py rotos por refactor a mixins (fix: concatenar genesis.py + los 3 mixins); mocks desactualizados (add_text doc_id); tests con dependencias ausentes (vosk/fitz/ddg) ahora SKIP grácil. 2 regresiones reales de producción encontradas y corregidas: `voice.py` perdió truncado a 500 chars; contrato del predictor de tokens.
+- **FASE 3 — Loop autónomo de fondo** (`core/heartbeat.py`, `genesis.py`): registro de tareas de fondo (`register_task`) que corren en cada ciclo del heartbeat aunque el usuario no interactúe, gated por killswitch PAUSE + cooldowns + límite de CPU (psutil) + aislamiento de excepciones + backoff. Tareas: persistencia (30min), scheduler_tick (revive smart_scheduler muerto, 2min), consolidación de memoria/REM (120min).
+- **FASE 4 — Auto-mejora de código agresiva** (`config.py`, `genesis.py`, `core/self_modifier.py`): tarea de fondo `auto_mejora_codigo` que muta el propio código. Pipeline: elige módulo NO crítico/inmutable → LLM propone → valida AST+patrones → corre la suite de tests como GATE → AUTO-REVIERTE si fallan. Killswitches: `PAUSE` (todo), `PAUSE_SELFIMPROVE` (solo auto-mejora), `GENESIS_SELF_IMPROVE=false`. `_run_auto_tests` endurecido fail-safe (sys.executable; si no puede correr un test → FALLA, no pasa vacuamente). Cooldown 180min.
+- **Verificación:** suite 6116 passed/0 failed; guardrails (inmutable/crítico/patrón/sintaxis) OK; 3 loops de aprendizaje convergen; background tasks con cooldown/killswitch/aislamiento OK; gate de auto-mejora end-to-end (cambio malo→revertido, bueno→aplicado) OK.
+- **Killswitches (resumen):** crear archivo `PAUSE` en la raíz frena TODO el heartbeat; `PAUSE_SELFIMPROVE` frena solo la auto-mejora de código; `GENESIS_SELF_IMPROVE=false` la desactiva por config.
+- **Prevención:** nueva tool que muta/ejecuta → agregar a `DANGEROUS_TOOLS`; nueva fuente de contenido externo → `self._context_tainted=True`; nueva tarea de fondo → `heartbeat.register_task`; nunca quitar archivos de `IMMUTABLE_FILES` sin entender que son los guardrails.
+
+---
+
+## ERR-057: Primera ejecución real (venv 3.12 + Ollama) — 6 bugs de runtime
+- **Fecha:** 2026-06-10
+- **Contexto:** Probar el proyecto end-to-end por primera vez. Entorno: venv Python 3.12 (el sistema tiene 3.14 incompatible), Ollama local UP con genesis:latest + qwen2.5-coder:7b. Bugs que SOLO aparecen ejecutando (los tests string-grep nunca corrieron estos paths).
+- **Bugs encontrados y corregidos:**
+  1. **`AUTO_BACKUP_INTERVAL` no definido** (`core/genesis_processing.py:1178`): el mixin usaba el constante de config sin importarlo → NameError en `_post_process` (crash en CADA interacción). Fix: import local con fallback.
+  2. **`SHORT_TERM_LIMIT` no definido** (`core/genesis_processing.py:1326`): ídem, en el snapshot del cognitive_monitor. Fix: import local con fallback.
+  3. **`semantic_memory` no cargaba**: dependencia transitiva (numpy) ausente → lazy loader devolvía None → AttributeError. Fix: instalar numpy (los embeddings/RAG tienen fallback TF-IDF que igual lo necesita).
+  4. **`opencv-python==4.12.0` no existe en PyPI** (`requirements.txt:35`): el pin era inválido (la versión real es `4.12.0.88`). Fix: corregido el pin.
+  5. **Colisión de keywords en auto-detect** (`core/genesis_tools.py:1328`): "ejecuta un script python..." disparaba el launcher de "abrir app" (keyword "ejecuta ") ANTES del path de código → el agente no ejecutaba código, buscaba un programa llamado "script python...". Fix: guard `_code_signals` que saltea el launcher cuando el input es claramente un pedido de código.
+  6. **`self.smart_scheduler` no existe** (`genesis.py`, tarea de fondo FASE 3): referenciaba un módulo muerto sin atributo en Genesis. El scheduler real wireado es `self.scheduler` (TaskScheduler). Fix: usar `self.scheduler.tick()`.
+- **Verificación end-to-end (todo OK tras fixes):** chat local responde; auto-detect de sistema/hora con datos reales (RAM 15.8GB, RTX 3060 Ti); ejecución de código agéntica (`primos → [2,3,5,7,11,13,17,19,23,29]`); loop autónomo del heartbeat (investigación web read-only + tareas de fondo persistencia/consolidación + auto-mejora que el guardrail RECHAZÓ por sintaxis inválida = seguridad funcionando en vivo). Suite 6123/0. Web UI en http://127.0.0.1:5000.
+- **Prevención:** los mixins NO comparten namespace con genesis.py — todo constante de config debe importarse explícitamente en el mixin. Verificar pins de requirements contra PyPI real. Las keywords cortas del auto-detect ("ejecuta", "abre") necesitan guards anti-colisión (ya advertido en CLAUDE.md pero faltaban casos).
+
+---
+
+## ERR-2026-06-12: "abrí descargas de la unidad F" abría C:\Downloads (o fallaba)
+- **Fecha:** 2026-06-12
+- **Contexto:** El usuario pidió abrir la carpeta Descargas del disco F (`F:\Descargas`).
+- **Error:** `_resolve_folder` (`core/genesis_tools.py`) tenía `folder_map["descargas"] = "C:/Users/Lexus/Downloads"` hardcodeado y no parseaba el calificador de unidad. "descargas de la unidad f" no matcheaba ninguna clave → caía a búsqueda fuzzy → no encontraba o resolvía a la carpeta de C:.
+- **Análisis:** El mapa de carpetas asumía que cada nombre vive en una única unidad (C:). No existía forma de decir "esta carpeta pero en otra unidad". Además los nombres reales en disco tienen mayúscula/acento ("Descargas", "Imágenes") y el match era exacto en minúscula.
+- **Solución:** Bloque "0. Carpeta en una UNIDAD específica" al inicio de `_resolve_folder`: detecta unidad por `F:/…`, "de la unidad F", "en D", "disco F"; extrae el nombre de carpeta; resuelve contra la raíz de esa unidad con **alias ES/EN** (descargas↔Downloads, documentos↔Documents, imágenes↔Pictures, etc.) + match **case-insensitive** + fuzzy por alias contenido. Si no existe en esa unidad → None (no cae a C:). Sin calificador de unidad, el comportamiento previo se preserva.
+- **Prevención:** Cualquier resolución de recurso (carpeta/archivo/programa) que asuma una única ubicación es frágil en máquinas multi-disco. Parsear siempre el calificador de unidad y matchear case-insensitive contra el FS real, no contra un mapa estático en minúscula. Verificado: "descargas de la unidad F" → `F:/Descargas` ✓.
+- **Follow-up mismo día (2 bugs más en la misma frase real "abre la carpeta prueba que se encuentra en la unidad F"):**
+  1. **Conectores sin limpiar:** "prueba **que se encuentra** en la unidad F" dejaba `_fname="prueba que se encuentra"` → no matcheaba. Fix: regex que elimina frases conectoras ("que se encuentra/halla/está", "ubicada", "localizada", "guardada", "situada", "llamada", "de nombre") + re-strip de "la carpeta/directorio/folder".
+  2. **Solo buscaba en la raíz de la unidad:** la carpeta era `F:\programas\prueba` (subcarpeta). Fix: si no está en la raíz, búsqueda en subcarpetas depth-2 saltando dirs de sistema (`$RECYCLE.BIN`, `System Volume Information`, etc.), match exacto case-insensitive gana sobre parcial. Verificado: "prueba que se encuentra en la unidad F" → `F:\programas\prueba` ✓.
+
+## ERR-2026-06-12b: "abre la carpeta logs" abría una página web (logs.com)
+- **Fecha:** 2026-06-12
+- **Contexto:** El usuario pidió abrir la carpeta `logs`.
+- **Error:** "logs" no estaba en `folder_map` ni en los `search_dirs` de nivel superior → `_resolve_folder` devolvía None → el flujo del handler "abrir X" caía al **fallback de aprendizaje (#7)** que construye una URL candidata (`https://www.logs.com`), hacía HEAD, y como respondía <400 la **abría en el navegador**. El usuario pidió una CARPETA y obtuvo una web.
+- **Análisis:** El handler de "abrir" mezcla intención de app/web/carpeta en un solo flujo con fallbacks en cascada. Cuando el pedido dice explícitamente "carpeta/directorio/folder", la intención es filesystem y jamás debería degradar a abrir una URL. Además "logs" es un nombre ultra-común (cada proyecto tiene uno) → adivinar uno sería incorrecto igual.
+- **Solución:** (1) Guard de **intención-carpeta**: si `inp` contiene "carpeta"/"directorio"/"folder" y `_resolve_folder` falla, NO se cae a web_map/URL-guessing. (2) Nuevo `_search_folder_everywhere(target)`: búsqueda recursiva acotada (depth 3, raíces conocidas, salta `node_modules/venv/.git/__pycache__/site-packages/Windows/AppData/$*`). Si hay 1 resultado → abre; si hay varios → **lista y pregunta cuál**; si 0 → mensaje claro pidiendo ruta/unidad. Verificado: "logs" → 12 carpetas (pregunta cuál) en ~2.5s; "prueba" → 1 (abre); nunca abre logs.com.
+- **Prevención:** Los handlers con fallbacks en cascada (app→web→URL-guess) deben respetar la intención explícita del usuario y cortar la cascada cuando el dominio está claro. "Adivinar una URL" es un fallback peligroso: solo debe correr para pedidos genéricos de "abrir X", nunca cuando se nombró un tipo de recurso concreto (carpeta/archivo).
+
+## ERR-2026-06-12c: "reproducí X" no reproducía (404 en /api/audio) — 3 capas
+- **Fecha:** 2026-06-12
+- **Contexto:** El usuario pidió reproducir música ("reproduce tessa", "in the shadows"). El chat decía "🎵 Reproduciendo…" pero no salía audio.
+- **Error:** El backend funcionaba (búsqueda OK, devolvía `[[PLAY:id]]` en ~1s), pero el proxy `/api/audio/<id>` devolvía **404** → `get_audio_url()` retornaba "". NO fue regresión propia: YouTube endureció su anti-bot.
+- **Análisis (3 capas descubiertas en orden):**
+  1. **Bot-check:** `[youtube] Sign in to confirm you're not a bot. Use --cookies`. Ningún player_client (tv/ios/android/web_safari/mweb) lo evadía sin cookies — la IP estaba flageada.
+  2. **Cookies:** `cookiesfrombrowser` falla en caliente: Brave/Chrome abiertos bloquean la DB ("Could not copy") y Chromium ≥127 usa App-Bound Encryption (Edge: "Failed to decrypt with DPAPI"). Solución: archivo `cookies.txt` exportado con extensión "Get cookies.txt LOCALLY". **Ojo:** ios/android NO soportan cookies (yt-dlp los saltea) → con cookies hay que dejar el cliente default (web/tv).
+  3. **Challenge JS:** con cookies, nuevo error `Signature solving failed / n challenge solving failed → Only images are available`. YouTube exige resolver un challenge JS para entregar URLs de media. Requiere `yt-dlp-ejs` + un runtime JS.
+- **Solución:**
+  1. `core/music_player.py`: soporte de cookies con prioridad archivo (`data/youtube_cookies.txt`) → navegador → sin-cookies, cacheando la estrategia que funciona (`_working_cookie`). `cookies_available()` helper.
+  2. `pip install -U "yt-dlp[default]"` → instala `yt-dlp-ejs==0.8.0` + `pycryptodomex`.
+  3. Opción `js_runtimes={"node": {}}` en los opts de yt-dlp (Node v24 ya instalado). **Formato dict obligatorio** — `["node"]` (lista) tira "Invalid js_runtimes format". NO forzar `player_client`.
+  4. `web_ui.py` `cplay()`: `onerror` que avisa en vez de fallar mudo.
+  5. `data/` ya está en `.gitignore` → las cookies (sesión/login) nunca se commitean. 🔒
+- **Verificado:** `get_audio_url('_tuLd3h19Fw')` → URL googlevideo real (itag=140, m4a) en 2.5s; proxy `/api/audio/<id>` → **HTTP 206 audio/mp4** con Range. Música suena end-to-end.
+- **Prevención:** Las dependencias de YouTube/yt-dlp son frágiles por diseño (YouTube cambia seguido). Mantener yt-dlp actualizado, las cookies frescas (caducan en semanas/meses — re-exportar cuando vuelva el 404), y Node en PATH. El reproductor ahora reporta el fallo en vez de quedar mudo, así el síntoma es visible.
+
+## ERR-2026-06-12d: "abrí youtube music" (app recién instalada) abría el navegador
+- **Fecha:** 2026-06-12
+- **Contexto:** El usuario instaló la app de escritorio YouTube Music y pidió abrirla.
+- **Error:** Genesis abrió music.youtube.com en el navegador en vez de la app.
+- **Análisis (2 causas):**
+  1. **Orden de prioridad:** en el handler "abrir X", el `web_map` (sitios) y el `learned_map` se consultan ANTES del índice de programas instalados. "youtube music" es clave exacta de `web_map` → URL → navegador. La app instalada nunca tenía chance.
+  2. **Índice viejo:** el cache `installed_programs.json` tenía 256 apps (de antes de instalar YouTube Music) → aunque se priorizara, no la encontraba.
+  3. **learned_map envenenado:** al abrir el navegador, `_learn_app` guardó `youtube music → https://music.youtube.com`, reforzando el error.
+- **Solución:**
+  1. Bloque "1.5 PRIORIDAD" en `genesis_tools.py`: antes de learned_map/web_map, si `program_index.find(target)` da match FUERTE (nombre exacto, o todas las palabras de un target multi-palabra dentro del nombre de la app) → abre la app. Match fuerte evita secuestrar intenciones web claras: "youtube music"→app, pero "youtube"→sitio.
+  2. Rescan único on-miss: si find() falla (app recién instalada), `get_index(force=True)` y reintenta.
+  3. Limpieza de la entrada envenenada en `data/learned_apps.json` (y el bloque 1.5 la re-aprende correcta al abrir la app).
+- **Verificado:** "youtube music"→ABRE APP; "youtube"→web; "gmail/spotify/whatsapp"(sin app)→web; "steam/chrome"→app.
+- **Prevención:** En handlers con fallbacks en cascada, las fuentes más específicas/locales (apps instaladas) deben tener prioridad sobre las genéricas (mapa web estático), pero con umbral de match fuerte para no pisar intenciones claras del otro dominio. Índices cacheados necesitan rescan on-miss para captar cambios recientes (apps instaladas/desinstaladas).
+
+## ERR-2026-06-12e: "YouTube Music pregunta ¿salir? / se cierra" al cambiar de tema (CDP)
+- **Fecha:** 2026-06-12
+- **Contexto:** Con el reuso de ventana vía CDP (`Page.navigate`), al pedir otra canción aparecía el diálogo «¿Quieres salir de la aplicación? Es posible que los cambios no se guarden» y la navegación se colgaba; el usuario lo veía como "se cierra YouTube". Además, al quedar la página bloqueada, `_cdp_ytm_target()` no la detectaba y `play_in_app` abría ventanas NUEVAS (pile-up).
+- **Análisis:** YouTube Music registra un handler `beforeunload` que, con media reproduciéndose, dispara el prompt nativo de "salir" cuando algo navega la página. `Page.navigate` de CDP lo gatilla. El prompt bloquea el hilo de la página → CDP/`/json` no responde bien → detección falla → relanza.
+- **Solución** (`core/music_player.py::_cdp_navigate`): antes de `Page.navigate`, (1) `Page.enable`; (2) `Runtime.evaluate` que pone `window.onbeforeunload=null` y agrega un listener en fase de captura que hace `stopImmediatePropagation()` + borra `returnValue` (mata el prompt de YT Music); (3) tras navegar, loop corto que auto-acepta cualquier `Page.javascriptDialogOpening` con `Page.handleJavaScriptDialog {accept:true}`. Belt-and-suspenders.
+- **Verificado:** Numb → In the End → One Step Closer, todo `ytmusic_cdp_reuse`, 1 sola ventana, url cambia, SIN diálogo. Nota: tras un force-kill del chrome dedicado el perfil queda "sucio" y el primer relaunch puede ser flaky (esperar ~15s); en uso normal (ventana persistente) no pasa.
+- **Prevención:** Cualquier automatización que navegue páginas con media activa debe neutralizar `beforeunload` y manejar diálogos JS vía CDP, no asumir que `Page.navigate` es silencioso.
+
+## ERR-2026-06-12f: "502 Bad Gateway" y no se puede volver tras clickear un resultado de investigación
+- **Fecha:** 2026-06-12
+- **Contexto:** El usuario pidió investigar el álbum de HIM, clickeó un resultado en el Tablero de Evidencias y la cabina quedó atrapada en una página externa con "502 Bad Gateway", sin forma de volver.
+- **Análisis:** El server Flask (:5100) estaba VIVO (HTTP 200) — no era el problema. Los links de las tarjetas de investigación (`renderCards` en `_CORE_HTML`) son `<a href="url externa">` sin manejo especial; al clickearlos, la ventana de PyWebView **navega in-place** a la URL externa (reemplaza la cabina). Esa página externa dio 502, y como la cabina es frameless sin barra de navegación nativa, no había "atrás".
+- **Solución:**
+  1. `web_ui.py` `_CORE_HTML`: interceptor global de clicks (capture phase) que detecta `<a>` con href `http(s)` a host NO-local → `preventDefault` + `pywebview.api.open_external(href)` → abre en el navegador del sistema. Los links internos (127.0.0.1/localhost) navegan normal.
+  2. `genesis_desktop.py` `GenesisDesktopAPI.open_external(url)` → `webbrowser.open`.
+  3. Botón **⌂ Home** en el titlebar inyectado → `location.href='http://127.0.0.1:5100/core'`, recupera la cabina desde cualquier página externa (incluso una 502).
+- **Prevención:** En apps WebView/frameless, NUNCA dejar que links externos naveguen la ventana principal — interceptarlos y abrirlos afuera. Siempre tener un botón "home" de recuperación porque no hay barra de navegación nativa.
+
+---
+
 ```markdown
 ## ERR-XXX: [Título descriptivo]
 - **Fecha:** YYYY-MM-DD

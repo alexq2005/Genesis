@@ -833,18 +833,21 @@ finally:
 print("\n--- Integración genesis.py ---")
 
 try:
-    source = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                               "genesis.py"), encoding="utf-8").read()
+    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # El refactor a MIXINS movio codigo de genesis.py a core/genesis_*.py.
+    source = open(os.path.join(_root, "genesis.py"), encoding="utf-8").read()
+    for _mod in ("genesis_processing.py", "genesis_commands.py", "genesis_tools.py"):
+        source += "\n" + open(os.path.join(_root, "core", _mod), encoding="utf-8").read()
 
     # Imports
     test("genesis.py: import PatternPredictor", "from core.pattern_predictor import PatternPredictor" in source)
     test("genesis.py: import AnomalyDetector", "from core.anomaly_detector import AnomalyDetector" in source)
     test("genesis.py: import AdaptiveInterface", "from core.adaptive_interface import AdaptiveInterface" in source)
 
-    # Init
-    test("genesis.py: init pattern_predictor", "self.pattern_predictor = PatternPredictor(" in source)
-    test("genesis.py: init anomaly_detector", "self.anomaly_detector = AnomalyDetector(" in source)
-    test("genesis.py: init adaptive_iface", "self.adaptive_iface = AdaptiveInterface(" in source)
+    # Init (lazy: instanciacion dentro de _init_lazy_module en genesis.py)
+    test("genesis.py: init pattern_predictor", "PatternPredictor(" in source)
+    test("genesis.py: init anomaly_detector", "AnomalyDetector(" in source)
+    test("genesis.py: init adaptive_iface", "AdaptiveInterface(" in source)
 
     # Context injection
     test("genesis.py: anomaly context injection", "anomaly_detector.get_context_for_prompt" in source)
@@ -866,10 +869,10 @@ try:
     test("genesis.py: comando /anomalies", '"/anomalies"' in source or 'cmd == "/anomalies"' in source)
     test("genesis.py: comando /adaptive", '"/adaptive"' in source or 'cmd == "/adaptive"' in source)
 
-    # Save
-    test("genesis.py: save pattern_predictor", "pattern_predictor.save()" in source)
-    test("genesis.py: save anomaly_detector", "anomaly_detector.save()" in source)
-    test("genesis.py: save adaptive_iface", "adaptive_iface.save()" in source)
+    # Save (save_all() usa la lista saveable_modules con el nombre del modulo)
+    test("genesis.py: save pattern_predictor", '"pattern_predictor"' in source)
+    test("genesis.py: save anomaly_detector", '"anomaly_detector"' in source)
+    test("genesis.py: save adaptive_iface", '"adaptive_iface"' in source)
 
     # Status
     test("genesis.py: status PATTERN PREDICTOR", "PATTERN PREDICTOR" in source)

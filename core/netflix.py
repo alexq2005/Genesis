@@ -1,0 +1,522 @@
+"""
+GENESIS — Reproducción REAL en Netflix vía CDP (Chrome DevTools Protocol).
+
+Controla una ventana de Chrome real (con Widevine/DRM, así Netflix SÍ reproduce)
+en un perfil dedicado de Genesis. Flujo de `play()`:
+  1) abre/reusa la ventana (perfil dedicado, depuración remota)
+  2) (opcional) cambia al perfil de Netflix por nombre (SwitchProfile)
+  3) navega a la búsqueda del título
+  4) extrae por JS el primer link reproducible (/watch/<ID>)
+  5) navega a /watch/<ID>  → Netflix auto-reproduce
+
+La PRIMERA vez hay que loguearse 1 sola vez en esa ventana (perfil propio de
+Genesis, separado de tu Chrome). Después reproduce solo, a pedido del usuario.
+"""
+import os
+import json
+import time
+import subprocess
+
+from core.music_player import _chrome_exe
+
+_NETFLIX_PROFILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                "data", "chrome_netflix")
+_CDP_PORT = 9224
+_BASE = "https://www.netflix.com"
+
+
+# ----------------------------------------------------------------- CDP ---
+def _target():
+    """Target 'page' de Netflix con depuración activa, o None."""
+    try:
+        import urllib.request
+        data = json.load(urllib.request.urlopen(
+            f"http://127.0.0.1:{_CDP_PORT}/json", timeout=4))
+        for t in data:
+            if t.get("type") == "page" and "netflix.com" in t.get("url", ""):
+                return t
+        # cualquier page (por si está en login)
+        for t in data:
+            if t.get("type") == "page":
+                return t
+    except Exception:
+        pass
+    return None
+
+
+def _ws(target=None):
+    """Abre un websocket al target CDP. None si no se puede."""
+    t = target or _target()
+    if not t:
+        return None
+    url = t.get("webSocketDebuggerUrl")
+    if not url:
+        return None
+    try:
+        import websocket
+        return websocket.create_connection(url, timeout=10)
+    except Exception:
+        return None
+
+
+def _eval(ws, expression, _id, await_promise=False):
+    """Runtime.evaluate y devuelve el value (returnByValue). '' si falla."""
+    try:
+        ws.send(json.dumps({"id": _id, "method": "Runtime.evaluate", "params": {
+            "expression": expression, "returnByValue": True,
+            "awaitPromise": await_promise}}))
+        ws.settimeout(8)
+        deadline = time.time() + 9
+        while time.time() < deadline:
+            msg = json.loads(ws.recv())
+            if msg.get("id") == _id:
+                return (((msg.get("result") or {}).get("result") or {}).get("value")) or ""
+    except Exception:
+        pass
+    return ""
+
+
+def _navigate(ws, url, _id):
+    """Page.navigate + acepta cualquier diálogo. No bloquea."""
+    try:
+        ws.send(json.dumps({"id": _id, "method": "Page.navigate", "params": {"url": url}}))
+        ws.settimeout(3)
+        deadline = time.time() + 4
+        while time.time() < deadline:
+            try:
+                msg = json.loads(ws.recv())
+            except Exception:
+                break
+            if msg.get("method") == "Page.javascriptDialogOpening":
+                ws.send(json.dumps({"id": 999, "method": "Page.handleJavaScriptDialog",
+                                    "params": {"accept": True}}))
+            if msg.get("id") == _id:
+                break
+        return True
+    except Exception:
+        return False
+
+
+def _launch(url):
+    """Abre la ventana de Netflix (perfil dedicado) con depuración remota."""
+    chrome = _chrome_exe()
+    if not chrome:
+        return False
+    try:
+        os.makedirs(_NETFLIX_PROFILE, exist_ok=True)
+        subprocess.Popen([chrome, f"--user-data-dir={_NETFLIX_PROFILE}",
+                          f"--remote-debugging-port={_CDP_PORT}",
+                          "--remote-allow-origins=*", "--no-first-run",
+                          "--no-default-browser-check",
+                          "--autoplay-policy=no-user-gesture-required",
+                          f"--app={url}"])
+        return True
+    except Exception:
+        return False
+
+
+def _ensure_window(url, wait=18):
+    """Garantiza ventana CDP viva. La reusa (navega) o la lanza.
+    Devuelve (ws, target_id) o (None, None)."""
+    t = _target()
+    if t:
+        ws = _ws(t)
+        if ws:
+            ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
+            _navigate(ws, url, 2)
+            return ws, t.get("id")
+    # no había → lanzar y esperar a que el endpoint de debug responda
+    _launch(url)
+    deadline = time.time() + wait
+    while time.time() < deadline:
+        time.sleep(1.0)
+        t = _target()
+        if t:
+            ws = _ws(t)
+            if ws:
+                ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
+                return ws, t.get("id")
+    return None, None
+
+
+def _move_to_screen(target_id, screen):
+    """Mueve la ventana de Netflix al monitor `screen` (1=primaria) y fullscreen,
+    vía Browser.setWindowBounds (CDP). Devuelve el nombre de la pantalla o None."""
+    if not target_id:
+        return None
+    try:
+        from core.system_control import get_monitors
+        mons = get_monitors()
+        if not mons:
+            return None
+        idx = max(0, min(len(mons) - 1, int(screen) - 1))
+        x, y, w, h = mons[idx]
+        import urllib.request
+        import websocket
+        ver = json.load(urllib.request.urlopen(
+            f"http://127.0.0.1:{_CDP_PORT}/json/version", timeout=4))
+        bws = ver.get("webSocketDebuggerUrl")
+        if not bws:
+            return None
+        ws = websocket.create_connection(bws, timeout=8)
+        ws.send(json.dumps({"id": 1, "method": "Browser.getWindowForTarget",
+                            "params": {"targetId": target_id}}))
+        win = None
+        ws.settimeout(5)
+        deadline = time.time() + 6
+        while time.time() < deadline:
+            m = json.loads(ws.recv())
+            if m.get("id") == 1:
+                win = (m.get("result") or {}).get("windowId")
+                break
+        if win is not None:
+            # primero normal en el rect del monitor, después fullscreen
+            ws.send(json.dumps({"id": 2, "method": "Browser.setWindowBounds", "params": {
+                "windowId": win, "bounds": {"left": x, "top": y, "width": w,
+                                            "height": h, "windowState": "normal"}}}))
+            time.sleep(0.3)
+            ws.send(json.dumps({"id": 3, "method": "Browser.setWindowBounds", "params": {
+                "windowId": win, "bounds": {"windowState": "fullscreen"}}}))
+            time.sleep(0.3)
+        ws.close()
+        n = len(mons)
+        return f"pantalla {idx + 1} de {n}" if n > 1 else "la pantalla"
+    except Exception:
+        return None
+
+
+# JS: primer link reproducible de la página de resultados (o detalle).
+_FIND_WATCH = """
+(function(){
+  var a = document.querySelector('a[href*="/watch/"]');
+  if(a){return a.href;}
+  var t = document.querySelector('a[href*="/title/"]');
+  if(t){return t.href.replace('/title/','/watch/');}
+  return '';
+})()
+"""
+
+_IS_LOGIN = """
+(function(){var u=location.href;return (u.indexOf('/login')>=0||
+ u.indexOf('/signup')>=0||document.querySelector('input[name=\"userLoginId\"]')!=null)?'1':'';})()
+"""
+
+
+# --------------------------------------------------------------- API ---
+# AppID de la app oficial de Netflix (Microsoft Store, WebView2).
+_APP_ID = "4DF9E0F8.Netflix_mcm4njqhnhss8!Netflix.App"
+
+
+def app_installed() -> bool:
+    """True si la app de Netflix (Store) está instalada."""
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "if (Get-AppxPackage *Netflix*) {'1'} else {'0'}"],
+            capture_output=True, text=True, timeout=10)
+        return "1" in (r.stdout or "")
+    except Exception:
+        return False
+
+
+def launch_app() -> str:
+    """Abre la app de Netflix (la que ya está logueada como Alex)."""
+    try:
+        subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{_APP_ID}"])
+        return "🎬 Abriendo la app de Netflix."
+    except Exception as e:
+        return f"[ERROR] No pude abrir la app de Netflix: {str(e)[:120]}"
+
+
+def _find_window():
+    """Devuelve el WindowControl de la app de Netflix, o None."""
+    import uiautomation as auto
+    for w in auto.GetRootControl().GetChildren():
+        try:
+            if w.ControlTypeName == "WindowControl" and "netflix" in (w.Name or "").lower():
+                return w
+        except Exception:
+            continue
+    return None
+
+
+def _find_menuitem(name, timeout=3.0):
+    """Busca un MenuItem por nombre (substring) en cualquier popup, con espera."""
+    import uiautomation as auto
+    name_l = name.lower()
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            for ctrl, _d in auto.WalkControl(auto.GetRootControl(), maxDepth=15):
+                if ctrl.ControlTypeName == "MenuItemControl" and \
+                        name_l in (ctrl.Name or "").lower():
+                    return ctrl
+        except Exception:
+            pass
+        time.sleep(0.4)
+    return None
+
+
+def app_playpause() -> str:
+    """Pausa/reanuda la app de Netflix (foco + barra espaciadora)."""
+    try:
+        import uiautomation as auto
+    except Exception:
+        return "🎬 Falta uiautomation para controlar la app."
+    nf = _find_window()
+    if not nf:
+        return "🎬 La app de Netflix no está abierta."
+    try:
+        nf.SetActive()
+        time.sleep(0.4)
+        auto.SendKeys(" ")
+        return "🎬 Play/pausa en Netflix."
+    except Exception as e:
+        return f"[ERROR] {str(e)[:120]}"
+
+
+def cast_app(device_name: str = None) -> str:
+    """Castea la app de Netflix (Store, WebView2) a un Chromecast vía su menú
+    «Configuración y más → Más herramientas → Transmitir contenido». Best-effort
+    (automatización de UI): si no logra clickear el dispositivo, deja el selector
+    abierto para que el usuario elija (1 click)."""
+    try:
+        import uiautomation as auto
+    except Exception:
+        return "📺 Falta uiautomation para manejar el menú de la app."
+    nf = _find_window()
+    if not nf:
+        launch_app()        # abrirla y esperar a que cargue
+        time.sleep(8)
+        nf = _find_window()
+    if not nf:
+        return ("🎬 No pude abrir la app de Netflix. Abrila a mano y pedí de nuevo "
+                "«casteá netflix a la tv».")
+    try:
+        nf.SetActive()
+        time.sleep(0.6)
+        # 1) botón "..." (Configuración y más)
+        btn = nf.ButtonControl(AutomationId="view_1015")
+        if not btn.Exists(2):
+            btn = nf.ButtonControl(Name="Configuración y más (Alt+F)")
+        if not btn.Exists(1):
+            return "📺 No encontré el botón «...» de la app de Netflix."
+        btn.Click(simulateMove=False)
+        time.sleep(1.2)
+        # 2) "Más herramientas" → el flyout se abre con HOVER. NO usar Expand()
+        #    (toggle que cierra el submenú). Mantener el cursor encima.
+        mas = _find_menuitem("herramientas", timeout=3)
+        if not mas:
+            auto.SendKeys("{Esc}")
+            return "📺 No se abrió el menú «...» de la app. Reintentá en un momento."
+        trans = None
+        for _ in range(3):
+            try:
+                mas.MoveCursorToInnerPos(simulateMove=True)
+            except Exception:
+                pass
+            time.sleep(1.2)
+            trans = _find_menuitem("transmitir", timeout=0.6)  # "Transmitir contenido a un dispositivo"
+            if trans:
+                break
+        if not trans:
+            auto.SendKeys("{Esc}")
+            return ("📺 No encontré «Transmitir contenido» en el submenú. Abrilo a mano: "
+                    "«...» → Más herramientas → Transmitir contenido a un dispositivo.")
+        # 3) abrir el selector de dispositivos (hover para desplegar el submenú de devices)
+        try:
+            trans.MoveCursorToInnerPos(simulateMove=True)
+        except Exception:
+            pass
+        time.sleep(1.3)
+        # 4) elegir dispositivo en el selector
+        if device_name:
+            name_l = device_name.lower()
+            end = time.time() + 7
+            while time.time() < end:
+                # mantener el cursor sobre "Transmitir…" para que el submenú no se cierre
+                for ctrl, _d in auto.WalkControl(auto.GetRootControl(), maxDepth=17):
+                    try:
+                        nm = (ctrl.Name or "").lower()
+                        if name_l in nm and ctrl.ControlTypeName in (
+                                "MenuItemControl", "ListItemControl", "ButtonControl",
+                                "TextControl", "HyperlinkControl"):
+                            try:
+                                ctrl.GetInvokePattern().Invoke()
+                            except Exception:
+                                ctrl.Click(simulateMove=False)
+                            return f"📺 Transmitiendo Netflix a «{device_name}»."
+                    except Exception:
+                        continue
+                time.sleep(0.6)
+            return (f"📺 Abrí «Transmitir contenido» pero no encontré «{device_name}» "
+                    f"en la lista de dispositivos. Elegilo vos (1 click).")
+        # sin device → invocar transmitir para que aparezca el selector
+        try:
+            trans.GetInvokePattern().Invoke()
+        except Exception:
+            pass
+        return "📺 Abrí el selector de transmisión. Elegí tu dispositivo en la lista."
+    except Exception as e:
+        return f"[ERROR] Cast app: {str(e)[:140]}"
+
+
+def play(query: str = "", profile: str = None, screen: int = None) -> str:
+    """Netflix = SOLO la app de la Store (decisión del usuario 2026-06-12).
+    Esta función NUNCA abre Chrome. Redirige a la app para no abrir 'otra app'.
+    La ruta Chrome quedó deshabilitada (ver _play_chrome)."""
+    r = launch_app()
+    if query:
+        r += (f"\nℹ️ Buscá **{query}** en la app y dale play (dentro de la app no "
+              f"puedo buscar por código). ¿Querés que la castee a la TV?")
+    return r
+
+
+def _play_chrome(query: str, profile: str = None, screen: int = None) -> str:
+    """[DESHABILITADO] Ruta vieja por Chrome/CDP. Ya no se usa — abría una segunda
+    app de Netflix distinta de la app de la Store. Conservada por referencia."""
+    if not _chrome_exe():
+        return "🎬 No encontré Chrome para abrir Netflix."
+    import urllib.parse as up
+    search_url = f"{_BASE}/search?q=" + up.quote(query)
+    ws, tid = _ensure_window(search_url, wait=18)
+    if not ws:
+        return "🎬 No pude abrir la ventana de Netflix."
+    try:
+        # ¿está logueado?
+        time.sleep(2.0)
+        if _eval(ws, _IS_LOGIN, 10) == "1":
+            ws.close()
+            return ("🎬 Abrí la ventana de Netflix de Genesis, pero hay que **iniciar "
+                    "sesión una sola vez** ahí (es un perfil propio, separado de tu "
+                    "Chrome). Logueate y volvé a pedírmelo — después reproduzco solo.")
+        # cambiar de perfil si lo pidieron
+        if profile:
+            _navigate(ws, f"{_BASE}/SwitchProfile?tprofileName=" + up.quote(profile.title()), 11)
+            time.sleep(2.5)
+            _navigate(ws, search_url, 12)
+        # esperar resultados y extraer link reproducible (poll ~10s)
+        href = ""
+        for i in range(10):
+            time.sleep(1.0)
+            href = _eval(ws, _FIND_WATCH, 20 + i)
+            if href:
+                break
+        if not href:
+            ws.close()
+            return (f"🎬 Abrí Netflix buscando «{query}» pero no encontré un resultado "
+                    f"reproducible. ¿Está en el catálogo? Dale play vos en la ventana.")
+        _navigate(ws, href, 40)        # → Netflix auto-reproduce
+        ws.close()
+        donde = ""
+        if screen:
+            scr = _move_to_screen(tid, screen)
+            if scr:
+                donde = f" en **{scr}** (pantalla completa)"
+        return f"🎬 Reproduciendo **{query}** en Netflix{donde}."
+    except Exception as e:
+        try:
+            ws.close()
+        except Exception:
+            pass
+        return f"[ERROR] Netflix: {str(e)[:140]}"
+
+
+def play_pause() -> str:
+    """Pausa/reanuda el video de Netflix."""
+    ws = _ws()
+    if not ws:
+        return "🎬 No hay una ventana de Netflix activa."
+    js = ("(function(){var v=document.querySelector('video');if(!v)return 'no';"
+          "if(v.paused){v.play();return 'play';}else{v.pause();return 'pause';}})()")
+    r = _eval(ws, js, 50)
+    ws.close()
+    if r == "pause":
+        return "🎬 Pausé Netflix."
+    if r == "play":
+        return "🎬 Reanudé Netflix."
+    return "🎬 No encontré un video en reproducción."
+
+
+# JS: abre el selector de transmisión de Chrome.
+#  1) botón de cast del reproductor de Netflix (DOM de la página), o
+#  2) Remote Playback API del <video> (v.remote.prompt()).
+_OPEN_CAST = """
+(function(){
+  var b=document.querySelector('[data-uia="control-cast"],button[aria-label*="ransmit"],'
+        +'button[aria-label*="ast"]');
+  if(b){b.click();return 'btn';}
+  var v=document.querySelector('video');
+  if(v&&v.remote){try{v.remote.prompt();return 'remote';}catch(e){return 'err:'+e.message;}}
+  return 'none';
+})()
+"""
+
+
+def _click_device_ui(device_name: str, tries: int = 3) -> bool:
+    """Clickea el dispositivo por nombre en el bubble de cast de Chrome (UI Automation)."""
+    try:
+        import uiautomation as auto
+    except Exception:
+        return False
+    name_l = (device_name or "").strip().lower()
+    if not name_l:
+        return False
+    for _ in range(tries):
+        time.sleep(1.2)
+        try:
+            for ctrl, _d in auto.WalkControl(auto.GetRootControl(), maxDepth=28):
+                try:
+                    nm = (ctrl.Name or "").lower()
+                    if name_l in nm and ctrl.ControlTypeName in (
+                            "ListItemControl", "ButtonControl", "MenuItemControl",
+                            "TextControl", "HyperlinkControl"):
+                        ctrl.Click(simulateMove=False)
+                        return True
+                except Exception:
+                    continue
+        except Exception:
+            pass
+    return False
+
+
+def cast(device_name: str = None) -> str:
+    """Netflix = SOLO la app de la Store. Redirige a cast_app (no usa Chrome)."""
+    return cast_app(device_name)
+
+
+def _cast_chrome(device_name: str = None) -> str:
+    """[DESHABILITADO] Cast vía Chrome. Reemplazado por cast_app (app de la Store)."""
+    ws = _ws()
+    if not ws:
+        return ("🎬 No hay una ventana de Netflix activa. Pedí primero «reproducí X "
+                "en netflix» y después «casteá a la tv».")
+    r = _eval(ws, _OPEN_CAST, 60, await_promise=False)
+    ws.close()
+    if r == "none":
+        return ("📺 No encontré el botón de transmitir en el reproductor. Abrí el menú "
+                "de Chrome (⋮) → «Transmitir…» y elegí el dispositivo.")
+    if r.startswith("err"):
+        return ("📺 Netflix bloqueó la transmisión directa del video. Probá: menú de "
+                "Chrome (⋮) → «Transmitir…» → «Transmitir pestaña» → elegí el Chromecast.")
+    # se abrió el selector → intentar clickear el dispositivo
+    if device_name:
+        if _click_device_ui(device_name):
+            return f"📺 Transmitiendo Netflix a «{device_name}» desde el navegador."
+        return (f"📺 Abrí el selector de transmisión pero no pude clickear «{device_name}» "
+                f"automáticamente. Elegilo en la lista (1 click) y empieza a transmitir.")
+    return "📺 Abrí el selector de transmisión de Chrome. Elegí tu Chromecast en la lista."
+
+
+def stop() -> str:
+    """Detiene (pausa + vuelve al inicio)."""
+    ws = _ws()
+    if not ws:
+        return "🎬 No hay una ventana de Netflix activa."
+    try:
+        _eval(ws, "var v=document.querySelector('video');if(v)v.pause();", 51)
+        _navigate(ws, f"{_BASE}/", 52)
+        ws.close()
+        return "🎬 Detuve Netflix."
+    except Exception:
+        return "🎬 No pude detener Netflix."

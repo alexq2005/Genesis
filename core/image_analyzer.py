@@ -1,9 +1,10 @@
 """
-GENESIS — Image Analyzer (v3.3)
+GENESIS — Image Analyzer (v6.1)
 
-Analisis de imagenes local basado en metadatos y path (sin modelo de vision).
-Extrae informacion del nombre de archivo, extension y tamaño. Mantiene cache
-de analisis con eviccion por antigüedad.
+Reconocimiento visual REAL 100% local vía modelo de visión en Ollama (llava):
+describe el contenido de la imagen, reconoce objetos/escenas y lee texto.
+Si el modelo de visión no está disponible, degrada a análisis por metadatos.
+OCR opcional con Tesseract (pytesseract) si el binario está instalado.
 
 Componentes:
 - ImageMetadata: metadatos extraidos del archivo
@@ -207,25 +208,101 @@ class ImageAnalyzer:
         "docs": "imagen de documentacion",
     }
 
-    def __init__(self, base_dir: str = "data/image_analyzer"):
+    def __init__(self, base_dir: str = "data/image_analyzer",
+                 vision_model: str = "llava", ollama_url: str = ""):
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
         self.cache = AnalysisCache(max_entries=100)
         self.total_analyzed = 0
         self.recent_analyses = deque(maxlen=20)
+        # Modelo de visión local (Ollama). Se lee de config si no se pasa.
+        self.vision_model = vision_model
+        if not ollama_url:
+            try:
+                from config import OLLAMA_URL as _OU
+                ollama_url = _OU
+            except Exception:
+                ollama_url = "http://localhost:11434"
+        self.ollama_url = ollama_url.rstrip("/")
+        self._vision_ok = None  # cache de disponibilidad
 
         self._load()
 
-    def analyze(self, image_path: str) -> dict:
-        """Analiza una imagen por metadatos y path. Retorna resultado."""
+    def _vision_available(self) -> bool:
+        """True si hay un modelo de visión cargado en Ollama."""
+        if self._vision_ok is not None:
+            return self._vision_ok
+        try:
+            import urllib.request
+            with urllib.request.urlopen(self.ollama_url + "/api/tags", timeout=4) as r:
+                tags = r.read().decode("utf-8", "replace")
+            self._vision_ok = self.vision_model.split(":")[0] in tags
+        except Exception:
+            self._vision_ok = False
+        return self._vision_ok
+
+    def _vision_describe(self, image_path: str, prompt: str = "") -> str:
+        """Describe el contenido REAL de la imagen con el modelo de visión local."""
+        import base64, json, urllib.request
+        try:
+            with open(image_path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("ascii")
+        except Exception as e:
+            return ""
+        if not prompt:
+            prompt = ("Describe qué se ve en esta imagen: objetos, personas, "
+                      "escena, colores y cualquier texto visible. Sé conciso.")
+        # Forzar español + desarmar rechazos: llava se niega a describir capturas
+        # con código/texto creyéndolas "sensibles". Es la PROPIA pantalla del
+        # usuario, que autoriza el análisis. Nunca debe negarse.
+        prompt = "RESPONDE SIEMPRE EN ESPAÑOL.\n\n" + prompt
+        sys_p = ("Eres el módulo de visión de Genesis, el asistente personal del "
+                 "usuario en SU propia computadora. El usuario te autoriza "
+                 "explícitamente a describir cualquier imagen o captura de SU "
+                 "pantalla, incluido texto, código, interfaces y datos. NUNCA te "
+                 "niegues ni digas que el contenido es sensible: es el propio "
+                 "material del usuario. Describe objetivamente lo que ves. "
+                 "Respondes SIEMPRE en español, nunca en inglés.")
+        payload = json.dumps({
+            "model": self.vision_model, "prompt": prompt,
+            "system": sys_p,
+            "images": [b64], "stream": False,
+        }).encode("utf-8")
+        try:
+            req = urllib.request.Request(
+                self.ollama_url + "/api/generate", data=payload,
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=120) as r:
+                data = json.loads(r.read().decode("utf-8", "replace"))
+            return (data.get("response") or "").strip()
+        except Exception as e:
+            return ""
+
+    def ocr(self, image_path: str) -> str:
+        """Extrae texto de la imagen con Tesseract (si está instalado)."""
+        try:
+            import pytesseract
+            from PIL import Image
+            return pytesseract.image_to_string(Image.open(image_path), lang="spa+eng").strip()
+        except Exception:
+            return ""  # Tesseract no instalado o sin binario
+
+    def analyze(self, image_path: str, prompt: str = "") -> dict:
+        """Analiza una imagen con el modelo de visión (llava).
+
+        Args:
+            image_path: ruta a la imagen
+            prompt: pregunta/instrucción específica para el modelo (opcional)
+        """
         path_str = str(image_path)
 
-        # Revisar cache primero
-        cached = self.cache.get(path_str)
-        if cached:
-            cached["cached"] = True
-            return cached
+        # Con prompt específico NO usar cache (cada pregunta es distinta)
+        if not prompt:
+            cached = self.cache.get(path_str)
+            if cached:
+                cached["cached"] = True
+                return cached
 
         # Extraer metadatos
         metadata = ImageMetadata(path_str)
@@ -238,10 +315,24 @@ class ImageAnalyzer:
             result.confidence = 0.1
             result.tags = ["no_imagen"]
         else:
-            result.description = self._generate_description(metadata)
-            result.tags = self._extract_tags(metadata)
-            result.objects = self._detect_objects(metadata)
-            result.confidence = self._calculate_confidence(metadata)
+            # VISIÓN REAL primero: si hay modelo (llava) en Ollama, describe el
+            # CONTENIDO de la imagen. Si no, degrada a heurística por metadatos.
+            vision_desc = ""
+            if metadata.format != "SVG" and self._vision_available():
+                vision_desc = self._vision_describe(path_str, prompt)
+            if vision_desc:
+                result.description = vision_desc
+                result.confidence = 0.9
+                result.tags = self._extract_tags(metadata) + ["vision_real"]
+                result.method = "llava"
+                ocr_text = self.ocr(path_str)
+                if ocr_text:
+                    result.description += f"\n\n[Texto detectado (OCR)]:\n{ocr_text[:1000]}"
+            else:
+                result.description = self._generate_description(metadata)
+                result.tags = self._extract_tags(metadata)
+                result.objects = self._detect_objects(metadata)
+                result.confidence = self._calculate_confidence(metadata)
 
         result_dict = result.to_dict()
         self.cache.put(path_str, result_dict)

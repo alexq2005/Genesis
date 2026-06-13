@@ -8,6 +8,7 @@ Contiene la lógica de auto-detección y ejecución de herramientas:
 """
 import json
 import os
+_GX_HOME = os.path.expanduser("~").replace("\\", "/")  # N7: portabilidad multi-usuario
 import re
 import time
 from pathlib import Path
@@ -649,6 +650,280 @@ class GenesisToolsMixin:
 
         return None
 
+    def _ui_action(self, inp: str, raw: str):
+        """Automatización de UI: controla menús, botones y teclado de CUALQUIER app.
+        Devuelve un mensaje si ejecutó una acción, o None si el input no aplica.
+        Va ANTES de open/content para que 'abrí el menú X' no caiga en el launcher."""
+        import re as _re
+        try:
+            from core import ui_automation as _ui
+        except Exception:
+            return None
+        if not _ui.available().get("uiautomation"):
+            return None
+        t = (inp or "").strip()
+
+        def _split_app(s):
+            """Separa 'guardar de notepad' → ('guardar', 'notepad'). Toma el PRIMER
+            separador (de/del/en/al) para que apps con 'de' en el nombre ('bloc de
+            notas') queden enteras: 'menús del bloc de notas' → app='bloc de notas'."""
+            m = _re.search(r"\s+(?:del|de\s+la|de\s+los|de\s+las|de|en\s+el|"
+                           r"en\s+la|en|al|a\s+la)\s+(?:la\s+|el\s+)?(.+)$", s)
+            if m:
+                return s[:m.start()].strip(), m.group(1).strip().rstrip(".?!,")
+            return s.strip(), None
+
+        # 1. Listar ventanas abiertas
+        if _re.search(r"(qu[eé]\s+ventanas|ventanas\s+(abiertas|tengo|hay)|"
+                      r"qu[eé]\s+(tengo|hay)\s+abierto)", t):
+            ws = _ui.list_windows()
+            return ("Ventanas abiertas:\n" + "\n".join("  • " + w for w in ws)
+                    if ws else "No detecté ventanas abiertas.")
+
+        # 1b. MACRO copiar→pegar entre ventanas (multi-paso):
+        #     "copiá el contenido de A y pegalo en B" / "seleccioná todo de A,
+        #     copialo y pegalo en B". Resuelve "este/el otro" si hay 2 ventanas.
+        if _re.search(r"\bcopi[áa]", t) and _re.search(r"\bpeg[áa]", t):
+            sm = _re.search(
+                r"(?:de|desde|del)\s+(?:la\s+|el\s+)?(?:ventana\s+|app\s+|"
+                r"documento\s+|archivo\s+|pesta[ñn]a\s+)?(.+?)"
+                r"(?:\s*,|\s+y\s+|\s+luego|\s+despu[eé]s|\s+peg)", t)
+            tm = _re.search(
+                r"peg[áa]\w*\s+(?:lo|la|los|las\s+)?(?:en|a|al)\s+(?:la\s+|el\s+|"
+                r"este\s+|esta\s+)?(?:ventana\s+|app\s+|documento\s+|archivo\s+|"
+                r"pesta[ñn]a\s+|otro\s+|otra\s+)?(.+)$", t)
+            src = sm.group(1).strip() if sm else None
+            tgt = tm.group(1).strip().rstrip(".?!,") if tm else None
+            return self._do_copy_paste(src, tgt)
+
+        # 1c. Enfocar / traer una ventana al frente
+        m = _re.search(r"(?:enfoc[áa]r?|activ[áa]r?|tra[ée]r?|cambi[áa]r?\s+a|"
+                       r"pas[áa]r?\s+a|mostr[áa]r?)\s+(?:la\s+|el\s+)?"
+                       r"(?:ventana\s+|app\s+|aplicaci[oó]n\s+)(.+)$", t)
+        if m:
+            tgtw = m.group(1).strip().rstrip(".?!,")
+            return (f"Traje «{tgtw}» al frente."
+                    if _ui.focus_app(tgtw) else f"No encontré la ventana «{tgtw}».")
+
+        # 2. Inspeccionar menús/botones de una app
+        m = _re.search(r"(?:inspeccion[áa]r?|mostr[aá]me?\s+(?:los\s+|las\s+)?"
+                       r"(?:men[uú]s?|opciones|botones)|qu[eé]\s+(?:men[uú]s?|"
+                       r"opciones|botones))\b(.*)$", t)
+        if m:
+            _, app = _split_app(m.group(1))
+            items = _ui.inspect_ui(app)
+            if not items:
+                tgt = f"«{app}»" if app else "la ventana activa"
+                return f"No pude inspeccionar {tgt} (¿está abierta y al frente?)."
+            head = (f"Elementos de «{app}»:" if app
+                    else "Elementos de la ventana activa:")
+            return head + "\n" + "\n".join(
+                f"  • [{e['type']}] {e['name']}" for e in items[:40])
+
+        # 3. Menú: "abrí el menú archivo > guardar de notepad" / "andá a archivo guardar"
+        m = _re.search(r"(?:abr[ií]r?|abre|and[áa]|ir|navega[r]?|despleg[áa]r?)\s+"
+                       r"(?:a\s+|al\s+)?(?:el\s+)?men[uú]\s+(.+)$", t)
+        if not m and "men" in t:
+            m = _re.search(r"\bmen[uú]\s+(.+)$", t)
+        if m:
+            rest, app = _split_app(m.group(1))
+            steps = [s for s in (x.strip() for x in _re.split(
+                r"\s*(?:>|→|->|,|\s+y\s+|\s+luego\s+|\s+despu[eé]s\s+)\s*", rest)) if s]
+            return _ui.open_menu(steps or rest, app)
+
+        # 4. Atajo de teclado: "apretá/presioná/tecleá ctrl+s"
+        m = _re.search(r"(?:apret[áa]|presion[áa]|mand[áa]|tecle[áa]|atajo|"
+                       r"combinaci[oó]n|teclas?)\s+(.+)$", t)
+        if m:
+            combo, _ = _split_app(m.group(1))
+            combo = combo or m.group(1)
+            if "+" in combo or _re.search(
+                    r"\b(ctrl|control|alt|shift|win|enter|intro|esc|escape|tab|"
+                    r"supr|suprimir|espacio|f[0-9]{1,2})\b", combo):
+                return _ui.press_hotkey(combo)
+
+        # 5. Escribir texto. Para NO secuestrar pedidos de código ("escribí una
+        #    función en python"), con "escribí" solo activa si: hay comillas, el
+        #    verbo es tipeá/redactá (inequívocos), o la "app" es una VENTANA real.
+        m = _re.search(r"(?:escrib[íi]|tipe[áa]|redact[áa])\s+(.+)$", t)
+        if m:
+            verb = t[m.start():].split()[0]
+            rawm = _re.search(r"(?:escrib[íi]|tipe[áa]|redact[áa])\s+(.+)$",
+                              (raw or "").strip(), _re.IGNORECASE)
+            raw_g = (rawm.group(1) if rawm else m.group(1)).strip()
+            qm = _re.search(r"['\"“](.+?)['\"”]", raw_g)
+            _, app = _split_app(m.group(1))
+            app_win = bool(app) and (_ui._find_window(app) is not None)
+            if qm or app_win or verb.startswith(("tipe", "redact")):
+                if app_win:
+                    _ui.focus_app(app)
+                if qm:
+                    txt = qm.group(1)
+                else:
+                    txt = raw_g
+                    if app_win:  # quitar "... en <app>" del final
+                        txt = _re.sub(r"\s+(?:del|de|en|al)\s+.+$", "", txt).strip()
+                txt = txt.strip().strip("'\"“”")
+                if txt:
+                    return _ui.type_text(txt)
+
+        # 6. Click en un elemento por nombre
+        m = _re.search(r"(?:cli?cke[áa]r?|hac[ée]\s+cli?ck\s+en|toc[áa]|puls[áa]|"
+                       r"selccion[áa]|seleccion[áa])\s+(?:el\s+|la\s+)?"
+                       r"(?:bot[oó]n\s+|men[uú]\s+|pesta[ñn]a\s+|opci[oó]n\s+|item\s+)?"
+                       r"(.+)$", t)
+        if m:
+            rest, app = _split_app(m.group(1))
+            return _ui.click_element(rest, app)
+
+        return None
+
+    def _do_copy_paste(self, src, tgt):
+        """Macro: enfoca origen → Ctrl+A → Ctrl+C → enfoca destino → Ctrl+V.
+        Resuelve deícticos: origen vacío/'este' = ventana activa; destino
+        'el otro/este otro' = la otra ventana si solo hay dos candidatas."""
+        import re as _re
+        import time as _t
+        from core import ui_automation as _ui
+        DEIXIS = {"este", "esta", "esto", "este documento", "este otro", "el otro",
+                  "la otra", "el otro documento", "la otra ventana", "ese", "aquel",
+                  "aca", "acá", "aqui", "aquí", "alla", "allá", "esto", "documento",
+                  "otro", "otra", "el de al lado"}
+        wins = _ui.list_windows()
+        if not wins:
+            return "No detecté ventanas abiertas."
+
+        def resolve(name, exclude=None):
+            if not name or name.lower().strip() in DEIXIS:
+                return None  # deixis / vacío
+            nl = name.lower().strip()
+            for w in wins:
+                if nl in w.lower() and w != exclude:
+                    return w
+            words = [x for x in nl.split() if len(x) > 2]
+            for w in wins:
+                if w != exclude and words and all(x in w.lower() for x in words):
+                    return w
+            return False  # nombrada pero no hallada
+
+        act = _ui._active_window()
+        act_name = act.Name if act else None
+        s = resolve(src)
+        if s is None:
+            s = act_name
+        if not s:
+            return ("No supe de qué ventana copiar. Nombrala. Abiertas: "
+                    + ", ".join(wins))
+        if s is False:
+            return (f"No encontré la ventana de origen «{src}». Abiertas: "
+                    + ", ".join(wins))
+        tg = resolve(tgt, exclude=s)
+        if tg is None:  # destino deíctico ("el otro") → inferir
+            cabin = "genesis ai"
+            # 1) preferir otra ventana del MISMO tipo de app que el origen
+            #    (ej: origen "Doc1 - Word" → buscar otra "... Word")
+            s_app = s.split(" - ")[-1].split(":")[-1].strip().lower()
+            same = [w for w in wins if w != s and w.lower() != cabin
+                    and s_app and len(s_app) > 3 and s_app in w.lower()]
+            others = [w for w in wins if w != s and w.lower() != cabin]
+            if len(same) == 1:
+                tg = same[0]
+            elif len(others) == 1:
+                tg = others[0]
+            else:
+                cands = same or others
+                return ("¿En cuál pego? Decime el nombre. Candidatas: "
+                        + ", ".join(cands[:8]))
+        if tg is False:
+            return (f"No encontré la ventana destino «{tgt}». Abiertas: "
+                    + ", ".join(wins))
+        # Secuencia
+        if not _ui.focus_app(s):
+            return f"No pude enfocar la ventana de origen «{s}»."
+        _t.sleep(0.35)
+        _ui.press_hotkey("ctrl+a")
+        _t.sleep(0.2)
+        _ui.press_hotkey("ctrl+c")
+        _t.sleep(0.35)
+        if not _ui.focus_app(tg):
+            return f"Copié de «{s}» pero no pude enfocar el destino «{tg}»."
+        _t.sleep(0.35)
+        _ui.press_hotkey("ctrl+v")
+        return f"Listo: copié el contenido de «{s}» y lo pegué en «{tg}»."
+
+    def _wake_callback(self, reminder):
+        """Acción de despertador: cuando un recordatorio 🌅 se dispara, te HABLA
+        (anuncio por voz) y DESPUÉS reproduce música. Un despertador de verdad."""
+        try:
+            msg = getattr(reminder, "message", "") or ""
+            if not (msg.startswith("🌅") and "▶" in msg):
+                return
+            song = msg.split("▶", 1)[1].strip()
+            # 1) ANUNCIO HABLADO (TTS local, suena por los parlantes directo).
+            try:
+                import datetime as _dt
+                hora = _dt.datetime.now().strftime("%H:%M")
+                texto = (f"Buen día. Son las {hora}. Arriba, hora de levantarse. "
+                         f"Te pongo música.")
+                # COM init: el callback corre en el thread del timer (no el main)
+                try:
+                    import pythoncom
+                    pythoncom.CoInitialize()
+                except Exception:
+                    pass
+                import pyttsx3
+                eng = pyttsx3.init()
+                eng.setProperty("rate", 165)
+                eng.say(texto)
+                eng.runAndWait()
+                try:
+                    eng.stop()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            # 2) MÚSICA
+            from core import music_player as _mp
+            _mp.play_in_app(song)
+        except Exception:
+            pass
+
+    def _ensure_reminders(self):
+        """Crea el ReminderSystem y garantiza el callback de despertador."""
+        from core.reminder_system import ReminderSystem
+        if not hasattr(self, "_reminders"):
+            self._reminders = ReminderSystem()
+        self._reminders.set_callback(self._wake_callback)
+        return self._reminders
+
+    @staticmethod
+    def _parse_clock_time(text):
+        """Hora absoluta ('a las 7', '7:30', '7 am', '7 de la tarde') → segundos
+        hasta esa hora (hoy si es futura, mañana si ya pasó). None si no hay hora."""
+        import re as _r
+        import datetime as _dt
+        t = (text or "").lower()
+        m = _r.search(
+            r"(?:a\s+la[s]?\s+)?\b(\d{1,2})(?::(\d{2}))?\s*"
+            r"(a\.?m\.?|p\.?m\.?|de\s+la\s+ma[ñn]ana|de\s+la\s+tarde|"
+            r"de\s+la\s+noche|hs|hrs|h)?\b", t)
+        if not m:
+            return None
+        hh = int(m.group(1))
+        mm = int(m.group(2) or 0)
+        suf = (m.group(3) or "").replace(".", "").strip()
+        if suf in ("pm", "de la tarde", "de la noche") and hh < 12:
+            hh += 12
+        if suf in ("am", "de la mañana") and hh == 12:
+            hh = 0
+        if hh > 23 or mm > 59:
+            return None
+        now = _dt.datetime.now()
+        target = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        if target <= now:
+            target += _dt.timedelta(days=1)
+        return int((target - now).total_seconds())
+
     def _auto_detect_tool(self, user_input: str) -> str:
         """
         Auto-detecta si el usuario pide algo del sistema y ejecuta
@@ -657,6 +932,18 @@ class GenesisToolsMixin:
         """
         inp = user_input.lower().strip()
         import re as _re
+
+        # --- RUTINAS JARVIS (todas las versiones de Iron Man) — alta prioridad ---
+        try:
+            from core import jarvis_routines as _jr
+            if inp in ("rutinas", "rutinas jarvis", "protocolos", "que rutinas tenes",
+                       "qué rutinas tenés", "lista de rutinas"):
+                return _jr.listar()
+            _rk = _jr.detectar(inp)
+            if _rk:
+                return _jr.ejecutar(self, _rk)
+        except Exception as _e:
+            self.log.debug(f"Rutinas JARVIS skip: {_e}")
 
         # --- Capacidades de Genesis (voces, que puedes hacer, etc.) ---
         # NOTA: Estas secciones no requieren imports pesados, van primero para respuesta instantánea
@@ -683,7 +970,8 @@ class GenesisToolsMixin:
                        "cuales son tus capacidades", "que capacidades", "que sabes hacer",
                        "para que sirves", "que funciones tienes", "tus habilidades"]
         if any(k in inp for k in cap_general):
-            return ("🧠 CAPACIDADES DE GENESIS v5.7 — JARVIS Intelligence\n\n"
+            from config import GENESIS_VERSION as _gv
+            return (f"🧠 CAPACIDADES DE GENESIS v{_gv}\n\n"
                     "▸ 🗣️ VOZ: Hablarme por micrófono (STT) y responder con audio (TTS) — 22 voces\n"
                     "▸ 🌐 INTERNET: Buscar en la web, leer páginas, investigar temas\n"
                     "▸ 📄 DOCUMENTOS: Procesar PDF, DOCX, XLSX, CSV, TXT — resúmenes y extracción\n"
@@ -730,16 +1018,45 @@ class GenesisToolsMixin:
             return (f"📅 **{dias[d.weekday()]} {d.day} de {meses[d.month]} de {d.year}**\n"
                     f"Hora: {d.strftime('%H:%M:%S')}")
 
+        # GUARDAR el nombre cuando el usuario lo dice ("mi nombre es Alex", "me llamo Alex", "soy Alex")
+        import re as _ure
+        _name_set = _ure.search(
+            r"\b(?:mi nombre es|me llamo|llamame|llam[áa]me|dec[íi]me|soy)\s+([A-Za-zÁÉÍÓÚáéíóúñÑ]{2,20})\b",
+            inp)
+        if _name_set and any(w in inp for w in ["nombre", "llamo", "llam", "soy", "decime", "dec"]):
+            nombre = _name_set.group(1).strip().capitalize()
+            # No confundir "soy X" con frases tipo "soy programador" — filtrar comunes
+            _no_nombres = {"programador", "tu", "vos", "yo", "el", "la", "un", "una",
+                           "feliz", "argentino", "nuevo", "humano", "genesis"}
+            if nombre.lower() not in _no_nombres:
+                try:
+                    self.memory.long_term.remember(f"El nombre del usuario es {nombre}",
+                                                   category="perfil_usuario", source="usuario")
+                except Exception:
+                    pass
+                return f"👍 Listo, anotado. Te voy a llamar **{nombre}** de ahora en más."
+
         user_keywords = ["mi nombre de usuario", "mi usuario", "nombre de usuario",
                          "mi user", "mi username", "quien soy", "quién soy",
-                         "como me llamo", "cómo me llamo", "mi nombre"]
+                         "como me llamo", "cómo me llamo", "mi nombre", "mi nombre real"]
         if any(k in inp for k in user_keywords):
             import os as _os
             username = _os.getenv("USERNAME", _os.getenv("USER", "desconocido"))
             hostname = _os.getenv("COMPUTERNAME", "desconocido")
+            # Recordar el nombre que el usuario dijo (si lo guardó antes)
+            nombre_real = ""
+            try:
+                for m in self.memory.long_term.memories:
+                    if m.get("category") == "perfil_usuario" and "nombre del usuario es" in m.get("fact", ""):
+                        nombre_real = m["fact"].split("es")[-1].strip()
+            except Exception:
+                pass
+            if nombre_real:
+                return (f"Sos **{nombre_real}** 😎 (cuenta de Windows: {username}, equipo {hostname}).")
             return (f"👤 **Usuario**: {username}\n"
                     f"💻 **Equipo**: {hostname}\n"
-                    f"📁 **Home**: C:/Users/{username}")
+                    f"📁 **Home**: C:/Users/{username}\n"
+                    f"_(Si querés que te llame por tu nombre, decime: «mi nombre es ...»)_")
 
         ip_keywords = ["mi ip", "cual es mi ip", "cuál es mi ip", "mi direccion ip",
                        "mi dirección ip", "ip local", "ip publica", "ip pública"]
@@ -835,12 +1152,12 @@ class GenesisToolsMixin:
             is_size = any(k in inp for k in size_keywords)
             # Extraer la carpeta mencionada
             _folder_map = {
-                "escritorio": "C:/Users/Lexus/Desktop",
-                "desktop": "C:/Users/Lexus/Desktop",
-                "descargas": "C:/Users/Lexus/Downloads",
-                "downloads": "C:/Users/Lexus/Downloads",
-                "documentos": "C:/Users/Lexus/Documents",
-                "documents": "C:/Users/Lexus/Documents",
+                "escritorio": "" + _GX_HOME + "/Desktop",
+                "desktop": "" + _GX_HOME + "/Desktop",
+                "descargas": "" + _GX_HOME + "/Downloads",
+                "downloads": "" + _GX_HOME + "/Downloads",
+                "documentos": "" + _GX_HOME + "/Documents",
+                "documents": "" + _GX_HOME + "/Documents",
                 "genesis": os.path.dirname(os.path.abspath(__file__)),
             }
             # Detectar carpeta por nombre en la query
@@ -901,20 +1218,242 @@ class GenesisToolsMixin:
         )
         from core.tools import FileTools, SystemInfoTool
 
+        # === CONTROL DEL SISTEMA (volumen / energía / brillo / bloqueo) ===
+        from core import system_control as _sc
+        # Confirmación pendiente de acción destructiva (apagar/reiniciar)
+        _pp = getattr(self, "_pending_power", None)
+        if _pp and _re.search(r"^\s*(s[íi]|confirm[áo]?|dale|hacelo|ok|de una)\s*$", inp):
+            self._pending_power = None
+            return getattr(_sc, _pp)()
+        if _pp and _re.search(r"^\s*(no|cancel[áa]r?|dejalo|olvidalo)\s*$", inp):
+            self._pending_power = None
+            return "Listo, cancelé eso."
+        # VOLUMEN
+        _mvol = _re.search(r"\bvolumen\s+(?:al?\s+)?(\d{1,3})", inp)
+        if _mvol:
+            return _sc.set_volume(int(_mvol.group(1)))
+        if _re.search(r"\b(sub[íi]|aument[áa]|m[áa]s)\b.*\bvolumen\b", inp) or \
+           _re.search(r"\bvolumen\b.*\b(arriba|m[áa]s alto|fuerte)\b", inp):
+            return _sc.volume_up()
+        if _re.search(r"\b(baj[áa]|disminu[íi]|menos)\b.*\bvolumen\b", inp) or \
+           _re.search(r"\bvolumen\b.*\b(abajo|m[áa]s bajo)\b", inp):
+            return _sc.volume_down()
+        if _re.search(r"\b(silenci[áa]r?|mute[áa]r?|mute[ao]|sin sonido)\b", inp) and \
+           not any(w in inp for w in ("musica", "música", "cancion", "canción",
+                                      "reproduc", "tema")):  # no chocar con pausa de música
+            return _sc.volume_mute()
+        # BRILLO
+        _mbri = _re.search(r"\bbrillo\s+(?:al?\s+)?(\d{1,3})", inp)
+        if _mbri:
+            return _sc.set_brightness(int(_mbri.group(1)))
+        # ENERGÍA
+        if _re.search(r"\b(bloque[áa]r?|lock|trab[áa])\b.*\b(pc|compu|computadora|pantalla|sistema|sesi[óo]n)\b", inp) \
+           or inp.strip() in ("bloquea", "bloqueá", "bloquear pc", "lock"):
+            return _sc.lock()
+        if _re.search(r"\b(suspend[ée]r?|dorm[íi]|hibern[áa]r?|modo\s+suspensi[óo]n)\b", inp) \
+           and ("pc" in inp or "compu" in inp or "sistema" in inp or "computadora" in inp):
+            return _sc.sleep()
+        if _re.search(r"\bcancel[áa]r?\b.*\b(apagado|reinicio|apagar|reiniciar)\b", inp):
+            return _sc.cancel_shutdown()
+        if _re.search(r"\b(cerr[áa]r?\s+(la\s+)?sesi[óo]n|log\s*off|logoff)\b", inp):
+            return _sc.logoff()
+        if _re.search(r"\b(apag[áa]r?|apaga)\b.*\b(pc|compu|computadora|sistema|equipo|m[áa]quina)\b", inp):
+            self._pending_power = "shutdown"
+            return "🔌 ¿Seguro que apago la PC? Decime «sí» para confirmar o «no» para cancelar."
+        if _re.search(r"\b(reinici[áa]r?|reinicia|reset)\b.*\b(pc|compu|computadora|sistema|equipo|m[áa]quina)\b", inp):
+            self._pending_power = "restart"
+            return "🔄 ¿Seguro que reinicio la PC? Decime «sí» para confirmar o «no» para cancelar."
+        # IMPRESORAS (listar) — el "imprimí X" se maneja en la sección de archivos
+        if _re.search(r"\b(qu[ée]\s+impresoras?|impresoras?\s+(hay|tengo|disponibles|"
+                      r"instaladas)|list[áa]r?\s+impresoras|mis\s+impresoras)\b", inp):
+            return _sc.list_printers()
+
+        # === CONEXIONES: WiFi / Bluetooth / USB ===
+        from core import connections as _cx
+        # WiFi: encender/apagar
+        if _re.search(r"\b(apag[áa]r?|desactiv[áa]r?|prend[ée]r?|encend[ée]r?|activ[áa]r?)\b.*\bwifi\b", inp) \
+                or _re.search(r"\bwifi\b.*\b(on|off)\b", inp):
+            _on = bool(_re.search(r"\b(prend[ée]|encend[ée]|activ[áa])", inp) or _re.search(r"\bon\b", inp))
+            return _cx.wifi_toggle(_on)
+        # WiFi: conectar a una red
+        _wc = _re.search(r"\bconect[áa]r?(?:te|me)?\s+a(?:l)?\s+(?:la\s+)?(?:red\s+|wifi\s+)?(.+)$", inp)
+        if _wc and ("wifi" in inp or "red" in inp):
+            ssid = _wc.group(1).strip().rstrip(".?!").strip('"\'')
+            return _cx.wifi_connect(ssid)
+        # WiFi: listar redes
+        if _re.search(r"\b(redes?\s+wifi|wifi\s+(disponibles?|cercan|que hay)|"
+                      r"escane[áa]r?\s+wifi|list[áa]r?\s+(redes|wifi)|qu[ée]\s+redes)\b", inp):
+            return _cx.wifi_list()
+        # Bluetooth: encender/apagar
+        if _re.search(r"\b(apag[áa]r?|desactiv[áa]r?|prend[ée]r?|encend[ée]r?|activ[áa]r?)\b.*\b(bluetooth|bt)\b", inp):
+            _on = bool(_re.search(r"\b(prend[ée]|encend[ée]|activ[áa])", inp))
+            return _cx.bluetooth_toggle(_on)
+        # Bluetooth: listar
+        if _re.search(r"\b(dispositivos?\s+bluetooth|bluetooth\s+(conectados?|emparejados?|que hay)|"
+                      r"qu[ée]\s+bluetooth|list[áa]r?\s+bluetooth|mis?\s+bluetooth)\b", inp):
+            return _cx.bluetooth_list()
+        # USB: expulsar
+        _ue = _re.search(r"\b(expuls[áa]r?|sac[áa]r?|desconect[áa]r?|extrae?r?)\b.*\b(usb|pendrive|"
+                         r"unidad)\b\s*([a-zA-Z])?", inp)
+        if _ue and _re.search(r"\b(usb|pendrive)\b", inp) and \
+           _re.search(r"\b(expuls|sac|desconect|extrae)", inp):
+            _dl = _re.search(r"\b([d-zD-Z]):?\b(?:\s|$)", inp)
+            if _dl:
+                return _cx.usb_eject(_dl.group(1))
+            return "🔌 ¿Qué unidad USB expulso? Decime la letra (ej: E)."
+        # USB: listar
+        if _re.search(r"\b(dispositivos?\s+usb|usb\s+(conectados?|que hay)|qu[ée]\s+usb|"
+                      r"unidades?\s+usb|pendrives?)\b", inp):
+            return _cx.usb_list()
+
+        # === CHROMECAST / CAST a la TV ===
+        _is_cast = bool(_re.search(r"\b(chromecast|chrome\s*cast|caste\w*|transmit\w*|cast|"
+                                   r"tv|tele|televisi[óo]n|pantalla\s+grande|dormitorio)\b", inp))
+        if _is_cast and "netflix" in inp:
+            # Netflix → Chromecast vía NAVEGADOR (Chrome cast), no pychromecast.
+            from core import netflix as _nf
+            from core import casting as _ct
+            import time as _tm
+            # resolver dispositivo destino (nombre real del Chromecast)
+            _known = _ct._CACHE.get("devices") or _ct.discover()
+            _dev = None
+            for _d in _known:
+                for _w in _d["name"].lower().split():
+                    if len(_w) > 3 and _w in inp:
+                        _dev = _d["name"]
+                        break
+                if _dev:
+                    break
+            if not _dev and _known:
+                _dev = _known[0]["name"]
+            # ¿pidió reproducir un título antes de castear?
+            _pm2 = _re.search(r"perfil\s+(?:de\s+)?([a-záéíóúñ0-9]+)", inp)
+            _prof2 = _pm2.group(1).strip() if _pm2 else None
+            _pl2 = _re.search(r"(?:repro\w*|pon[ée]r?|mir[áa]r?|ve[ar]?|pas[áa]r?)\s+"
+                              r"(?:a\s+|la\s+|el\s+)?(?:pel[íi]cula\s+|serie\s+)?"
+                              r"(.+?)\s+en\s+netflix", inp)
+            _q2 = _pl2.group(1).strip() if _pl2 else ""
+            _q2 = "" if _q2 in ("algo", "una", "una pelicula", "una película",
+                                "una serie") else _q2
+            # Preferir la APP (logueada como Alex) → castea sin pedir login extra.
+            if _nf.app_installed():
+                _res = _nf.cast_app(_dev)
+                if _q2:
+                    _res += (f"\nℹ️ En la app no puedo buscar «{_q2}» por código — ponelo "
+                             f"vos en la app y casteo lo que estés viendo.")
+                return _res
+            # app no instalada → vía Chrome (puede pedir login 1 vez)
+            if _q2:
+                _r = _nf.play(_q2, _prof2)
+                if _r.startswith("[ERROR]") or "iniciar sesión" in _r or "no encontré" in _r.lower():
+                    return _r
+                _tm.sleep(5)
+                return _nf.cast(_dev)
+            return _nf.cast(_dev)
+        if _is_cast:
+            from core import casting as _ct
+            # Identificar / listar
+            if _re.search(r"\b(identific[áa]r?|busc[áa]r?|detect[áa]r?|encontr[áa]r?|"
+                          r"list[áa]r?|qu[ée]|hay|tengo|dispositivos?\s+(de\s+)?cast)\b", inp) \
+               and not _re.search(r"\b(reproduc|caste|mand[áa]|tir[áa]|pon[ée]|deten|par[áa]|volumen)\b", inp):
+                return _ct.list_devices()
+            # Detener
+            if _re.search(r"\b(deten[ée]r?|par[áa]r?|fren[áa]r?|cort[áa]r?|stop)\b", inp):
+                return _ct.cast_stop()
+            # Volumen del cast
+            _cv = _re.search(r"\bvolumen\b.*?(\d{1,3})", inp)
+            if _cv and _re.search(r"\b(chromecast|tv|tele)\b", inp):
+                return _ct.cast_volume(int(_cv.group(1)))
+            # Castear contenido (YouTube)
+            _cm = _re.search(r"(?:caste\w*|repro\w*|pon[ée]|mand[áa]r?|tir[áa]r?|"
+                             r"mostr[áa]r?|mir[áa]r?)\s+(.+?)\s+(?:en|a|al|por)\s+"
+                             r"(?:el\s+|la\s+)?(?:chromecast|tv|tele|televisi[óo]n)", inp)
+            if _cm:
+                _cq = _cm.group(1).strip().rstrip(".?!")
+                if _cq and _cq not in ("algo", "musica", "música", "un video", "una pelicula"):
+                    return _ct.cast_youtube(_cq)
+                return "📺 ¿Qué te casteo a la TV? Decime el tema o video."
+
+        # NETFLIX: SIEMPRE la app de la Store (decisión del usuario, 2026-06-12).
+        #   Una sola Netflix → nunca abre dos. La app no busca por código (WebView
+        #   no automatizable) → si pide un título, abre la app y avisa.
+        if "netflix" in inp:
+            from core import netflix as _nf
+            # pausar/reanudar/detener → sobre la app
+            if _re.search(r"\b(pausa|pausá|pausar|reanud[áa]r?|deten[ée]r?|par[áa]r?|"
+                          r"fren[áa]r?|cort[áa]r?)\b", inp):
+                return _nf.app_playpause()
+            # ¿mencionó un título?
+            _pl = _re.search(r"(?:repro\w*|pon[ée]r?|mir[áa]r?|ve[ar]?|pas[áa]r?|busc[áa]r?|"
+                             r"dale?\s+play)\s+(?:a\s+|la\s+|el\s+)?"
+                             r"(?:pel[íi]cula\s+|serie\s+)?(.+?)\s+en\s+netflix", inp)
+            _qp = _pl.group(1).strip() if _pl else ""
+            _qp = "" if _qp in ("algo", "una", "una pelicula", "una película",
+                                "una serie", "peliculas", "películas") else _qp
+            _r = _nf.launch_app()
+            if _qp:
+                _r += (f"\nℹ️ Buscá **{_qp}** en la app y dale play (dentro de la app no "
+                       f"puedo buscar por código). ¿Querés que la castee a la TV?")
+            return _r
+
+        # ABRIR EN OTRA PANTALLA (multi-monitor): "poné netflix en la segunda pantalla"
+        if _re.search(r"\b(segunda|2da|otra|secundaria|primera|1ra|tercera|3ra)\s+pantalla\b", inp) \
+                or _re.search(r"\b(pantalla|monitor)\s*([123])\b", inp):
+            scr = 2
+            _mn = _re.search(r"\b(?:pantalla|monitor)\s*([123])\b", inp)
+            if _mn:
+                scr = int(_mn.group(1))
+            elif _re.search(r"\b(primera|1ra)\s+pantalla\b", inp):
+                scr = 1
+            elif _re.search(r"\b(tercera|3ra)\s+pantalla\b", inp):
+                scr = 3
+            _STREAM = {
+                "youtube music": "https://music.youtube.com",
+                "netflix": "https://www.netflix.com",
+                "youtube": "https://www.youtube.com",
+                "disney": "https://www.disneyplus.com",
+                "prime video": "https://www.primevideo.com",
+                "prime": "https://www.primevideo.com",
+                "hbo max": "https://www.max.com", "hbo": "https://www.max.com",
+                "max": "https://www.max.com", "twitch": "https://www.twitch.tv",
+                "crunchyroll": "https://www.crunchyroll.com",
+            }
+            _url = None
+            for k in sorted(_STREAM, key=len, reverse=True):
+                if k in inp:
+                    _url = _STREAM[k]
+                    # Netflix + nombre de peli → búsqueda
+                    if k == "netflix":
+                        _mfx = (_re.search(r"(?:repro\w*|pon[ée]|mir[áa]|ve[ar]?|pas[áa]|busc[áa])\s+(?:la\s+|el\s+)?(?:pel[íi]cula\s+|serie\s+)?(.+?)\s+en\s+netflix", inp)
+                                or _re.search(r"netflix\s+(.+?)\s+(?:en|a)\s+(?:la\s+)?(?:segunda|2|otra|primera|tercera|pantalla|monitor)", inp))
+                        _q = _mfx.group(1).strip() if _mfx else ""
+                        if _q and _q not in ("una", "una pelicula", "una película",
+                                             "algo", "peliculas", "películas", "una serie"):
+                            import urllib.parse as _up
+                            _url = "https://www.netflix.com/search?q=" + _up.quote(_q)
+                    break
+            if not _url:
+                _du = _re.search(r"https?://\S+", user_input)
+                _url = _du.group(0) if _du else None
+            if _url:
+                return _sc.open_on_screen(_url, scr)
+            return ("¿Qué abro en esa pantalla? Decime el servicio (Netflix, YouTube…) "
+                    "o una URL.")
+
         # --- Listar archivos ---
         list_keywords = ["lista", "muestra", "que hay en", "archivos en", "que tiene",
                          "contenido de", "ver carpeta", "mostrar archivos", "que archivos"]
         path_keywords = {
-            "escritorio": "C:/Users/Lexus/Desktop",
-            "desktop": "C:/Users/Lexus/Desktop",
-            "descargas": "C:/Users/Lexus/Downloads",
-            "downloads": "C:/Users/Lexus/Downloads",
-            "documentos": "C:/Users/Lexus/Documents",
-            "documents": "C:/Users/Lexus/Documents",
-            "imagenes": "C:/Users/Lexus/Pictures",
-            "pictures": "C:/Users/Lexus/Pictures",
-            "musica": "C:/Users/Lexus/Music",
-            "videos": "C:/Users/Lexus/Videos",
+            "escritorio": "" + _GX_HOME + "/Desktop",
+            "desktop": "" + _GX_HOME + "/Desktop",
+            "descargas": "" + _GX_HOME + "/Downloads",
+            "downloads": "" + _GX_HOME + "/Downloads",
+            "documentos": "" + _GX_HOME + "/Documents",
+            "documents": "" + _GX_HOME + "/Documents",
+            "imagenes": "" + _GX_HOME + "/Pictures",
+            "pictures": "" + _GX_HOME + "/Pictures",
+            "musica": "" + _GX_HOME + "/Music",
+            "videos": "" + _GX_HOME + "/Videos",
         }
 
         if any(k in inp for k in list_keywords):
@@ -1166,7 +1705,7 @@ class GenesisToolsMixin:
             for keyword, path in path_keywords.items():
                 if keyword in inp:
                     return duplicate_finder.find(path)
-            return duplicate_finder.find("C:/Users/Lexus")
+            return duplicate_finder.find("" + _GX_HOME + "")
 
         # --- Helper: resolver nombre de carpeta a ruta ---
         def _resolve_folder(name: str) -> str:
@@ -1174,34 +1713,34 @@ class GenesisToolsMixin:
             _genesis_dir = os.path.dirname(os.path.abspath(__file__))
             folder_map = {
                 # Carpetas del usuario
-                "documentos": "C:/Users/Lexus/Documents",
-                "documents": "C:/Users/Lexus/Documents",
-                "mis documentos": "C:/Users/Lexus/Documents",
-                "escritorio": "C:/Users/Lexus/Desktop",
-                "desktop": "C:/Users/Lexus/Desktop",
-                "mi escritorio": "C:/Users/Lexus/Desktop",
-                "descargas": "C:/Users/Lexus/Downloads",
-                "downloads": "C:/Users/Lexus/Downloads",
-                "mis descargas": "C:/Users/Lexus/Downloads",
-                "imagenes": "C:/Users/Lexus/Pictures",
-                "pictures": "C:/Users/Lexus/Pictures",
-                "fotos": "C:/Users/Lexus/Pictures",
-                "mis imagenes": "C:/Users/Lexus/Pictures",
-                "musica": "C:/Users/Lexus/Music",
-                "music": "C:/Users/Lexus/Music",
-                "mi musica": "C:/Users/Lexus/Music",
-                "videos": "C:/Users/Lexus/Videos",
-                "mis videos": "C:/Users/Lexus/Videos",
+                "documentos": "" + _GX_HOME + "/Documents",
+                "documents": "" + _GX_HOME + "/Documents",
+                "mis documentos": "" + _GX_HOME + "/Documents",
+                "escritorio": "" + _GX_HOME + "/Desktop",
+                "desktop": "" + _GX_HOME + "/Desktop",
+                "mi escritorio": "" + _GX_HOME + "/Desktop",
+                "descargas": "" + _GX_HOME + "/Downloads",
+                "downloads": "" + _GX_HOME + "/Downloads",
+                "mis descargas": "" + _GX_HOME + "/Downloads",
+                "imagenes": "" + _GX_HOME + "/Pictures",
+                "pictures": "" + _GX_HOME + "/Pictures",
+                "fotos": "" + _GX_HOME + "/Pictures",
+                "mis imagenes": "" + _GX_HOME + "/Pictures",
+                "musica": "" + _GX_HOME + "/Music",
+                "music": "" + _GX_HOME + "/Music",
+                "mi musica": "" + _GX_HOME + "/Music",
+                "videos": "" + _GX_HOME + "/Videos",
+                "mis videos": "" + _GX_HOME + "/Videos",
                 # Carpetas del sistema
                 "disco c": "C:/", "disco d": "D:/", "disco f": "F:/",
                 "unidad c": "C:/", "c:": "C:/", "d:": "D:/", "f:": "F:/",
-                "home": "C:/Users/Lexus",
-                "mi carpeta": "C:/Users/Lexus",
-                "mi usuario": "C:/Users/Lexus",
-                "perfil": "C:/Users/Lexus",
-                "appdata": "C:/Users/Lexus/AppData",
-                "temp": "C:/Users/Lexus/AppData/Local/Temp",
-                "temporal": "C:/Users/Lexus/AppData/Local/Temp",
+                "home": "" + _GX_HOME + "",
+                "mi carpeta": "" + _GX_HOME + "",
+                "mi usuario": "" + _GX_HOME + "",
+                "perfil": "" + _GX_HOME + "",
+                "appdata": "" + _GX_HOME + "/AppData",
+                "temp": "" + _GX_HOME + "/AppData/Local/Temp",
+                "temporal": "" + _GX_HOME + "/AppData/Local/Temp",
                 # Carpetas del proyecto
                 "genesis": _genesis_dir,
                 "mi proyecto": _genesis_dir,
@@ -1216,6 +1755,95 @@ class GenesisToolsMixin:
                            "directorio de ", "directorio "]:
                 if clean.startswith(prefix):
                     clean = clean[len(prefix):]
+
+            # 0. Carpeta en una UNIDAD específica: "descargas de la unidad F",
+            #    "documentos en D", "F:/algo". Antes "descargas" SIEMPRE iba a C:.
+            _drive = None
+            _fname = clean
+            _dm = _re.match(r'^([a-zA-Z]):[\\/]?(.*)$', name.strip())
+            if _dm:
+                _drive, _fname = _dm.group(1).upper(), _dm.group(2).strip().lower()
+            else:
+                _mu = _re.search(
+                    r'(?:de\s+la\s+|de\s+|en\s+la\s+|en\s+)?(?:unidad|disco|drive)\s+([a-zA-Z])\b',
+                    clean)
+                if not _mu:
+                    _mu = _re.search(r'\ben\s+([a-zA-Z]):?(?:\s|$)', clean)
+                if _mu:
+                    _drive = _mu.group(1).upper()
+                    _fname = (clean[:_mu.start()] + clean[_mu.end():]).strip()
+            if _drive:
+                _root = _drive + ":/"
+                # Limpiar conectores residuales: "prueba que se encuentra" → "prueba",
+                # "proyecto ubicado" → "proyecto", "la carpeta x" → "x".
+                _fname = _re.sub(
+                    r'\b(que\s+se\s+encuentr[ao]|que\s+se\s+halla|que\s+est[áa]n?|'
+                    r'que\s+tengo|que\s+hay|ubicad[oa]s?|localizad[oa]s?|guardad[oa]s?|'
+                    r'situad[oa]s?|llamad[oa]|de\s+nombre)\b', '', _fname)
+                _fname = _re.sub(r'^(la\s+|el\s+|los\s+|las\s+)?(carpeta|directorio|folder)\s+',
+                                 '', _fname)
+                _fname = _re.sub(r'\s+', ' ', _fname).strip().strip('"\'')
+                if not _fname:
+                    return _root if os.path.isdir(_root) else None
+                _aliases = {
+                    "descargas": ["Descargas", "Downloads"],
+                    "downloads": ["Downloads", "Descargas"],
+                    "documentos": ["Documentos", "Documents"],
+                    "documents": ["Documents", "Documentos"],
+                    "imagenes": ["Imágenes", "Imagenes", "Pictures"],
+                    "fotos": ["Imágenes", "Imagenes", "Pictures"],
+                    "musica": ["Música", "Musica", "Music"],
+                    "videos": ["Vídeos", "Videos"],
+                    "escritorio": ["Escritorio", "Desktop"],
+                    "desktop": ["Desktop", "Escritorio"],
+                }
+                _cands = _aliases.get(_fname, []) + [_fname]
+                for _c in _cands:
+                    _p = os.path.join(_root, _c)
+                    if os.path.isdir(_p):
+                        return _p
+                try:
+                    _items = os.listdir(_root)
+                    for _it in _items:  # match exacto case-insensitive
+                        if _it.lower().replace(" ", "") == _fname.replace(" ", ""):
+                            _fp = os.path.join(_root, _it)
+                            if os.path.isdir(_fp):
+                                return _fp
+                    for _it in _items:  # fuzzy: alias/nombre contenido
+                        for _c in _cands:
+                            if _c.lower() in _it.lower() and os.path.isdir(os.path.join(_root, _it)):
+                                return os.path.join(_root, _it)
+                except OSError:
+                    pass
+                # No está en la raíz → buscar en subcarpetas (depth 2), saltando
+                # dirs de sistema. Ej: "prueba en F" → F:/programas/prueba.
+                _skip = {"$recycle.bin", "system volume information", "msdownld.tmp",
+                         "config.msi", "recovery", "$winreagent"}
+                _fkey = _fname.replace(" ", "")
+                _partial = None
+                try:
+                    for _top in os.listdir(_root):
+                        if _top.lower() in _skip:
+                            continue
+                        _tp = os.path.join(_root, _top)
+                        if not os.path.isdir(_tp):
+                            continue
+                        try:
+                            for _sub in os.listdir(_tp):
+                                _sl = _sub.lower()
+                                _sp = os.path.join(_tp, _sub)
+                                if not os.path.isdir(_sp):
+                                    continue
+                                if _sl.replace(" ", "") == _fkey:
+                                    return _sp  # match exacto gana
+                                if _partial is None and _fkey in _sl.replace(" ", ""):
+                                    _partial = _sp
+                        except OSError:
+                            continue
+                except OSError:
+                    pass
+                return _partial
+
             # 1. Buscar en mapa
             path = folder_map.get(clean) or folder_map.get(name.lower())
             if path and os.path.exists(path):
@@ -1225,8 +1853,8 @@ class GenesisToolsMixin:
                 return name
             # 3. Busqueda inteligente: buscar en Desktop, Documents, discos
             search_dirs = [
-                "C:/Users/Lexus/Desktop", "C:/Users/Lexus/Documents",
-                "C:/Users/Lexus/Downloads", "C:/Users/Lexus",
+                "" + _GX_HOME + "/Desktop", "" + _GX_HOME + "/Documents",
+                "" + _GX_HOME + "/Downloads", "" + _GX_HOME + "",
                 "F:/programas", "F:/programas/playground",
                 "D:/",
             ]
@@ -1252,6 +1880,99 @@ class GenesisToolsMixin:
                 except OSError:
                     pass
             return None
+
+        def _search_folder_everywhere(qname: str, max_hits: int = 12) -> list:
+            """Busca carpetas por nombre exacto (case-insensitive) en raíces conocidas,
+            con profundidad acotada y saltando dirs pesados/de sistema. Devuelve lista
+            de rutas únicas. Para nombres comunes ('logs') puede devolver varias →
+            el caller pregunta cuál abrir en vez de adivinar."""
+            q = (qname or "").lower().strip().replace(" ", "")
+            if not q:
+                return []
+            _genesis_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            roots = ["" + _GX_HOME + "/Desktop", "" + _GX_HOME + "/Documents",
+                     "" + _GX_HOME + "/Downloads", "F:/programas", "F:/", "D:/",
+                     _genesis_dir]
+            skip = {"$recycle.bin", "system volume information", "msdownld.tmp",
+                    "config.msi", "recovery", "$winreagent", "node_modules", "venv",
+                    ".git", "__pycache__", ".pytest_cache", "site-packages",
+                    ".venv", "windows", "appdata", "$sysreset"}
+            hits, seen = [], set()
+            _t0 = __import__("time").time()
+            for root in roots:
+                if not os.path.isdir(root) or len(hits) >= max_hits:
+                    continue
+                if __import__("time").time() - _t0 > 3.0:
+                    break  # presupuesto: no colgarse si no existe
+                base_depth = root.rstrip("/\\").count(os.sep)
+                for cur, dirs, _files in os.walk(root):
+                    if __import__("time").time() - _t0 > 3.0:
+                        break
+                    depth = cur.count(os.sep) - base_depth
+                    if depth >= 3:
+                        dirs[:] = []
+                        continue
+                    dirs[:] = [d for d in dirs if d.lower() not in skip
+                               and not d.startswith("$")]
+                    for d in dirs:
+                        if d.lower().replace(" ", "") == q:
+                            fp = os.path.normpath(os.path.join(cur, d))
+                            if fp.lower() not in seen:
+                                seen.add(fp.lower())
+                                hits.append(fp)
+                                if len(hits) >= max_hits:
+                                    break
+                    if len(hits) >= max_hits:
+                        break
+            return hits
+
+        def _resolve_file(qname: str, max_hits: int = 12) -> list:
+            """Resuelve un ARCHIVO por nombre (sin ruta completa). Si ya es ruta
+            absoluta y existe, la devuelve. Si no, busca por nombre exacto
+            (case-insensitive) en raíces conocidas, depth acotado. Devuelve lista
+            de rutas; si hay varias el caller pregunta cuál."""
+            name = (qname or "").strip().strip('"\'')
+            if not name:
+                return []
+            # ruta absoluta directa
+            if _re.match(r'^[A-Za-z]:[/\\]', name) and os.path.isfile(name):
+                return [os.path.normpath(name)]
+            q = name.lower().replace("\\", "/").split("/")[-1]  # solo el nombre
+            home = os.path.expanduser("~")
+            roots = [os.path.join(home, "Desktop"), os.path.join(home, "Documents"),
+                     os.path.join(home, "Downloads"), home, "F:/programas",
+                     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))]
+            skip = {"$recycle.bin", "system volume information", "node_modules",
+                    "venv", ".venv", ".git", "__pycache__", ".pytest_cache",
+                    "site-packages", "windows", "appdata", "$winreagent"}
+            hits, seen = [], set()
+            _t0 = __import__("time").time()
+            _deadline = 3.0  # presupuesto: no colgarse buscando algo inexistente
+            for root in roots:
+                if not os.path.isdir(root) or len(hits) >= max_hits:
+                    continue
+                if __import__("time").time() - _t0 > _deadline:
+                    break
+                base_depth = root.rstrip("/\\").count(os.sep)
+                for cur, dirs, files in os.walk(root):
+                    if __import__("time").time() - _t0 > _deadline:
+                        break
+                    if cur.count(os.sep) - base_depth >= 4:
+                        dirs[:] = []
+                        continue
+                    dirs[:] = [d for d in dirs if d.lower() not in skip
+                               and not d.startswith("$")]
+                    for f in files:
+                        if f.lower() == q:
+                            fp = os.path.normpath(os.path.join(cur, f))
+                            if fp.lower() not in seen:
+                                seen.add(fp.lower())
+                                hits.append(fp)
+                                if len(hits) >= max_hits:
+                                    break
+                    if len(hits) >= max_hits:
+                        break
+            return hits
 
         def _list_folder_contents(path: str, max_items: int = 50) -> str:
             """Lista el contenido de una carpeta de forma legible."""
@@ -1289,6 +2010,95 @@ class GenesisToolsMixin:
                 lines.append(f"\n  ... y {total - max_items} elementos más")
             return "\n".join(lines)
 
+        # --- Refresco manual de índices (carpetas/programas) ---
+        if (("reindex" in inp or "reescane" in inp or "actualiz" in inp or "refresc" in inp)
+                and ("carpeta" in inp or "indice" in inp or "índice" in inp
+                     or "programa" in inp)):
+            try:
+                msg = []
+                if "programa" in inp or "indice" in inp or "índice" in inp:
+                    from core import program_index as _pix
+                    msg.append(f"{len(_pix.get_index(force=True))} programas")
+                if "carpeta" in inp or "indice" in inp or "índice" in inp:
+                    from core import folder_index as _fix
+                    msg.append(f"{_fix.refresh()} carpetas")
+                return "Índices actualizados: " + ", ".join(msg) + "."
+            except Exception as e:
+                return f"No pude actualizar los índices: {e}"
+
+        # --- EMAIL: enviar correo (capacidad de red concedida por humano) ---
+        # Confirmación en 2 pasos: 1) "enviá email a X que diga Y" → muestra y pide
+        # confirmar; 2) "sí/confirmá/dale" → envía. Acción hacia afuera.
+        _pend = getattr(self, "_pending_email", None)
+        if _pend and _re.search(r'^\s*(s[íi]|confirm[áo]?|dale|envialo|envíalo|'
+                                r'manda(lo)?|s[íi]\s+envia|ok|de una)\s*$', inp):
+            from core import email_sender as _es
+            r = _es.send_email(_pend["to"], _pend.get("subject", "Mensaje de Genesis"),
+                               _pend["body"])
+            self._pending_email = None
+            return ("📧 " + r["message"]) if r.get("ok") else ("⚠️ " + r["message"])
+        if _pend and _re.search(r'^\s*(no|cancel[áa]r?|dejalo|olvidalo)\s*$', inp):
+            self._pending_email = None
+            return "Listo, cancelé el envío del email."
+        if _re.search(r'\b(envi[áa]r?|mand[áa]r?|escrib[íi]r?)\b.*\b(e?-?mail|correo)\b', inp) \
+                or _re.search(r'\b(e?-?mail|correo)\b.*\ba\s+\S+@\S+', inp):
+            _addr = _re.search(r'[\w.\-+]+@[\w.\-]+\.\w+', user_input)
+            if not _addr:
+                return "¿A qué dirección de email te lo envío? Decime el correo."
+            to = _addr.group(0)
+            # cuerpo: comillas, o tras "que diga/diciendo/con el mensaje/con el texto"
+            _bm = _re.search(r'["“]([^"”]+)["”]', user_input)
+            if _bm:
+                body = _bm.group(1)
+            else:
+                _bm2 = _re.search(r'(?:que\s+diga|diciendo|con\s+el\s+mensaje|'
+                                  r'con\s+el\s+texto|mensaje:?)\s+(.+)$',
+                                  user_input, _re.IGNORECASE)
+                body = _bm2.group(1).strip() if _bm2 else ""
+            _sm = _re.search(r'(?:con\s+asunto|asunto:?)\s+["“]?([^"”\n]+)', user_input, _re.IGNORECASE)
+            subject = _sm.group(1).strip() if _sm else "Mensaje de Genesis"
+            if not body:
+                return f"¿Qué mensaje le mando a {to}? Decime el texto (ej: que diga «hola»)."
+            from core import email_sender as _es
+            if not _es.is_configured():
+                return ("📧 Tengo todo listo para enviarlo, pero falta configurar el email: "
+                        "generá un App Password de Gmail y poné GMAIL_USER y "
+                        "GMAIL_APP_PASSWORD en el .env. Después repetí el pedido.")
+            self._pending_email = {"to": to, "subject": subject, "body": body}
+            return (f"📧 ¿Confirmás el envío?\n  Para: {to}\n  Asunto: {subject}\n  "
+                    f"Mensaje: «{body}»\nDecime «sí» para enviar o «no» para cancelar.")
+
+        # --- EMAIL: leer bandeja de entrada (IMAP) ---
+        if (_re.search(r'\b(le[ée]r?|leeme|revis[áa]r?|chec(?:k|que[áa]r?)|mostr[áa]r?|'
+                       r'fij[áa]te|tengo)\b.*\b(correos?|emails?|e-?mails?|mails?|'
+                       r'bandeja|casilla)\b', inp)
+                or _re.search(r'\b(correos?|emails?|mails?)\s+(nuevos?|sin\s+leer|recientes?)', inp)
+                or inp.strip() in ("mis correos", "mis emails", "mis mails", "leer correos")):
+            from core import email_reader as _er
+            if not _er.is_configured():
+                return ("📬 Para leer correos necesito credenciales IMAP. Si querés leer "
+                        "TU casilla, generá un App Password de alexq2005@gmail.com y poné "
+                        "GMAIL_READ_USER + GMAIL_READ_APP_PASSWORD en el .env.")
+            _unread = bool(_re.search(r'\b(nuevos?|sin\s+leer|no\s+le[íi]dos?)\b', inp))
+            _r = _er.read_inbox(limit=5, unread_only=_unread)
+            if not _r.get("ok"):
+                return "⚠️ " + _r["message"]
+            ems = _r.get("emails", [])
+            if not ems:
+                return f"📭 No tenés correos {'nuevos' if _unread else 'recientes'} en {_r.get('account','')}."
+            out = [f"📬 Últimos {len(ems)} correos de {_r.get('account','')}:\n"]
+            for i, e in enumerate(ems, 1):
+                snip = (e.get("snippet", "") or "").replace("\n", " ")[:120]
+                out.append(f"{i}. De: {e.get('from','')[:45]}\n   📌 {e.get('subject','')[:70]}"
+                           + (f"\n   « {snip} »" if snip else ""))
+            return "\n".join(out)
+
+        # --- Automatización de UI (menús/clicks/teclado de cualquier app) ---
+        # ANTES de open/content: "abrí el menú X" no debe caer en el launcher.
+        _ui_res = self._ui_action(inp, user_input)
+        if _ui_res is not None:
+            return _ui_res
+
         # --- Mostrar contenido de carpeta ---
         content_keywords = ["muestra contenido", "muestrame contenido", "muestra el contenido",
                            "muestra lo que hay", "que hay en ", "que tiene ",
@@ -1314,6 +2124,135 @@ class GenesisToolsMixin:
                     return _list_folder_contents(folder_path)
                 return f"No encontré una carpeta llamada '{rest}'. Intenta con el nombre exacto o la ruta completa."
 
+        # --- Control de reproducción: pausar / reanudar / cerrar (ANTES del play) ---
+        _re2 = __import__("re")
+        _obj = (r"(m[úu]sica|cancion|canci[óo]n|tema|reproducci[óo]n|reproductor|player|"
+                r"video|sonido|audio|lo que estabas|la que estabas)")
+        def _media(fn):
+            # Control de la app de YouTube Music vía tecla multimedia / cierre.
+            try:
+                from core import music_player as _mpc
+                getattr(_mpc, fn)()
+            except Exception:
+                pass
+        # SIGUIENTE / ANTERIOR canción
+        if _re2.search(r"\b(siguiente|próxim[ao]|proxim[ao]|pasa(?:la)?|"
+                       r"otra)\b.*(cancion|canci[óo]n|tema|m[úu]sica)", inp) \
+                or inp.strip() in ("siguiente", "próxima", "proxima", "pasala", "next"):
+            _media("media_next")
+            return "⏭️ Siguiente tema."
+        if _re2.search(r"\b(anterior|previa|volv[ée]|atr[áa]s)\b.*(cancion|canci[óo]n|tema|m[úu]sica)", inp) \
+                or inp.strip() in ("anterior", "previa", "atrás", "atras", "prev"):
+            _media("media_prev")
+            return "⏮️ Tema anterior."
+        # REANUDAR / continuar (tecla play/pause + marcador de cabina)
+        if (_re2.search(r"\b(continu[áa]|segu[íi]|reanud[áa]|resum[íi]|retom[áa])\b", inp)
+                and _re2.search(_obj, inp)) or inp.strip() in (
+                "continua", "continuá", "segui", "seguí", "dale", "reanuda",
+                "reanudá", "resume", "segui dale", "dale play"):
+            _media("media_playpause")
+            return "▶️ Sigo donde quedó.\n[[RESUME]]"
+        # CERRAR el reproductor (cierra la ventana de YouTube Music + marcador)
+        if _re2.search(r"\b(cerr[áa]|sac[áa]|quit[áa]|saca|cerrar)\b.*" + _obj, inp) \
+                or _re2.search(r"\bcerr[áa]\s+(el\s+)?reproductor\b", inp):
+            _media("stop_app")
+            return "⏹️ Cierro el reproductor.\n[[STOP]]"
+        # PAUSAR (resumible) — "detené/pará/pausá la música"
+        _pause_re = _re2.search(
+            r"\b(deten[ée]r?|par[áa]|fren[áa]|stop|basta|pausa|paus[áa]|"
+            r"silenci[oa]|c[áa]llate)\b.*" + _obj, inp)
+        if _pause_re or inp.strip() in (
+                "stop", "basta", "pará", "para", "silencio", "callate",
+                "cállate", "pausa", "pausá", "pausalo"):
+            _media("media_playpause")
+            return "⏸️ Pausado. Decime 'continuá' para seguir.\n[[PAUSE]]"
+
+        # --- Reproducir música/video (ANTES del open genérico, que lo rompía) ---
+        _music_verbs = ["reproduce ", "reproducí ", "reproduci ", "reproducir ",
+                        "reproducime ", "reproduzca ", "reproduzca ", "pone ", "poné ",
+                        "pon ", "poner ", "ponme ", "poneme ", "ponémela ", "pasame ",
+                        "escuchar ", "escucha ", "escuchá ", "quiero escuchar ",
+                        "quiero oir ", "play "]
+        if any(inp.startswith(v) or f" {v}" in inp for v in _music_verbs):
+            import re as _mre, urllib.parse as _up, webbrowser as _wb
+            q = inp
+            for v in _music_verbs:
+                if q.startswith(v): q = q[len(v):]; break
+                if f" {v}" in q: q = q.split(v, 1)[-1]; break
+            # Detectar plataforma y limpiarla del query
+            plat, base = "youtube_music", "https://music.youtube.com/search?q={}"
+            if _mre.search(r"\bspotify\b", q):
+                plat, base = "spotify", "https://open.spotify.com/search/{}"
+            elif _mre.search(r"\byoutube music|youtube\s*music|yt\s*music\b", q):
+                plat, base = "youtube_music", "https://music.youtube.com/search?q={}"
+            elif _mre.search(r"\byoutube|yt\b", q):
+                plat, base = "youtube", "https://www.youtube.com/results?search_query={}"
+            # Quitar "en <plataforma>" y palabras de relleno
+            q = _mre.sub(r"\s+(en|por|desde)\s+(youtube\s*music|youtube|yt\s*music|yt|spotify).*$", "", q, flags=_mre.I)
+            q = _mre.sub(r"\b(la\s+canci[oó]n|el\s+tema|musica|música|cancion|canci[oó]n)\b", "", q, flags=_mre.I)
+            q = q.strip().strip("\"'").rstrip(".,;!?").strip()
+            if q:
+                # Spotify: sin API/login no se puede autoreproducir → abrir búsqueda (honesto).
+                if plat == "spotify":
+                    try:
+                        _wb.open(base.format(_up.quote(q)))
+                        return (f"🎵 Te abrí la búsqueda de «{q}» en Spotify. Para "
+                                f"reproducir un tema puntual automático necesito tu login "
+                                f"de Spotify (su API). Dale play vos, o pedímelo en YouTube "
+                                f"Music que ahí sí lo pongo a sonar solo.")
+                    except Exception as e:
+                        return f"[ERROR] No pude abrir Spotify: {e}"
+                # PRIORIDAD: app de YouTube Music (PWA logueada del usuario).
+                # Reproduce sin yt-dlp/cookies/anti-bot — es la YT Music real. La
+                # cabina (stream propio) queda como fallback si no está Chrome/YTM.
+                try:
+                    from core import music_player as _mp
+                    if _mp.ytmusic_available():
+                        _r = _mp.play_in_app(q)
+                        if _r.get("ok"):
+                            _art = f" de {_r['uploader']}" if _r.get("uploader") else ""
+                            _dur = _fmt = ""
+                            try:
+                                _s = int(_r.get("duration") or 0)
+                                if _s:
+                                    _dur = f" ({_s // 60}:{_s % 60:02d})"
+                            except Exception:
+                                pass
+                            return (f"🎵 Reproduciendo **{_r['title']}**{_art}{_dur} "
+                                    f"en YouTube Music.")
+                        # si la app falló, seguimos al fallback de cabina
+                except Exception:
+                    pass
+
+                # FALLBACK: búsqueda REAL + reproducción DENTRO de la cabina (stream).
+                try:
+                    from core.music_player import play as _play
+                    res = _play(q, platform=("youtube" if plat == "youtube" else "youtube_music"),
+                                open_browser=False)
+                except Exception as e:
+                    return f"[ERROR] No pude reproducir: {e}"
+
+                if res.get("reason") == "not_found":
+                    return (f"🔎 Busqué «{q}» en YouTube y no encontré nada que coincida. "
+                            f"¿Lo escribí bien? Probá con el artista + nombre del tema.")
+                if not res.get("ok"):
+                    return (f"🔎 Encontré el tema pero no pude abrir el reproductor "
+                            f"({res.get('detail', res.get('reason'))}).")
+
+                tr = res["track"]
+                artista = f" de {tr['uploader']}" if tr.get("uploader") else ""
+                # Razonamiento: ¿el resultado coincide con lo pedido?
+                if res["match"] >= 0.6:
+                    razona = "Coincide con lo que pediste."
+                elif res["match"] >= 0.3:
+                    razona = "No estoy 100% seguro que sea exactamente ese, pero es el mejor match."
+                else:
+                    razona = "Ojo: el resultado no se parece mucho a lo que pediste, fijate si es."
+                # El marcador [[PLAY:id]] lo lee el HUD para embeber el reproductor
+                # DENTRO de la cabina. Si se usa fuera del HUD, queda como texto inocuo.
+                return (f"🎵 Reproduciendo **{tr['title']}**{artista} ({res['duration_fmt']}). "
+                        f"{razona}\n[[PLAY:{res['video_id']}]]")
+
         # --- Abrir ---
         open_keywords = ["abre ", "abrir ", "ejecuta ", "lanza ", "abri ",
                          "abrí ", "abrilo", "abrila", "abrelo", "abrela",
@@ -1324,7 +2263,16 @@ class GenesisToolsMixin:
                          "escuchar ", "escucha ", "poneme ",
                          "quiero ver ", "quiero escuchar ",
                          "play ", "inicia "]
-        if any(inp.startswith(k) or f" {k}" in inp for k in open_keywords):
+        # Guard anti-colisión: "ejecuta"/"inicia" también aparecen en pedidos de
+        # ESCRIBIR/EJECUTAR CÓDIGO ("ejecuta un script python..."). Si el input
+        # tiene señales claras de código, NO lo trata como "abrir app" — deja
+        # que caiga al loop de agente (LLM genera [TOOL:python]).
+        _code_signals = ["script", "codigo", "código", " code", "funcion ", "función ",
+                         "programa que", "programa en python", "python que",
+                         "calcule", "imprima", "algoritmo", "def ", "clase ",
+                         "fibonacci", "primos", "factorial"]
+        _is_code_request = any(s in inp for s in _code_signals)
+        if not _is_code_request and any(inp.startswith(k) or f" {k}" in inp for k in open_keywords):
             # Extraer que abrir
             for kw in open_keywords:
                 if kw in inp:
@@ -1378,6 +2326,36 @@ class GenesisToolsMixin:
                         # Mostrar contenido en el chat
                         content = _list_folder_contents(folder_path)
                         return f"Abriendo carpeta en Explorer.\n\n{content}"
+
+                    # Intención EXPLÍCITA de carpeta ("abrí la CARPETA logs"): el usuario
+                    # quiere el filesystem, NO una web. Nunca caer a web_map/URL-guessing
+                    # (antes "carpeta logs" no encontrada terminaba abriendo logs.com).
+                    _folder_intent = any(w in inp for w in
+                                         ("carpeta", "directorio", "folder"))
+                    if _folder_intent:
+                        # Índice de carpetas (lookup ~1ms) primero; walk en vivo de fallback.
+                        _hits = []
+                        try:
+                            from core import folder_index as _fidx
+                            _hits = _fidx.find(target)
+                            if not _hits:  # quizás recién creada → reescaneo único
+                                _fidx.refresh()
+                                _hits = _fidx.find(target)
+                        except Exception:
+                            _hits = []
+                        if not _hits:
+                            _hits = _search_folder_everywhere(target)
+                        if len(_hits) == 1:
+                            app_launcher.open(_hits[0])
+                            return ("Abriendo carpeta en Explorer.\n\n"
+                                    + _list_folder_contents(_hits[0]))
+                        if len(_hits) > 1:
+                            _lst = "\n".join("  • " + h for h in _hits[:10])
+                            return (f"Encontré {len(_hits)} carpetas llamadas «{target}». "
+                                    f"¿Cuál abro? Decime la ruta o la unidad:\n{_lst}")
+                        return (f"No encontré ninguna carpeta llamada «{target}». "
+                                f"Probá con la ruta completa (ej: F:\\programas\\{target}) "
+                                f"o decime en qué unidad está.")
 
                     # Si tiene ruta valida (C:/ o similar), abrir directo
                     if _re.match(r'^[A-Za-z]:[/\\]', target):
@@ -1447,6 +2425,30 @@ class GenesisToolsMixin:
                             with open(learned_map_path, "r", encoding="utf-8") as _f:
                                 learned_map = json.loads(_f.read())
                     except (OSError, json.JSONDecodeError, ValueError):
+                        pass
+
+                    # 1.5 PRIORIDAD: app instalada con match FUERTE gana sobre web_map
+                    # y learned_map. Ej: si instalaste "YouTube Music", "abrí youtube
+                    # music" debe abrir la APP, no music.youtube.com. Solo match fuerte
+                    # (exacto o todas las palabras de un nombre multi-palabra) para no
+                    # secuestrar intenciones web claras ("youtube" → sigue al sitio).
+                    try:
+                        from core import program_index as _pidx0
+                        _hit0 = _pidx0.find(target_lower)
+                        if not _hit0:  # quizás recién instalada → reescaneo único
+                            _pidx0.get_index(force=True)
+                            _hit0 = _pidx0.find(target_lower)
+                        if _hit0:
+                            _pn0 = _hit0[0].lower()
+                            _tw0 = [w for w in target_lower.split() if w]
+                            _strong0 = (_pn0 == target_lower
+                                        or (len(_tw0) >= 2 and all(w in _pn0 for w in _tw0)))
+                            if _strong0 and os.path.exists(_hit0[1]):
+                                os.startfile(_hit0[1])
+                                self._learn_app(learned_map_path, learned_map,
+                                                target_lower, _hit0[1])
+                                return f"Abriendo {_hit0[0]}"
+                    except Exception:
                         pass
 
                     # 2. Buscar en mapa aprendido primero
@@ -1558,7 +2560,31 @@ class GenesisToolsMixin:
                     # Intentar con nombre original y normalizado
                     mapped = app_map.get(target_lower, None) or app_map.get(_normalized, None)
 
-                    # 6. DESCUBRIMIENTO AUTOMATICO: escanear Start Menu (prioridad sobre cmd /c start)
+                    # 6a. ÍNDICE RÁPIDO: programas instalados pre-escaneados (lookup en memoria, ~1ms)
+                    # Antes el discovery recorría el Start Menu en CADA pedido (lento, ~30-56s).
+                    # program_index cachea el escaneo en data/installed_programs.json y se refresca
+                    # solo desde el heartbeat. Esto es el camino feliz para "abrí steam/brave/etc".
+                    try:
+                        from core import program_index as _pidx
+                        _hit = _pidx.find(target_lower)
+                        if not _hit and _normalized != target_lower:
+                            _hit = _pidx.find(_normalized)
+                        if not _hit and mapped:
+                            _hit = _pidx.find(mapped)
+                        if _hit:
+                            _pname, _ppath = _hit
+                            if _ppath.lower().endswith('.lnk'):
+                                _rexe = app_launcher.resolve_lnk_target(_ppath)
+                                if _rexe is not None and not os.path.exists(_rexe):
+                                    _hit = None  # shortcut roto → caer a discovery
+                            if _hit and os.path.exists(_ppath):
+                                os.startfile(_ppath)
+                                self._learn_app(learned_map_path, learned_map, target_lower, _ppath)
+                                return f"Abriendo {_pname}"
+                    except Exception:
+                        pass  # cualquier fallo → seguir con el discovery clásico
+
+                    # 6b. DESCUBRIMIENTO AUTOMATICO: escanear Start Menu (prioridad sobre cmd /c start)
                     # Los .lnk/.url del Start Menu funcionan siempre, cmd /c start solo si está en PATH
                     discovered = self._discover_installed_app(target_lower)
                     if not discovered and _normalized != target_lower:
@@ -1804,7 +2830,7 @@ class GenesisToolsMixin:
                                 "creame un archivo", "haceme un archivo", "genera un archivo"]
         if any(k in inp for k in create_file_keywords):
             # Determinar ubicación
-            target_dir = "C:/Users/Lexus/Desktop"
+            target_dir = "" + _GX_HOME + "/Desktop"
             for keyword, path in path_keywords.items():
                 if keyword in inp:
                     target_dir = path
@@ -1837,6 +2863,51 @@ class GenesisToolsMixin:
             self.metrics.log_tool_use("escribir")
             return f"Archivo creado: `{full_path}`\nContenido: {content}\n\n{result}"
 
+        # --- ESTADO del build en background ---
+        if _re.search(r'(termin[óo]\s+(el\s+)?build|c[óo]mo\s+va\s+(el\s+)?(build|desarrollo|'
+                      r'proyecto)|estado\s+(del\s+)?(build|desarrollo)|listo\s+(el\s+)?(build|'
+                      r'proyecto)|qu[ée]\s+pas[óo]\s+con\s+(el\s+)?(build|proyecto|desarrollo))', inp):
+            st = getattr(self, "_build_status", None)
+            if not st:
+                return "No tengo ningún desarrollo en curso. Pedime «desarrollá una app que…»."
+            if st.get("running"):
+                return f"🔧 Todavía construyendo «{st['spec']}»… genero, ejecuto y corrijo. Dame un toque."
+            r = st.get("result") or {}
+            if r.get("success"):
+                return (f"✅ Listo «{st['spec']}» — quedó FUNCIONANDO.\n"
+                        f"📁 {r.get('project_dir','')}\n"
+                        f"Archivos: {', '.join(r.get('files', []))}\n"
+                        f"Salida real:\n{(r.get('output','') or '')[:400]}")
+            return (f"⚠️ Construí «{st['spec']}» pero no quedó andando tras los intentos.\n"
+                    f"📁 {r.get('project_dir','')}\n{(r.get('error','') or '')[:300]}")
+
+        # --- DESARROLLO de código real (BuilderEngine en segundo plano) ---
+        # genera → EJECUTA → lee el error real → corrige (qwen-coder, hasta 3 iters)
+        if (_re.search(r'\b(desarroll[áa]r?|constru[íi]r?|program[áa]r?|cod(?:e|ific)[áa]r?)\b', inp)
+                and _re.search(r'\b(app|aplicaci[óo]n|programa|script|juego|herramienta|'
+                               r'bot|cli|calculadora|api|simulador|conversor|generador|'
+                               r'analizador|scraper)\b', inp)):
+            be = getattr(self, "builder_engine", None)
+            if be is not None:
+                spec = user_input.strip()
+                import threading as _th
+                self._build_status = {"running": True, "spec": spec[:70], "result": None}
+
+                def _run_build(_spec=spec):
+                    try:
+                        _r = be.build(_spec, max_iters=3, run_timeout=30)
+                        self._build_status = {"running": False, "spec": _spec[:70],
+                                              "result": _r.to_dict()}
+                    except Exception as _e:
+                        self._build_status = {"running": False, "spec": _spec[:70],
+                                              "result": {"error": str(_e)}}
+                _t = _th.Thread(target=_run_build, daemon=True)
+                _t.start()
+                return (f"🔧 Arranqué a construir «{spec[:70]}». Lo hago en segundo plano: "
+                        f"genero el código, lo EJECUTO y corrijo los errores reales (hasta "
+                        f"3 intentos con qwen-coder). Preguntame «¿terminó el build?» en un "
+                        f"rato y te paso el proyecto.")
+
         # --- Crear script/programa (Auto-Builder con LLM) ---
         create_code_keywords = ["crea un script", "crea un programa", "creame un script",
                                 "genera un script", "crea un bot", "crea una app",
@@ -1850,8 +2921,8 @@ class GenesisToolsMixin:
         create_project_keywords = ["crea en mi", "crea una carpeta", "crear carpeta", "nueva carpeta"]
         has_multiple_files = any(w in inp for w in ["archivos", "archivo", ".py", ".js", ".html", ".md", ".txt", ".css"])
         if any(k in inp for k in create_project_keywords):
-            # Determinar carpeta base
-            base_dir = "C:/Users/Lexus/Desktop"
+            # Determinar carpeta base (portable: escritorio del usuario actual)
+            base_dir = os.path.join(os.path.expanduser("~"), "Desktop").replace("\\", "/")
             for keyword, path in path_keywords.items():
                 if keyword in inp:
                     base_dir = path
@@ -1940,27 +3011,114 @@ class GenesisToolsMixin:
         if any(k in inp for k in move_keywords) and ("a " in inp or "al " in inp or "hacia " in inp):
             return ""  # Dejar al LLM con herramientas
 
-        # --- Eliminar ---
-        delete_keywords = ["elimina ", "borra ", "borrar "]
-        if any(k in inp for k in delete_keywords):
-            # Extraer ruta/nombre del archivo
-            path_match = _re.search(r'[A-Za-z]:[/\\][\w/\\._ -]+', user_input)
+        # === MANEJO DE ARCHIVOS conversacional (mover/copiar/renombrar/editar/borrar) ===
+        def _abs_or_resolve(name, allow_folder=True):
+            """Devuelve (path, error_msg). Resuelve por nombre si no es ruta."""
+            name = (name or "").strip().strip('"\'')
+            for prep in ("el ", "la ", "los ", "las ", "mi ", "archivo ", "carpeta ",
+                         "la carpeta ", "el archivo "):
+                if name.lower().startswith(prep):
+                    name = name[len(prep):]
+            name = name.strip().rstrip(".?!,")
+            if _re.match(r'^[A-Za-z]:[/\\]', name) and os.path.exists(name):
+                return name, None
+            hits = _resolve_file(name)
+            # Solo buscar como CARPETA si el nombre no parece archivo (sin extensión)
+            looks_like_file = bool(_re.search(r'\.\w{1,5}$', name))
+            if not hits and allow_folder and not looks_like_file:
+                hits = _search_folder_everywhere(name)
+            if len(hits) == 1:
+                return hits[0], None
+            if len(hits) > 1:
+                lst = "\n".join("  • " + h for h in hits[:8])
+                return None, (f"Encontré varios «{name}». ¿Cuál? Pasame la ruta:\n{lst}")
+            return None, f"No encontré «{name}»."
+
+        # --- Imprimir documento ---
+        if _re.search(r'\b(imprim[íi]r?|imprime|mand[áa]\s+a\s+imprimir|sac[áa]\s+(una\s+)?'
+                      r'impresi[óo]n\s+de)\b', inp):
+            from core import system_control as _scp
+            _pm = _re.search(r'(?:imprim[íi]r?|imprime|imprimir|impresi[óo]n\s+de)\s+'
+                             r'(?:el\s+|la\s+|un\s+|una\s+|archivo\s+|documento\s+|'
+                             r'el\s+archivo\s+|el\s+documento\s+)?(.+)$', inp)
+            if not _pm:
+                return "¿Qué documento imprimo? Decime el nombre o la ruta."
+            _pname = _pm.group(1).strip()
+            # quitar "en la impresora X" del final si aparece
+            _pr = None
+            _prm = _re.search(r'\s+en\s+(?:la\s+impresora\s+)?(.+)$', _pname)
+            src, err = _abs_or_resolve(_pname, allow_folder=False)
+            if err:
+                return err
+            return _scp.print_document(src)
+
+        # --- Mover archivo/carpeta ---
+        _mv = _re.search(r'(?:mov[ée]r?|muev[ae]|mov[ée])\s+(?:el\s+|la\s+|los\s+|las\s+|'
+                         r'mi\s+|archivo\s+|carpeta\s+)?(.+?)\s+(?:a|hacia|para|al|a la)\s+(.+)$', inp)
+        if _mv and _re.search(r'\bmov', inp):
+            src, err = _abs_or_resolve(_mv.group(1))
+            if err:
+                return err
+            dst = _resolve_folder(_mv.group(2).strip()) or _mv.group(2).strip()
+            return "📦 " + file_manager.move(src, dst)
+
+        # --- Copiar archivo/carpeta ---
+        _cp = _re.search(r'(?:copi[áa]r?|duplic[áa]r?)\s+(?:el\s+|la\s+|los\s+|las\s+|'
+                         r'mi\s+|archivo\s+|carpeta\s+)?(.+?)\s+(?:a|hacia|para|al|en)\s+(.+)$', inp)
+        if _cp and _re.search(r'\b(copi|duplic)', inp):
+            src, err = _abs_or_resolve(_cp.group(1))
+            if err:
+                return err
+            dst = _resolve_folder(_cp.group(2).strip()) or _cp.group(2).strip()
+            return "📋 " + file_manager.copy(src, dst)
+
+        # --- Renombrar archivo/carpeta ---
+        _rn = _re.search(r'(?:renombr[áa]r?|camb[ií][áa]?\s+el\s+nombre\s+de)\s+'
+                         r'(?:el\s+|la\s+|archivo\s+|carpeta\s+)?(.+?)\s+(?:a|por|como)\s+(.+)$', inp)
+        if _rn and ("renombr" in inp or "nombre" in inp):
+            src, err = _abs_or_resolve(_rn.group(1))
+            if err:
+                return err
+            new_name = _rn.group(2).strip().strip('"\'').rstrip(".?!")
+            return "✏️ " + file_manager.rename(src, new_name)
+
+        # --- Editar archivo (buscar/reemplazar) ---
+        if "reemplaz" in inp and (" por " in inp or " con " in inp):
+            qs = _re.findall(r'["“]([^"”]+)["”]', user_input)
+            _fm = (_re.search(r'\ben\s+(?:el\s+|la\s+)?(?:archivo\s+)?([^\s"]+\.\w+)', inp)
+                   or _re.search(r'(?:edit[áa]r?|archivo)\s+([^\s"]+\.\w+)', inp))
+            if len(qs) >= 2 and _fm:
+                from core.tools import FileTools as _FT
+                src, err = _abs_or_resolve(_fm.group(1), allow_folder=False)
+                if err:
+                    return err
+                return "✏️ " + _FT.edit_file(src, qs[0], qs[1])
+            if len(qs) < 2:
+                return ('Para editar decime: reemplazá "texto viejo" por "texto nuevo" '
+                        'en <archivo>. (Usá comillas en ambos textos.)')
+
+        # --- Eliminar (SIEMPRE a la papelera — recuperable) ---
+        # Acepta voseo con acento: borrá/eliminá/borralo, etc.
+        _del_m = _re.search(r'\b(?:elimin[áa]r?|borr[áa]r?|elimin[áa]l[oa]|'
+                            r'borr[áa]l[oa]|mand[áa]\s+a\s+la\s+papelera)\b\s*(.*)$', inp)
+        if _del_m:
+            path_match = _re.search(r'[A-Za-z]:[/\\][\w/\\.\- ]+', user_input)
             if path_match:
-                return file_manager.delete(path_match.group(0))
-            # Buscar nombre de archivo
-            for kw in delete_keywords:
-                if kw in inp:
-                    target = inp.split(kw)[-1].strip()
-                    for prep in ["el ", "la ", "al ", "del "]:
-                        if target.startswith(prep):
-                            target = target[len(prep):]
-                    if target:
-                        # Buscar en escritorio por defecto
-                        desktop = Path("C:/Users/Lexus/Desktop") / target
-                        if desktop.exists():
-                            return file_manager.delete(str(desktop))
-                        return f"No encontre '{target}' en el escritorio."
-            return ""
+                tp = path_match.group(0).strip()
+            else:
+                rest = _del_m.group(1).strip()
+                if not rest:
+                    return "¿Qué borro? Pasame el nombre o la ruta."
+                tp, err = _abs_or_resolve(rest)
+                if err:
+                    return err
+            if not tp:
+                return "No entendí qué borrar. Pasame el nombre o la ruta."
+            res = file_manager.delete(tp)
+            if res.startswith("[ERROR]"):
+                return res
+            return ("🗑️ " + res +
+                    "\n(Está en la papelera — lo podés recuperar si fue un error.)")
 
         # --- Disco / espacio ---
         disk_keywords = ["espacio en disco", "uso de disco", "cuanto espacio",
@@ -2061,6 +3219,30 @@ class GenesisToolsMixin:
         # "pon timer de 30 segundos" → timer
         # "mis recordatorios" → lista activos
         # "cancela recordatorio 2" → cancela
+        # --- DESPERTADOR (hora absoluta + te despierta con MÚSICA) ---
+        despertar_kw = ["despertame", "despertáme", "despiértame", "despiertame",
+                        "despertarme", "despierta a las", "despiértame a las",
+                        "despertador a las", "despertador para las",
+                        "alarma a las", "alarma para las", "ponme una alarma a las"]
+        if any(k in inp for k in despertar_kw):
+            rems = self._ensure_reminders()
+            secs = self._parse_clock_time(inp)
+            if not secs:
+                return ("¿A qué hora te despierto? Decime la hora, ej: "
+                        "«despertame a las 7» o «despertame a las 7:30 de la mañana».")
+            # canción opcional: "... con <canción>"
+            song = "música enérgica para despertar"
+            _mc = _re.search(r"\bcon\s+(.+)$", inp)
+            if _mc:
+                song = _mc.group(1).strip().rstrip(".?!")
+            msg = f"🌅 ¡Hora de levantarse! ▶ {song}"
+            rems.add(msg, secs)
+            import datetime as _dt2
+            tgt = (_dt2.datetime.now() + _dt2.timedelta(seconds=secs)).strftime("%H:%M")
+            return (f"⏰ Listo, te despierto a las **{tgt}** con música 🎵 ({song}). "
+                    f"Faltan {rems._format_time(secs)}. Voy a poner el tema a sonar "
+                    f"en YouTube Music a esa hora.")
+
         reminder_kw = ["recuerdame en ", "recuérdame en ", "recordame en ",
                        "avísame en ", "avisame en ", "pon timer ",
                        "pon un timer ", "timer de ", "alarma en ",
@@ -2960,6 +4142,10 @@ class GenesisToolsMixin:
         img_patterns = [
             r'(?:genera|crea|dibuja|haz|hazme|creame|créame|genera(?:me)?)\s+(?:una?\s+)?(?:imagen|foto|dibujo|ilustraci[oó]n|wallpaper|fondo)\s+(?:de\s+|sobre\s+|con\s+)?(.+)',
             r'(?:imagen|foto|dibujo)\s+(?:de|sobre|con)\s+(.+)',
+            # Verbos de dibujo SIN el sustantivo "imagen" (ej: "dibuja un robot",
+            # "ilustrame un paisaje", "pintame un gato"). Antes caian al LLM que
+            # alucinaba haber creado la imagen.
+            r'(?:dib[uú]ja(?:me)?|ilustra(?:me)?|p[ií]nta(?:me)?)\s+(?:una?\s+|el\s+|la\s+|unos?\s+)?(.+)',
         ]
         for pat in img_patterns:
             m = _re.search(pat, inp, _re.IGNORECASE)
@@ -2984,7 +4170,7 @@ class GenesisToolsMixin:
                     from core.media_generator import MediaGenerator
                     gen = self.media_generator if hasattr(self, '_modules') and 'media_generator' in self._modules else MediaGenerator()
                     result = gen.generate_image(prompt, style=style)
-                    if result.get("success"):
+                    if result.get("success") and result.get("is_real"):
                         path = result["path"]
                         return (
                             f"🖼️ **Imagen generada**\n\n"
@@ -2993,8 +4179,18 @@ class GenesisToolsMixin:
                             f"**Dimensiones:** {result.get('dimensions', '1024x1024')}\n"
                             f"**Metodo:** {result.get('method', 'unknown')}\n"
                             f"**Tiempo:** {result.get('time_s', 0)}s\n\n"
-                            f"📁 Guardada en: `{path}`\n\n"
-                            f"{'⚠️ ' + result.get('warning', '') if result.get('warning') else ''}"
+                            f"📁 Guardada en: `{path}`"
+                        )
+                    elif result.get("success") and not result.get("is_real"):
+                        # HONESTIDAD: no engañar — fue solo un placeholder de texto.
+                        return (
+                            f"⚠️ **No pude generar una imagen real.**\n\n"
+                            f"El servicio gratuito de generación de imágenes dejó de estar "
+                            f"disponible (ahora requiere pago). Solo generé un placeholder "
+                            f"de texto en `{result.get('path','')}`, que NO es una imagen de IA.\n\n"
+                            f"Para generar imágenes de verdad necesito que configures un "
+                            f"backend (Stable Diffusion local con tu GPU, o una API key). "
+                            f"Avisá y lo dejo funcionando."
                         )
                     else:
                         return f"❌ Error generando imagen: {result.get('error', 'desconocido')}"

@@ -12,6 +12,7 @@ Capacidades:
 - Resumir textos largos
 """
 import os
+_GX_HOME = os.path.expanduser("~").replace("\\", "/")  # N7: portabilidad multi-usuario
 import json
 import subprocess
 import urllib.request
@@ -282,10 +283,26 @@ class FileTools:
             path = Path(filepath)
             path.parent.mkdir(parents=True, exist_ok=True)
 
+            # SEGURIDAD: si el archivo ya existe, hacer backup antes de sobrescribir
+            # (así un overwrite accidental nunca pierde el contenido anterior).
+            overwritten = False
+            if path.exists() and path.is_file():
+                try:
+                    import shutil as _sh
+                    bkdir = Path(__file__).parent.parent / "backups" / "files"
+                    bkdir.mkdir(parents=True, exist_ok=True)
+                    stamp = str(int(path.stat().st_mtime))
+                    bk = bkdir / f"{path.name}.{stamp}.bak"
+                    _sh.copy2(path, bk)
+                    overwritten = True
+                except Exception:
+                    pass
+
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
 
-            return f"Archivo creado: {filepath} ({len(content)} caracteres)"
+            tag = " (sobrescrito, backup guardado)" if overwritten else ""
+            return f"Archivo creado: {filepath} ({len(content)} caracteres){tag}"
 
         except Exception as e:
             return f"[ERROR] No se pudo escribir {filepath}: {e}"
@@ -885,16 +902,43 @@ class SelfModifier:
         """
         Edita un archivo del propio Genesis reemplazando texto.
         Solo funciona dentro del directorio de Genesis.
+
+        Guardrails (mismos que core/self_modifier.py — fuente única):
+        - Bloqueo de archivos INMUTABLES (guardrails) y CRÍTICOS: el LLM no
+          puede reescribirlos por esta vía de texto crudo (debe ir por /mutate+/apply).
+        - Validación AST: rechaza si el resultado no parsea (no deja el archivo roto).
+        - Patrones peligrosos NUEVOS → rechazo.
+        Esta ruta ya está cubierta por _guard_tool en contexto contaminado;
+        estos chequeos protegen también el contexto limpio.
         """
         try:
             full_path = (SelfModifier.GENESIS_DIR / relative_path).resolve()
+            genesis_root = SelfModifier.GENESIS_DIR.resolve()
 
-            # Verificar seguridad
-            if not str(full_path).startswith(str(SelfModifier.GENESIS_DIR.resolve())):
+            # Containment robusto (relative_to, no startswith que es laxo)
+            try:
+                rel_path = str(full_path.relative_to(genesis_root)).replace("\\", "/")
+            except ValueError:
                 return "[ERROR] Solo puedo editar archivos dentro de mi propio directorio."
 
             if not full_path.exists():
                 return f"[ERROR] Archivo no encontrado: {relative_path}"
+
+            # Guardrails compartidos con core/self_modifier (import lazy, sin ciclo)
+            try:
+                from core.self_modifier import SelfModifier as _SM
+                immutable, critical, dangerous = (
+                    _SM.IMMUTABLE_FILES, _SM.CRITICAL_FILES, _SM.DANGEROUS_PATTERNS,
+                )
+            except Exception:
+                immutable, critical, dangerous = set(), set(), []
+
+            if rel_path in immutable:
+                return (f"[ERROR] '{rel_path}' es un archivo INMUTABLE (guardrail de "
+                        f"seguridad). No puedo editarlo.")
+            if rel_path in critical:
+                return (f"[ERROR] '{rel_path}' es un archivo CRÍTICO. No puedo editarlo "
+                        f"por esta vía; requiere /mutate + /apply con aprobación humana.")
 
             # Crear backup antes de editar
             backup_dir = SelfModifier.GENESIS_DIR / "backups"
@@ -905,10 +949,6 @@ class SelfModifier:
             with open(full_path, "r", encoding="utf-8") as f:
                 original_content = f.read()
 
-            # Guardar backup
-            with open(backup_path, "w", encoding="utf-8") as f:
-                f.write(original_content)
-
             # Verificar que el texto a reemplazar existe
             if old_text not in original_content:
                 return (f"[ERROR] El texto a reemplazar no se encontro en {relative_path}. "
@@ -917,6 +957,26 @@ class SelfModifier:
             # Reemplazar
             new_content = original_content.replace(old_text, new_text, 1)
 
+            # Validación AST: no dejar el archivo Python sin parsear
+            if relative_path.endswith(".py"):
+                import ast as _ast
+                try:
+                    _ast.parse(new_content)
+                except SyntaxError as e:
+                    return (f"[ERROR] El cambio dejaría {relative_path} con error de "
+                            f"sintaxis (línea {e.lineno}: {e.msg}). Rechazado.")
+
+            # Patrones peligrosos NUEVOS → rechazo
+            new_dangerous = [
+                p for p in dangerous if p in new_content and p not in original_content
+            ]
+            if new_dangerous:
+                return (f"[ERROR] El cambio inyectaría patrón(es) peligroso(s): "
+                        f"{', '.join(new_dangerous)}. Rechazado por seguridad.")
+
+            # Guardar backup y escribir
+            with open(backup_path, "w", encoding="utf-8") as f:
+                f.write(original_content)
             with open(full_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
 
@@ -1403,7 +1463,7 @@ Herramientas disponibles (usa UNA por respuesta, escribe la llamada EXACTA):
 [TOOL:escribir] ruta ||| contenido — crear/escribir archivo
 [TOOL:editar] ruta ||| texto_viejo ||| texto_nuevo — editar archivo (find/replace)
 [TOOL:insertar] ruta ||| numero_linea ||| texto — insertar texto en linea especifica
-[TOOL:listar] ruta — listar directorio (ej: [TOOL:listar] C:/Users/Lexus/Desktop)
+[TOOL:listar] ruta — listar directorio (ej: [TOOL:listar] " + _GX_HOME + "/Desktop)
 [TOOL:python] codigo — ejecutar Python (con sandbox de seguridad)
 [TOOL:shell] comando — ejecutar comando del sistema (cmd/bash)
 [TOOL:sistema] — informacion del sistema (CPU, RAM, GPU, disco, red, procesos)
@@ -1436,7 +1496,7 @@ EJEMPLOS de como responder (SIGUE este formato EXACTO):
 
 Usuario: "que archivos hay en mi escritorio?"
 Tu respuesta: Voy a revisar tu escritorio.
-[TOOL:listar] C:/Users/Lexus/Desktop
+[TOOL:listar] " + _GX_HOME + "/Desktop
 
 Usuario: "busca archivos python en mi PC"
 Tu respuesta: Buscando archivos Python...
@@ -1448,15 +1508,15 @@ Tu respuesta: Revisando tu sistema...
 
 Usuario: "crea una carpeta llamada Proyectos en el escritorio"
 Tu respuesta: Creando la carpeta...
-[TOOL:crear_carpeta] C:/Users/Lexus/Desktop/Proyectos
+[TOOL:crear_carpeta] " + _GX_HOME + "/Desktop/Proyectos
 
 Usuario: "organiza mi carpeta de descargas"
 Tu respuesta: Organizando tu carpeta de descargas por tipo de archivo...
-[TOOL:organizar] C:/Users/Lexus/Downloads
+[TOOL:organizar] " + _GX_HOME + "/Downloads
 
 Usuario: "agrega un import os al inicio de mi script.py"
 Tu respuesta: Editando el archivo...
-[TOOL:editar] C:/Users/Lexus/Desktop/script.py ||| import sys ||| import sys\nimport os
+[TOOL:editar] " + _GX_HOME + "/Desktop/script.py ||| import sys ||| import sys\nimport os
 
 Usuario: "instala la libreria requests"
 Tu respuesta: Instalando requests...

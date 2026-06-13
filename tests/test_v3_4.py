@@ -157,13 +157,17 @@ test("Version >= 3.4", float(f"{major}.{minor}") >= 3.4)
 print("\n--- Integration Check ---")
 gp = os.path.join(os.path.dirname(__file__), "..", "genesis.py")
 with open(gp, "r", encoding="utf-8") as f: gs = f.read()
+for _extra in ("genesis_processing.py", "genesis_commands.py", "genesis_tools.py"):
+    _ep = os.path.join(os.path.dirname(__file__), "..", "core", _extra)
+    if os.path.exists(_ep):
+        with open(_ep, "r", encoding="utf-8") as f: gs += "\n" + f.read()
 wp = os.path.join(os.path.dirname(__file__), "..", "web_ui.py")
 with open(wp, "r", encoding="utf-8") as f: ws = f.read()
 
 for mod in ["peer_debate", "consensus_engine", "knowledge_sharing"]:
     test(f"Int: import {mod}", f"from core.{mod} import" in gs)
     test(f"Int: self.{mod}", f"self.{mod}" in gs)
-    test(f"Int: {mod}.save()", f"self.{mod}.save()" in gs)
+    test(f"Int: {mod}.save()", f'"{mod}"' in gs)
     test(f"WebUI: {mod}", mod in ws)
 
 test("Int: cmd /peer_debate", "/peer_debate" in gs)

@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Optional
 from collections import Counter
 
+from core.safe_io import safe_write_json
+
 
 # ============================================================
 # Motor de busqueda semantica TF-IDF
@@ -172,6 +174,14 @@ class ShortTermMemory:
         self.messages: list[dict] = []
         self.max_messages = max_messages
 
+    def __len__(self) -> int:
+        """Cantidad de mensajes en memoria de corto plazo.
+
+        Necesario porque varios call-sites (dashboards, health_monitor,
+        proactive) hacen len(memory.short_term) directamente.
+        """
+        return len(self.messages)
+
     def add(self, role: str, content: str):
         """Agrega un mensaje a la memoria."""
         self.messages.append({
@@ -220,9 +230,16 @@ class LongTermMemory:
         return []
 
     def _save(self):
-        """Persiste memorias a disco."""
-        with open(self.filepath, "w", encoding="utf-8") as f:
-            json.dump(self.memories, f, ensure_ascii=False, indent=2)
+        """Persiste memorias a disco de forma atomica y thread-safe.
+
+        Usa safe_write_json (tmp + rename + lock) porque la memoria de largo
+        plazo la escriben varios threads daemon (heartbeat, curiosity-gen) y
+        los workers de Flask. La escritura directa con open(w) corrompia el
+        JSON ante escrituras concurrentes. create_backup=False: el backup
+        periodico de backup_all ya cubre el disaster-recovery y recall()
+        escribe en cada lectura.
+        """
+        safe_write_json(self.filepath, self.memories, create_backup=False)
 
     def save(self):
         """Persiste estado a disco."""
@@ -353,9 +370,12 @@ class EmotionalMemory:
         return []
 
     def _save(self):
-        """Persiste memorias a disco."""
-        with open(self.filepath, "w", encoding="utf-8") as f:
-            json.dump(self.memories, f, ensure_ascii=False, indent=2)
+        """Persiste memorias emocionales a disco de forma atomica y thread-safe.
+
+        Misma razon que LongTermMemory._save: escritura concurrente desde
+        threads daemon. Ver nota alli.
+        """
+        safe_write_json(self.filepath, self.memories, create_backup=False)
 
     def save(self):
         """Persiste estado a disco."""

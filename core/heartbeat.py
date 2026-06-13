@@ -126,6 +126,14 @@ class Heartbeat:
         self.last_findings: list[dict] = []  # Últimos hallazgos para mostrar al usuario
         self._notify_enabled = False  # Notificaciones Windows desactivadas por defecto (usar /heartbeat notify on)
 
+        # === Tareas de fondo autónomas (FASE 3) ===
+        # Genesis registra aquí tareas periódicas (consolidación de aprendizaje,
+        # self-eval, schedulers) que corren en cada ciclo aunque el usuario no
+        # interactúe. Cada tarea: {name, fn, cooldown, last_run, runs, fails}.
+        self.background_tasks: list[dict] = []
+        self._bg_consecutive_fails = 0
+        self._cpu_skip_threshold = 85.0  # % CPU por encima del cual se posponen tareas pesadas
+
     def configure(self, brain: "Brain", memory: "MemorySystem",
                   curiosity: "CuriosityEngine", evolution: "EvolutionEngine"):
         """Conecta el heartbeat con los subsistemas de Genesis."""
@@ -161,6 +169,63 @@ class Heartbeat:
         """Verifica el kill switch (archivo PAUSE)."""
         pause_file = self.genesis_dir / "PAUSE"
         return pause_file.exists()
+
+    def register_task(self, name: str, fn, cooldown_minutes: int = 60,
+                      heavy: bool = True):
+        """Registra una tarea de fondo autónoma (FASE 3).
+
+        Args:
+            name: nombre legible (para logs)
+            fn: callable sin argumentos; debe ser idempotente y barato de fallar
+            cooldown_minutes: mínimo entre ejecuciones de esta tarea
+            heavy: si True, se pospone cuando la CPU está saturada
+        """
+        self.background_tasks.append({
+            "name": name, "fn": fn,
+            "cooldown": max(1, cooldown_minutes) * 60,
+            "last_run": 0.0, "runs": 0, "fails": 0, "heavy": heavy,
+        })
+
+    def _resources_ok(self) -> bool:
+        """True si hay recursos para correr tareas pesadas (CPU no saturada).
+        Si psutil no está, asume que sí."""
+        try:
+            import psutil
+            return psutil.cpu_percent(interval=0.3) < self._cpu_skip_threshold
+        except Exception:
+            return True
+
+    def _run_background_tasks(self):
+        """Ejecuta las tareas de fondo que están due, con guardas de seguridad."""
+        if not self.background_tasks:
+            return
+        now = time.time()
+        resources_ok = None  # lazy: solo medir CPU si hay alguna tarea heavy due
+        for task in self.background_tasks:
+            if now - task["last_run"] < task["cooldown"]:
+                continue
+            if task["heavy"]:
+                if resources_ok is None:
+                    resources_ok = self._resources_ok()
+                if not resources_ok:
+                    self.log.add("BG_SKIP", f"{task['name']}: CPU saturada, pospuesto")
+                    continue
+            try:
+                task["fn"]()
+                task["last_run"] = time.time()
+                task["runs"] += 1
+                self._bg_consecutive_fails = 0
+                self.log.add("BG_TASK", f"{task['name']} ejecutada (#{task['runs']})")
+            except Exception as e:
+                task["fails"] += 1
+                task["last_run"] = time.time()  # no reintentar en loop apretado
+                self._bg_consecutive_fails += 1
+                self.log.add("BG_ERROR", f"{task['name']}: {str(e)[:200]}")
+                # Backoff de seguridad: demasiados fallos seguidos → frenar este ciclo
+                if self._bg_consecutive_fails >= 5:
+                    self.log.add("BG_BACKOFF",
+                                 "5 fallos consecutivos en tareas de fondo, frenando ciclo")
+                    break
 
     def _loop(self):
         """Loop principal del heartbeat."""
@@ -255,6 +320,11 @@ class Heartbeat:
                 "generation": self.evolution.get_generation(),
                 "interactions": self.evolution.interaction_count,
             }
+
+        # Paso 5: Tareas de fondo autónomas (consolidación de aprendizaje,
+        # self-eval, schedulers). Gated por killswitch (ya verificado arriba),
+        # cooldowns y límite de recursos. FASE 3.
+        self._run_background_tasks()
 
         self.cycles_completed += 1
         self.last_cycle_time = time.time()

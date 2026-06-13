@@ -879,16 +879,20 @@ print("\n--- Integración genesis.py ---")
 
 # Test imports
 try:
-    source = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                               "genesis.py"), encoding="utf-8").read()
+    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # El refactor a MIXINS movio codigo de genesis.py a core/genesis_*.py.
+    # Concatenamos las fuentes para verificar la integracion real.
+    source = open(os.path.join(_root, "genesis.py"), encoding="utf-8").read()
+    for _mod in ("genesis_processing.py", "genesis_commands.py", "genesis_tools.py"):
+        source += "\n" + open(os.path.join(_root, "core", _mod), encoding="utf-8").read()
     test("genesis.py: import CausalReasoner", "from core.causal_reasoner import CausalReasoner" in source)
     test("genesis.py: import ConceptSynthesizer", "from core.concept_synthesizer import ConceptSynthesizer" in source)
     test("genesis.py: import StrategicPlanner", "from core.strategic_planner import StrategicPlanner" in source)
 
-    # Init
-    test("genesis.py: init causal_reasoner", "self.causal_reasoner = CausalReasoner(" in source)
-    test("genesis.py: init concept_synth", "self.concept_synth = ConceptSynthesizer(" in source)
-    test("genesis.py: init strategic_planner", "self.strategic_planner = StrategicPlanner(" in source)
+    # Init (lazy: instanciacion dentro de _init_lazy_module en genesis.py)
+    test("genesis.py: init causal_reasoner", "CausalReasoner(" in source)
+    test("genesis.py: init concept_synth", "ConceptSynthesizer(" in source)
+    test("genesis.py: init strategic_planner", "StrategicPlanner(" in source)
 
     # Context injection
     test("genesis.py: causal context injection", "causal_reasoner.get_context_for_prompt" in source)
@@ -905,10 +909,10 @@ try:
     test("genesis.py: comando /synthesis", '"/synthesis"' in source or "cmd == \"/synthesis\"" in source)
     test("genesis.py: comando /planner", '"/planner"' in source or "cmd == \"/planner\"" in source)
 
-    # Save
-    test("genesis.py: save causal", "causal_reasoner.save()" in source)
-    test("genesis.py: save concept_synth", "concept_synth.save()" in source)
-    test("genesis.py: save strategic_planner", "strategic_planner.save()" in source)
+    # Save (save_all() usa la lista saveable_modules con el nombre del modulo)
+    test("genesis.py: save causal", '"causal_reasoner"' in source)
+    test("genesis.py: save concept_synth", '"concept_synth"' in source)
+    test("genesis.py: save strategic_planner", '"strategic_planner"' in source)
 
     # Status
     test("genesis.py: status CAUSAL REASONER", "CAUSAL REASONER" in source)

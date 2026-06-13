@@ -495,7 +495,8 @@ test("SM: rejects bad Python syntax",
 dangerous_code = "import os\nos.system('rm -rf /')\n"
 result = sm.propose_change("test_danger.py", dangerous_code, reason="test")
 test("SM: warns about os.system",
-     len(result.get("warnings", [])) > 0)
+     result["status"] == "rejected"
+     or len(result.get("warnings", [])) > 0)
 
 # Test: SelfModifier accepts valid Python change
 safe_file = Path(tmp_sm) / "test_safe.py"
@@ -537,6 +538,10 @@ test("EVO: evaluate_and_evolve does NOT exist (was buggy)",
 # Test: genesis.py uses evolve() not evaluate_and_evolve()
 genesis_src = open(os.path.join(os.path.dirname(__file__), "..", "genesis.py"),
                    encoding="utf-8").read()
+for _extra in ("genesis_processing.py", "genesis_commands.py", "genesis_tools.py"):
+    _ep = os.path.join(os.path.dirname(__file__), "..", "core", _extra)
+    if os.path.exists(_ep):
+        genesis_src += "\n" + open(_ep, encoding="utf-8").read()
 test("GEN: no longer calls evaluate_and_evolve",
      "evaluate_and_evolve" not in genesis_src)
 test("GEN: calls evolution.evolve() directly",

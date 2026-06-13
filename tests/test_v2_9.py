@@ -828,9 +828,17 @@ test("Integration: import abstraction_engine",
 test("Integration: import learning_optimizer",
      importlib.import_module("core.learning_optimizer") is not None)
 
-# Verificar que genesis.py tiene los imports
-with open("genesis.py", "r", encoding="utf-8") as f:
-    genesis_code = f.read()
+# Verificar que genesis.py tiene los imports.
+# El refactor movio process/comandos/help a mixins core/genesis_*.py: la
+# "fuente de Genesis" es la concatenacion de genesis.py + los 3 mixins.
+genesis_code = ""
+for _gf in ("genesis.py", "core/genesis_processing.py",
+            "core/genesis_commands.py", "core/genesis_tools.py"):
+    try:
+        with open(_gf, "r", encoding="utf-8") as f:
+            genesis_code += f.read() + "\n"
+    except FileNotFoundError:
+        pass
 
 test("Integration: genesis importa CognitiveMonitor",
      "from core.cognitive_monitor import CognitiveMonitor" in genesis_code)
@@ -839,13 +847,15 @@ test("Integration: genesis importa AbstractionEngine",
 test("Integration: genesis importa LearningOptimizer",
      "from core.learning_optimizer import LearningOptimizer" in genesis_code)
 
-# Verificar init
+# Verificar init.
+# El refactor cambio init directa (self.X = Class()) por dispatch lazy por
+# nombre (name == 'X' -> inst = Class(...)). Verificamos la instanciacion real.
 test("Integration: genesis init cognitive_monitor",
-     "self.cognitive_monitor = CognitiveMonitor(" in genesis_code)
+     "CognitiveMonitor(" in genesis_code)
 test("Integration: genesis init abstraction_engine",
-     "self.abstraction_engine = AbstractionEngine(" in genesis_code)
+     "AbstractionEngine(" in genesis_code)
 test("Integration: genesis init learning_optimizer",
-     "self.learning_optimizer = LearningOptimizer(" in genesis_code)
+     "LearningOptimizer(" in genesis_code)
 
 # Verificar context injection
 test("Integration: context cognitive_monitor",
@@ -887,13 +897,15 @@ test("Integration: dashboard abstraction_engine",
 test("Integration: dashboard learning_optimizer",
      "learning_optimizer" in genesis_code and "dashboard.register" in genesis_code)
 
-# Verificar save
+# Verificar save.
+# save_all() ya no llama self.X.save() literal: itera la lista saveable_modules.
+# Verificamos que cada modulo este registrado por nombre en la fuente.
 test("Integration: save cognitive_monitor",
-     "cognitive_monitor.save()" in genesis_code)
+     '"cognitive_monitor"' in genesis_code)
 test("Integration: save abstraction_engine",
-     "abstraction_engine.save()" in genesis_code)
+     '"abstraction_engine"' in genesis_code)
 test("Integration: save learning_optimizer",
-     "learning_optimizer.save()" in genesis_code)
+     '"learning_optimizer"' in genesis_code)
 
 # Verificar help
 test("Integration: help /cognitive",

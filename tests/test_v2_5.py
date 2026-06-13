@@ -834,17 +834,26 @@ test("Import: ContextRouter", importlib.import_module("core.context_router") is 
 
 section("Genesis.py — Integration checks")
 
-genesis_src = open("genesis.py", "r", encoding="utf-8").read()
+# El refactor movio process/comandos/help a mixins core/genesis_*.py: la
+# "fuente de Genesis" es la concatenacion de genesis.py + los 3 mixins.
+genesis_src = ""
+for _gf in ("genesis.py", "core/genesis_processing.py",
+            "core/genesis_commands.py", "core/genesis_tools.py"):
+    try:
+        with open(_gf, "r", encoding="utf-8") as _f:
+            genesis_src += _f.read() + "\n"
+    except FileNotFoundError:
+        pass
 
 # Imports
 test("Genesis: import GoalManager", "from core.goal_manager import GoalManager" in genesis_src)
 test("Genesis: import ReflectionEngine", "from core.reflection_engine import ReflectionEngine" in genesis_src)
 test("Genesis: import ContextRouter", "from core.context_router import ContextRouter" in genesis_src)
 
-# Init
-test("Genesis: goal_manager init", "self.goal_manager = GoalManager(" in genesis_src)
-test("Genesis: reflection init", "self.reflection = ReflectionEngine(" in genesis_src)
-test("Genesis: context_router init", "self.context_router = ContextRouter(" in genesis_src)
+# Init lazy por nombre (name == 'X' -> inst = Class(...)): verificar instanciacion.
+test("Genesis: goal_manager init", "GoalManager(" in genesis_src)
+test("Genesis: reflection init", "ReflectionEngine(" in genesis_src)
+test("Genesis: context_router init", "ContextRouter(" in genesis_src)
 
 # Context injection
 test("Genesis: goals context injection", "goals_context = self.goal_manager.get_context_for_prompt" in genesis_src)
@@ -865,10 +874,10 @@ test("Genesis: goal_manager dashboard", '"goal_manager"' in genesis_src)
 test("Genesis: reflection dashboard", '"reflection"' in genesis_src and "lambda: self.reflection.get_stats()" in genesis_src)
 test("Genesis: context_router dashboard", '"context_router"' in genesis_src)
 
-# Save on exit
-test("Genesis: goal_manager save", "self.goal_manager.save()" in genesis_src)
-test("Genesis: reflection save", "self.reflection.save()" in genesis_src)
-test("Genesis: context_router save", "self.context_router.save()" in genesis_src)
+# Save on exit: save_all() itera saveable_modules; verificar registro por nombre.
+test("Genesis: goal_manager save", '"goal_manager"' in genesis_src)
+test("Genesis: reflection save", '"reflection"' in genesis_src)
+test("Genesis: context_router save", '"context_router"' in genesis_src)
 
 # Status sections
 test("Genesis: GOAL MANAGER status", "GOAL MANAGER" in genesis_src)
@@ -880,10 +889,15 @@ test("Genesis: /goals help", "/goals" in genesis_src)
 test("Genesis: /reflection help", "/reflection" in genesis_src)
 test("Genesis: /router help", "/router" in genesis_src)
 
-# Banner
-test("Genesis: goals banner", "goal_manager.get_active_goals()" in genesis_src)
-test("Genesis: reflection banner", "reflection.total_reflections" in genesis_src)
-test("Genesis: context_router banner", "context_router.sources" in genesis_src)
+# Estado en vivo: el banner ASCII ya no muestra stats por modulo. El refactor
+# movio el reporte de estado en vivo a /status (status()) y a los reportes por
+# comando (generate_report()). Verificamos que cada subsistema este cableado ahi.
+test("Genesis: goals estado en vivo", "self.goal_manager.status()" in genesis_src
+     and "self.goal_manager.generate_report()" in genesis_src)
+test("Genesis: reflection estado en vivo", "self.reflection.status()" in genesis_src
+     and "self.reflection.generate_report()" in genesis_src)
+test("Genesis: context_router estado en vivo", "self.context_router.status()" in genesis_src
+     and "self.context_router.generate_report()" in genesis_src)
 
 # Context sources setup
 test("Genesis: _setup_context_sources method", "_setup_context_sources" in genesis_src)

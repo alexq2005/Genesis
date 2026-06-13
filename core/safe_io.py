@@ -18,6 +18,7 @@ Uso:
     data = safe_read_json(Path("data.json"), default=[])
     safe_write_json(Path("data.json"), data)
 """
+import os
 import json
 import time
 import shutil
@@ -105,10 +106,13 @@ def safe_write_json(filepath: Path, data: Any,
                 except Exception:
                     pass  # No fallar si el backup falla
 
-            # Escribir a temporal
+            # Escribir a temporal + fsync para durabilidad (ante corte de
+            # energia, el rename no debe sobrevivir con un tmp a medio escribir).
             tmp_path = filepath.with_suffix(filepath.suffix + ".tmp")
             with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
 
             # Renombrar (atomico en la mayoria de OS)
             tmp_path.replace(filepath)
@@ -225,15 +229,14 @@ class BackupManager:
 
         try:
             for backup_file in backup_path.glob("*.json"):
-                # Parsear nombre: directorio_archivo.json
-                parts = backup_file.name.split("_", 1)
-                if len(parts) != 2:
-                    continue
-
-                dir_name, file_name = parts
-                # Buscar el directorio de datos correcto
+                # Parsear nombre: {data_dir.name}_{json_file.name}.
+                # OJO: data_dir.name puede contener "_" (ej: "memory_data"),
+                # por eso NO se puede usar split("_", 1) — hay que matchear
+                # por prefijo contra cada directorio conocido.
                 for data_dir in self.data_dirs:
-                    if data_dir.name == dir_name:
+                    prefix = f"{data_dir.name}_"
+                    if backup_file.name.startswith(prefix):
+                        file_name = backup_file.name[len(prefix):]
                         dest = data_dir / file_name
                         safe_write_json(dest, safe_read_json(backup_file))
                         break

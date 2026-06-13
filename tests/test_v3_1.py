@@ -550,13 +550,21 @@ test("Version >= 3.1.0", GENESIS_VERSION >= "3.1.0")
 
 # Verificar imports en genesis.py
 import genesis as g_mod
-test("Integracion: EmotionReader importado", hasattr(g_mod, 'EmotionReader'))
-test("Integracion: EmpathyEngine importado", hasattr(g_mod, 'EmpathyEngine'))
-test("Integracion: ConflictResolver importado", hasattr(g_mod, 'ConflictResolver'))
 
-# Verificar que Genesis tiene los atributos (via source)
+# El refactor a MIXINS movio codigo de la clase Genesis a core/genesis_*.py
+# y los imports de estos modulos son ahora lazy (dentro de _init_lazy_module).
+# Concatenamos la fuente de la clase con la de los mixins para la integracion real.
 import inspect
 genesis_source = inspect.getsource(g_mod.Genesis)
+_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+genesis_source += "\n" + open(os.path.join(_root, "genesis.py"), encoding="utf-8").read()
+for _mod in ("genesis_processing.py", "genesis_commands.py", "genesis_tools.py"):
+    genesis_source += "\n" + open(os.path.join(_root, "core", _mod), encoding="utf-8").read()
+
+# Imports lazy: la clase se importa dentro de _init_lazy_module en genesis.py
+test("Integracion: EmotionReader importado", "from core.emotion_reader import EmotionReader" in genesis_source)
+test("Integracion: EmpathyEngine importado", "from core.empathy_engine import EmpathyEngine" in genesis_source)
+test("Integracion: ConflictResolver importado", "from core.conflict_resolver import ConflictResolver" in genesis_source)
 test("Integracion: emotion_reader en Genesis", "emotion_reader" in genesis_source)
 test("Integracion: empathy_engine en Genesis", "empathy_engine" in genesis_source)
 test("Integracion: conflict_resolver en Genesis", "conflict_resolver" in genesis_source)
@@ -572,9 +580,10 @@ test("Integracion: /empathy comando", '"/empathy"' in genesis_source)
 test("Integracion: /conflict comando", '"/conflict"' in genesis_source)
 
 # Verificar saves
-test("Integracion: emotion_reader.save()", "emotion_reader.save()" in genesis_source)
-test("Integracion: empathy_engine.save()", "empathy_engine.save()" in genesis_source)
-test("Integracion: conflict_resolver.save()", "conflict_resolver.save()" in genesis_source)
+# save_all() usa la lista saveable_modules con el nombre del modulo (ya no self.X.save())
+test("Integracion: emotion_reader.save()", '"emotion_reader"' in genesis_source)
+test("Integracion: empathy_engine.save()", '"empathy_engine"' in genesis_source)
+test("Integracion: conflict_resolver.save()", '"conflict_resolver"' in genesis_source)
 
 # Verificar status
 test("Integracion: EMOTION READER en status", "EMOTION READER" in genesis_source)

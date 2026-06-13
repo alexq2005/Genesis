@@ -329,4 +329,12 @@ class VoiceSystem:
         text = re.sub(r'[-=]{3,}', '', text)
         # Remover multiples espacios
         text = re.sub(r'\s+', ' ', text).strip()
+        # Limitar longitud (no hablar textos enormes)
+        if len(text) > 500:
+            # Cortar en punto o coma cercano
+            cut = text[:500].rfind('.')
+            if cut > 200:
+                text = text[:cut + 1]
+            else:
+                text = text[:500] + "..."
         return text

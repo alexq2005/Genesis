@@ -171,8 +171,16 @@ test("Auto-detect has que es pattern", "que|qu" in source)
 test("Auto-detect has como funciona pattern", "como funciona" in source or "cómo funciona" in source)
 test("Auto-detect has investiga pattern", "investiga" in source)
 
-# Test that pip auto-install code exists in genesis.py process flow
-genesis_source = open(os.path.join(os.path.dirname(__file__), "..", "genesis.py"), encoding="utf-8").read()
+# Test that pip auto-install code exists in genesis.py process flow.
+# Tras el refactor a mixins, la logica de procesamiento/herramientas vive en
+# core/genesis_processing.py, core/genesis_commands.py y core/genesis_tools.py.
+# Concatenamos las fuentes para localizar los simbolos donde realmente estan.
+_root = os.path.join(os.path.dirname(__file__), "..")
+genesis_source = open(os.path.join(_root, "genesis.py"), encoding="utf-8").read()
+for _mf in ("genesis_processing.py", "genesis_commands.py", "genesis_tools.py"):
+    _p = os.path.join(_root, "core", _mf)
+    if os.path.exists(_p):
+        genesis_source += "\n" + open(_p, encoding="utf-8").read()
 test("Pip auto-install in genesis", "ModuleNotFoundError" in genesis_source and "pip install" in genesis_source)
 test("Auto-Pip module map exists", "pip_name_map" in genesis_source)
 test("Auto-Pip has cv2 mapping", "opencv-python" in genesis_source)

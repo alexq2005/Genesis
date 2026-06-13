@@ -27,6 +27,8 @@ models/*.gguf
 models/*.bin
 models/*.safetensors
 models/.cache/
+# Modelos descargables (Vosk STT ~60MB) — documentar descarga en README
+models/vosk-*/
 
 # --- Datos de runtime (se generan al ejecutar) ---
 memory_data/
@@ -34,6 +36,17 @@ evolution_data/
 logs/
 backups/
 tools_custom/
+# CRITICO: perfil del webview contiene Cookies, Login Data e History del usuario
+data/
+embeddings_data/
+generated_media/
+generated_docs/
+web_data/
+
+# --- Binarios / artefactos que no deben versionarse ---
+*.zip
+*.mp3
+*.wav
 
 # --- IDE ---
 .vscode/

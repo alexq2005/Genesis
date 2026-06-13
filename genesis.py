@@ -11,6 +11,7 @@
 """
 import sys
 import os
+_GX_HOME = os.path.expanduser("~").replace("\\", "/")  # N7: portabilidad multi-usuario
 import time
 import re
 
@@ -182,6 +183,10 @@ class Genesis(GenesisProcessingMixin, GenesisToolsMixin, GenesisCommandsMixin):
             curiosity=self.curiosity,
             evolution=self.evolution,
         )
+        # Registrar tareas de fondo autónomas (consolidación de aprendizaje,
+        # persistencia, scheduler) que corren aunque el usuario no interactúe.
+        # FASE 3. Gated por killswitch PAUSE + cooldowns + límite de CPU.
+        self._register_autonomous_tasks()
         # Auto-iniciar investigación autónoma
         self.heartbeat.start()
         self._curiosity_counter = 0  # Contador para generar curiosidad cada N interacciones
@@ -441,6 +446,11 @@ class Genesis(GenesisProcessingMixin, GenesisToolsMixin, GenesisCommandsMixin):
             elif name == 'media_generator':
                 from core.media_generator import MediaGenerator
                 inst = MediaGenerator()
+            elif name == 'builder_engine':
+                from core.builder_engine import BuilderEngine
+                from config import BASE_DIR as _BD
+                inst = BuilderEngine(self.brain, base_dir=_BD,
+                                     logger=getattr(self, 'logger', None))
             elif name == 'experiment_runner':
                 from core.experiment_runner import ExperimentRunner
                 inst = ExperimentRunner(base_dir=data_dir('experiment_runner'))
@@ -514,6 +524,12 @@ class Genesis(GenesisProcessingMixin, GenesisToolsMixin, GenesisCommandsMixin):
             elif name == 'agent_system':
                 from core.agents import AgentSystem
                 inst = AgentSystem(brain=self.brain)
+                # Cerrar loop de aprendizaje: el AutoLearner sesga la selección
+                # de agente por rendimiento histórico.
+                try:
+                    inst.set_auto_learner(self.auto_learner)
+                except Exception:
+                    pass
             elif name == 'workflow_engine':
                 from core.workflows import WorkflowEngine
                 inst = WorkflowEngine(agent_system=self.agent_system)
@@ -563,7 +579,7 @@ class Genesis(GenesisProcessingMixin, GenesisToolsMixin, GenesisCommandsMixin):
 
         except Exception as e:
             if hasattr(self, 'log'):
-                self.log.warning(f"[Lazy] Error loading {name}: {e}")
+                self.log.error(f"[Lazy] Error loading {name}: {e}")
             return None
         return None
 
@@ -592,7 +608,7 @@ class Genesis(GenesisProcessingMixin, GenesisToolsMixin, GenesisCommandsMixin):
   Ejemplo: "crea un proyecto Flask" → [TOOL:crear_carpeta] → [TOOL:escribir] app.py → [TOOL:escribir] requirements.txt → [TOOL:shell] pip install flask → [TOOL:python] verificar.
   NO pidas permiso entre pasos. Ejecuta TODO y reporta al final.
 - ENCADENAMIENTO: Si recibes un [RESULTADO DE HERRAMIENTA] y necesitas otra herramienta para completar la tarea, USALA inmediatamente con [TOOL:X]. No te detengas hasta completar la tarea.
-- FORMATO TOOL: Siempre usa exactamente [TOOL:nombre] argumento. Ejemplo: [TOOL:escribir] C:/Users/Lexus/Desktop/test.py ||| print("hola")
+- FORMATO TOOL: Siempre usa exactamente [TOOL:nombre] argumento. Ejemplo: [TOOL:escribir] " + _GX_HOME + "/Desktop/test.py ||| print("hola")
 - VOZ: Tu interfaz web TIENE capacidad de voz. El usuario puede hablarte por microfono (STT) y tu PUEDES responder con audio (TTS). El TTS lo maneja el navegador automaticamente — tu solo responde con texto normal y el sistema lo convierte a voz. NUNCA digas "no tengo capacidad de audio" ni "no puedo hablar". Si te piden activar voz, diles que presionen el boton TTS en la barra superior o usen Ctrl+Shift+M para modo manos libres.
 - MANOS LIBRES: El usuario puede activar el modo manos libres (Ctrl+Shift+M o mantener presionado el microfono). En este modo, tu escuchas continuamente y respondes con voz automaticamente. Es una conversacion natural."""
 
@@ -984,12 +1000,12 @@ $balloon.Dispose()
 
         try:
             content = self.brain.think(
-                prompt,
                 system_prompt=(
                     "Eres un asistente que genera contenido para documentos profesionales. "
                     "Escribe texto claro, bien estructurado, sin markdown ni etiquetas. "
                     "Separa secciones con doble salto de linea."
                 ),
+                messages=[{"role": "user", "content": prompt}],
             )
         except Exception as e:
             if hasattr(self, 'log'):
@@ -1443,6 +1459,112 @@ $balloon.Dispose()
         self.dashboard.register("autonomous_research_loop", lambda: self.autonomous_research_loop.get_stats(), "singularity")
         self.dashboard.register("self_architect", lambda: self.self_architect.get_stats(), "singularity")
         self.dashboard.register("consciousness_integrator", lambda: self.consciousness_integrator.get_stats(), "singularity")
+
+    def _register_autonomous_tasks(self):
+        """Registra las tareas de fondo que el heartbeat corre aunque el usuario
+        no interactúe (FASE 3). Cada tarea accede a sus módulos de forma lazy
+        dentro del closure para no forzar la carga al iniciar. Todas envueltas
+        en try/except por el propio heartbeat; gated por killswitch + recursos.
+        """
+        hb = self.heartbeat
+
+        def _consolidar_memoria():
+            # Consolidación tipo REM: refuerza memorias importantes y descarta ruido.
+            self.dream_engine.dream()
+
+        def _persistir():
+            # Asegura que el aprendizaje autónomo sobreviva aunque la app corra horas.
+            self.save_all()
+
+        def _indexar_programas():
+            # Mantiene actualizado el índice de programas instalados para que
+            # "abrí X" sea instantáneo. get_index() re-escanea solo si el cache
+            # falta o tiene >24h; barato si ya está fresco.
+            try:
+                from core import program_index as _pidx
+                n = len(_pidx.get_index())
+                hb.log.add("PROGRAM_INDEX", f"{n} programas instalados indexados")
+            except Exception as e:
+                hb.log.add("PROGRAM_INDEX_ERR", str(e)[:120])
+
+        def _indexar_carpetas():
+            # Mantiene el índice de carpetas para abrir cualquiera por nombre al
+            # instante. get_index() re-escanea solo si falta o tiene >24h. El walk
+            # cuesta ~8s cuando toca, por eso va espaciado (tarea pesada).
+            try:
+                from core import folder_index as _fidx
+                n = _fidx.count()
+                hb.log.add("FOLDER_INDEX", f"{n} carpetas indexadas")
+            except Exception as e:
+                hb.log.add("FOLDER_INDEX_ERR", str(e)[:120])
+
+        def _tick_scheduler():
+            # Hace avanzar el scheduler de tareas programadas por tiempo en el
+            # loop de fondo (antes solo avanzaba si el usuario interactuaba).
+            # Las tareas del TaskScheduler traen su propio callback.
+            fired = self.scheduler.tick()
+            if fired:
+                hb.log.add("SCHEDULER", f"{len(fired)} tarea(s) programada(s) disparada(s)")
+
+        def _auto_mejora_codigo():
+            # FASE 4 — auto-mejora AGRESIVA: Genesis muta su propio código.
+            # Killswitches: config + archivo PAUSE_SELFIMPROVE.
+            try:
+                from config import SELF_IMPROVE_ENABLED
+            except Exception:
+                SELF_IMPROVE_ENABLED = False
+            if not SELF_IMPROVE_ENABLED:
+                return
+            if (self.heartbeat.genesis_dir / "PAUSE_SELFIMPROVE").exists():
+                hb.log.add("SELFIMPROVE_PAUSA", "Auto-mejora pausada (PAUSE_SELFIMPROVE)")
+                return
+            # _auto_mutate_code: elige módulo no crítico, propone vía LLM, valida
+            # (AST + patrones), corre tests como gate y AUTO-REVIERTE si fallan.
+            result = self._auto_mutate_code()
+            if result.get("mutated"):
+                hb.log.add("SELFIMPROVE_OK",
+                           f"{result.get('file')}: +{result.get('additions',0)}/-{result.get('deletions',0)}")
+            else:
+                hb.log.add("SELFIMPROVE_SKIP", str(result.get("message", ""))[:200])
+
+        def _constructor_autonomo():
+            # Independencia: si hay objetivos en cola, Genesis construye uno SOLO
+            # (con qwen-coder, verificado por ejecución). El usuario llena la cola
+            # con /build_queue, o queda vacia y no hace nada.
+            if not getattr(self.builder_engine, "queue", None):
+                return
+            r = self.builder_engine.process_next()
+            if r:
+                estado = "FUNCIONANDO" if r.get("success") else "fallo"
+                hb.log.add("CONSTRUCTOR",
+                           f"{estado}: {', '.join(r.get('files', []))} en {r.get('project_dir','')[-40:]}")
+
+        # Persistencia: barata, frecuente, no pesada.
+        hb.register_task("persistencia", _persistir, cooldown_minutes=30, heavy=False)
+        # Índice de programas instalados: barato si está fresco (lee cache);
+        # re-escanea solo cada 24h. Corre temprano para que esté listo al primer "abrí X".
+        hb.register_task("indexar_programas", _indexar_programas,
+                         cooldown_minutes=360, heavy=False)
+        # Índice de carpetas: el escaneo pesa ~8s cuando toca re-escanear (>24h);
+        # espaciado y marcado heavy para que respete el gate de recursos.
+        hb.register_task("indexar_carpetas", _indexar_carpetas,
+                         cooldown_minutes=180, heavy=True)
+        # Constructor autónomo: procesa la cola de objetivos (qwen-coder). Pesado.
+        hb.register_task("constructor_autonomo", _constructor_autonomo,
+                         cooldown_minutes=20, heavy=True)
+        # Scheduler: barato, frecuente — hace avanzar tareas programadas.
+        hb.register_task("scheduler_tick", _tick_scheduler, cooldown_minutes=2, heavy=False)
+        # Consolidación de memoria: pesada (usa LLM), espaciada.
+        hb.register_task("consolidacion_memoria", _consolidar_memoria,
+                         cooldown_minutes=120, heavy=True)
+        # Auto-mejora de código: la más pesada y sensible. Gated por config +
+        # killswitch dedicado + gate de tests + auto-rollback. FASE 4 (agresivo).
+        try:
+            from config import SELF_IMPROVE_COOLDOWN_MIN
+        except Exception:
+            SELF_IMPROVE_COOLDOWN_MIN = 180
+        hb.register_task("auto_mejora_codigo", _auto_mejora_codigo,
+                         cooldown_minutes=SELF_IMPROVE_COOLDOWN_MIN, heavy=True)
 
     def save_all(self):
         """

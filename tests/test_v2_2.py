@@ -316,19 +316,19 @@ test("Cache._hash: es md5 hex", len(h1) == 32)
 print("\n=== TEST: ResponsePredictor ===")
 pred = ResponsePredictor()
 
-# Preguntas muy cortas
-test("Predictor: input corto -> 256", pred.predict_max_tokens("hola?") == 256)
-test("Predictor: input 5 chars -> 256", pred.predict_max_tokens("hi") == 256)
+# Preguntas muy cortas (< 15 chars) -> 512 (piso mínimo, fase 5.x)
+test("Predictor: input corto -> 512", pred.predict_max_tokens("hola?") == 512)
+test("Predictor: input 5 chars -> 512", pred.predict_max_tokens("hi") == 512)
 
-# Patrones cortos (español)
-test("Predictor: 'que es X' -> 384", pred.predict_max_tokens("que es machine learning?") == 384)
-test("Predictor: 'quien es X' -> 384", pred.predict_max_tokens("quien es alan turing?") == 384)
-test("Predictor: 'cuando X' -> 384", pred.predict_max_tokens("cuando se invento internet?") == 384)
-test("Predictor: 'donde X' -> 384", pred.predict_max_tokens("donde esta la torre eiffel?") == 384)
+# Patrones cortos (español) -> 512 (respuesta concisa pero suficiente)
+test("Predictor: 'que es X' -> 512", pred.predict_max_tokens("que es machine learning?") == 512)
+test("Predictor: 'quien es X' -> 512", pred.predict_max_tokens("quien es alan turing?") == 512)
+test("Predictor: 'cuando X' -> 512", pred.predict_max_tokens("cuando se invento internet?") == 512)
+test("Predictor: 'donde X' -> 512", pred.predict_max_tokens("donde esta la torre eiffel?") == 512)
 
-# Patrones cortos (inglés)
-test("Predictor: 'what is X' -> 384", pred.predict_max_tokens("what is machine learning fundamentals?") == 384)
-test("Predictor: 'who is X' -> 384", pred.predict_max_tokens("who is the CEO of that company?") == 384)
+# Patrones cortos (inglés) -> 512
+test("Predictor: 'what is X' -> 512", pred.predict_max_tokens("what is machine learning fundamentals?") == 512)
+test("Predictor: 'who is X' -> 512", pred.predict_max_tokens("who is the CEO of that company?") == 512)
 
 # Patrones largos (español)
 test("Predictor: 'explica X' -> 2048", pred.predict_max_tokens("explica detalladamente la teoria de cuerdas") == 2048)
@@ -348,8 +348,8 @@ test("Predictor: input largo sin patron -> 1536", pred.predict_max_tokens(long_i
 # Default
 test("Predictor: input medio sin patron -> default", pred.predict_max_tokens("algo intermedio sin patrones claros aqui") == 1024)
 
-# Custom default
-test("Predictor: custom default", pred.predict_max_tokens("algo intermedio sin patrones claros aqui", default=512) == 512)
+# Custom default (input medio sin patron -> max(768, default), fase 5.x)
+test("Predictor: custom default", pred.predict_max_tokens("algo intermedio sin patrones claros aqui", default=512) == 768)
 
 
 # ============================================================
@@ -435,7 +435,7 @@ test("Optimizer.optimize: segundo call = cache HIT", result2["cache_hit"] is Tru
 
 # Prompt corto -> max_tokens bajo
 result3 = optimizer.optimize("IA", [], "hola?")
-test("Optimizer.optimize: input corto -> tokens bajos", result3["max_tokens"] == 256)
+test("Optimizer.optimize: input corto -> tokens bajos", result3["max_tokens"] == 512)
 
 # Prompt largo -> max_tokens alto
 result4 = optimizer.optimize("IA", [], "explica detalladamente como funciona una red neuronal profunda")
@@ -490,15 +490,36 @@ test("Dashboard: no esta vacio", len(html) > 1000)
 print("\n=== TEST: genesis.py — Imports ===")
 import importlib
 
-# Verificar que genesis.py importa los modulos
-genesis_source = open("genesis.py", "r", encoding="utf-8").read()
+# Verificar que genesis.py importa los modulos.
+# El refactor movio process/comandos/help a mixins core/genesis_*.py, asi que
+# la "fuente de Genesis" es la concatenacion de genesis.py + los mixins.
+def _read_genesis_source():
+    files = [
+        "genesis.py",
+        "core/genesis_processing.py",
+        "core/genesis_commands.py",
+        "core/genesis_tools.py",
+    ]
+    parts = []
+    for fp in files:
+        try:
+            with open(fp, "r", encoding="utf-8") as fh:
+                parts.append(fh.read())
+        except FileNotFoundError:
+            pass
+    return "\n".join(parts)
+
+genesis_source = _read_genesis_source()
 
 test("genesis.py: importa SemanticMemory", "from core.semantic_memory import SemanticMemory" in genesis_source)
 test("genesis.py: importa InferenceOptimizer", "from core.inference_optimizer import InferenceOptimizer" in genesis_source)
 
-# Verificar inicializacion
-test("genesis.py: self.semantic_memory =", "self.semantic_memory = SemanticMemory(" in genesis_source)
-test("genesis.py: self.optimizer =", "self.optimizer = InferenceOptimizer()" in genesis_source)
+# Verificar inicializacion.
+# El refactor cambio la init directa (self.X = Class()) por un dispatch lazy
+# por nombre (name == 'X' -> inst = Class(...)). Verificamos que el modulo
+# queda realmente instanciado.
+test("genesis.py: semantic_memory init", "SemanticMemory(" in genesis_source)
+test("genesis.py: optimizer init", "InferenceOptimizer()" in genesis_source)
 
 # Verificar integracion en process_input
 test("genesis.py: semantic_memory.get_context", "semantic_memory.get_context_for_prompt" in genesis_source)
@@ -518,16 +539,19 @@ test("genesis.py: generate_report call", "semantic_memory.generate_report()" in 
 # Verificar /help
 test("genesis.py: help tiene /memory semantic", "/memory semantic" in genesis_source)
 
-# Verificar save on exit
-test("genesis.py: semantic_memory.save() on exit", "semantic_memory.save()" in genesis_source)
+# Verificar save on exit.
+# save_all() ya no llama self.X.save() literal: usa una lista saveable_modules
+# y guarda cada modulo por nombre. Verificamos que semantic_memory este listado.
+test("genesis.py: semantic_memory en saveable_modules", '"semantic_memory"' in genesis_source)
 
 # Verificar dashboard collectors
 test("genesis.py: dashboard register semantic_memory", '"semantic_memory"' in genesis_source)
 test("genesis.py: dashboard register optimizer", '"optimizer"' in genesis_source)
 
-# Banner
-test("genesis.py: banner tiene Memoria semantica", "Memoria semantica:" in genesis_source)
-test("genesis.py: banner tiene Inference Optimizer", "Inference Optimizer:" in genesis_source)
+# Anuncio de subsistemas: el banner ASCII ya no lista modulos uno a uno.
+# El refactor movio el anuncio al /help (seccion por subsistema, mayusculas).
+test("genesis.py: help anuncia Memoria semantica", "MEMORIA SEMANTICA:" in genesis_source)
+test("genesis.py: help anuncia Inference Optimizer", "INFERENCE OPTIMIZER:" in genesis_source)
 
 
 # ============================================================
@@ -590,8 +614,8 @@ test("Predictor: 'explica detalladamente X' -> largo gana",
      pred2.predict_max_tokens("explica detalladamente la computacion cuantica paso a paso") >= 2048)
 
 # Solo patron corto
-test("Predictor: 'cuanto cuesta un auto?' -> 384",
-     pred2.predict_max_tokens("cuanto cuesta un auto nuevo?") == 384)
+test("Predictor: 'cuanto cuesta un auto?' -> 512",
+     pred2.predict_max_tokens("cuanto cuesta un auto nuevo?") == 512)
 
 # Sin patron, longitud media
 test("Predictor: sin patron medio -> default",
@@ -736,14 +760,20 @@ class MockEmbeddingsEngine:
     def __init__(self):
         self.store = {}
 
-    def add_text(self, key, text, metadata=None):
-        self.store[key] = {"text": text, "metadata": metadata or {}}
+    def add_text(self, doc_id, text, source="", extra_metadata=None):
+        # Firma alineada con core/embeddings_engine.EmbeddingsEngine.add_text
+        meta = {"text": text, "source": source}
+        if extra_metadata:
+            meta.update(extra_metadata)
+        self.store[doc_id] = {"text": text, "metadata": meta}
+        return True
 
     def search(self, query, top_k=3):
-        # Retorna todos los items con score bajo (no duplica)
+        # Retorna items con la forma real: {id, score, ...} (score alto para
+        # superar recall_min_score y permitir el join con entries por id).
         results = []
         for k, v in self.store.items():
-            results.append({"key": k, "text": v["text"], "score": 0.5})
+            results.append({"id": k, "text": v["text"], "score": 0.9})
         return results[:top_k]
 
     def remove(self, key):

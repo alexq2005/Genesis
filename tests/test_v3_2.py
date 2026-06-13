@@ -537,18 +537,25 @@ print("\n--- Integration Check ---")
 
 # Verify imports exist in genesis.py
 genesis_path = os.path.join(os.path.dirname(__file__), "..", "genesis.py")
+# El refactor a MIXINS movio codigo de genesis.py a core/genesis_*.py.
+# Concatenamos las fuentes para verificar la integracion real.
 with open(genesis_path, "r", encoding="utf-8") as f:
     genesis_src = f.read()
+for _mod in ("genesis_processing.py", "genesis_commands.py", "genesis_tools.py"):
+    with open(os.path.join(os.path.dirname(__file__), "..", "core", _mod), "r", encoding="utf-8") as f:
+        genesis_src += "\n" + f.read()
 
 test("Integration: import StoryGenerator", "from core.story_generator import StoryGenerator" in genesis_src)
 test("Integration: import CodeArchitect", "from core.code_architect import CodeArchitect" in genesis_src)
 test("Integration: import IdeaBrainstormer", "from core.idea_brainstormer import IdeaBrainstormer" in genesis_src)
-test("Integration: init story_generator", "self.story_generator = StoryGenerator" in genesis_src)
-test("Integration: init code_architect", "self.code_architect = CodeArchitect" in genesis_src)
-test("Integration: init idea_brainstormer", "self.idea_brainstormer = IdeaBrainstormer" in genesis_src)
-test("Integration: story_generator.save()", "self.story_generator.save()" in genesis_src)
-test("Integration: code_architect.save()", "self.code_architect.save()" in genesis_src)
-test("Integration: idea_brainstormer.save()", "self.idea_brainstormer.save()" in genesis_src)
+# Init lazy: instanciacion dentro de _init_lazy_module en genesis.py
+test("Integration: init story_generator", "StoryGenerator(" in genesis_src)
+test("Integration: init code_architect", "CodeArchitect(" in genesis_src)
+test("Integration: init idea_brainstormer", "IdeaBrainstormer(" in genesis_src)
+# save_all() usa la lista saveable_modules con el nombre del modulo
+test("Integration: story_generator.save()", '"story_generator"' in genesis_src)
+test("Integration: code_architect.save()", '"code_architect"' in genesis_src)
+test("Integration: idea_brainstormer.save()", '"idea_brainstormer"' in genesis_src)
 test("Integration: cmd /stories", '"/stories"' in genesis_src or "'/stories'" in genesis_src or '/stories' in genesis_src)
 test("Integration: cmd /architect", '"/architect"' in genesis_src or "'/architect'" in genesis_src or '/architect' in genesis_src)
 test("Integration: cmd /brainstorm", '"/brainstorm"' in genesis_src or "'/brainstorm'" in genesis_src or '/brainstorm' in genesis_src)

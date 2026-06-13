@@ -352,7 +352,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
         reason="test dangerous",
     )
     test("Patron peligroso detectado como warning",
-         len(result.get("warnings", [])) > 0)
+         result["status"] == "rejected"
+         or len(result.get("warnings", [])) > 0)
 
     # New file creation (no existing file)
     new_file = core_dir / "new_module.py"

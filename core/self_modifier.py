@@ -21,6 +21,7 @@ Reglas de seguridad:
 - Historial completo de cambios para auditoria
 """
 import ast
+import sys
 import time
 import shutil
 import difflib
@@ -58,24 +59,40 @@ class SelfModifier:
     5. Si algo falla, se hace rollback (rollback)
     """
 
-    # Archivos criticos que requieren confirmacion extra
+    # Archivos que NUNCA se pueden modificar — son los GUARDRAILS mismos.
+    # Permitir editarlos sería el exploit clásico: usar la auto-modificación
+    # para desactivar la auto-modificación. Bloqueados incluso vía /apply manual.
+    IMMUTABLE_FILES = {
+        "core/self_modifier.py",     # este archivo: no puede reescribir sus límites
+        "core/autonomous_mode.py",   # SafetyGuard del modo autónomo
+        "core/tools.py",             # sandbox + execute_tool + SelfModifier LLM-facing
+        "core/genesis_processing.py",# contiene _guard_tool (anti prompt-injection)
+        "core/safe_io.py",           # integridad de escrituras atómicas/backup
+    }
+
+    # Archivos criticos: modificables SOLO con aprobación humana explícita
+    # (/apply). El modo autónomo NO puede aplicarlos sin confirmación.
     CRITICAL_FILES = {
         "genesis.py", "config.py",
         "core/brain.py", "core/memory.py",
-        "core/safe_io.py", "core/self_modifier.py",
+        "core/genesis_commands.py", "core/provider_router.py",
+        "core/heartbeat.py", "core/evolution.py",
     }
 
-    # Archivos que NUNCA se pueden modificar (seguridad)
-    IMMUTABLE_FILES = set()  # Ninguno por ahora, pero se puede extender
-
-    # Patrones peligrosos que no se pueden inyectar
+    # Patrones peligrosos: si APARECEN NUEVOS (no estaban en el original),
+    # el cambio se RECHAZA de plano (no solo advertencia). Ver propose_change.
     DANGEROUS_PATTERNS = [
         "os.system",
         "subprocess.call",
+        "subprocess.Popen",
+        "subprocess.run",
         "shutil.rmtree",
         "exec(",
         "eval(",
         "__import__",
+        "compile(",
+        "pickle.load",
+        "marshal.load",
         "open('/etc",
         "open('C:\\\\Windows",
     ]
@@ -143,21 +160,16 @@ class SelfModifier:
                 "error": f"Fuera del directorio de Genesis: {filepath}",
             }
 
-        # Validacion: no inmutable
+        # Validacion: no inmutable (guardrail — bloqueo duro, incluso /apply)
         rel_path = str(target.relative_to(self.genesis_dir)).replace("\\", "/")
         if rel_path in self.IMMUTABLE_FILES:
             return {
                 "status": "rejected",
-                "error": f"Archivo inmutable: {rel_path}",
+                "error": f"Archivo INMUTABLE (guardrail de seguridad): {rel_path}. "
+                         f"No se puede auto-modificar.",
             }
 
-        # Validacion: patrones peligrosos
-        warnings = []
-        for pattern in self.DANGEROUS_PATTERNS:
-            if pattern in new_content:
-                warnings.append(f"Patron peligroso detectado: '{pattern}'")
-
-        # Validacion: syntax Python si es .py
+        # Validacion: syntax Python si es .py — RECHAZO DURO si no parsea
         syntax_ok = True
         syntax_error = ""
         if filepath.endswith(".py"):
@@ -173,7 +185,7 @@ class SelfModifier:
                 "error": f"Error de sintaxis: {syntax_error}",
             }
 
-        # Leer contenido actual
+        # Leer contenido actual (necesario para el chequeo de patrones delta)
         current_content = ""
         if target.exists():
             try:
@@ -183,6 +195,23 @@ class SelfModifier:
                     "status": "rejected",
                     "error": f"No se pudo leer el archivo: {e}",
                 }
+
+        # Validacion: patrones peligrosos NUEVOS → RECHAZO DURO.
+        # Solo bloquea si el patron NO estaba en el original (evita rechazar
+        # codigo legitimo preexistente; bloquea inyeccion de algo nuevo peligroso).
+        new_dangerous = [
+            p for p in self.DANGEROUS_PATTERNS
+            if p in new_content and p not in current_content
+        ]
+        if new_dangerous:
+            return {
+                "status": "rejected",
+                "error": (
+                    f"Patrón(es) peligroso(s) NUEVO(s) inyectado(s): "
+                    f"{', '.join(new_dangerous)}. Cambio rechazado por seguridad."
+                ),
+            }
+        warnings = []
 
         # Generar diff
         diff_lines = list(difflib.unified_diff(
@@ -238,9 +267,15 @@ class SelfModifier:
             ),
         }
 
-    def apply_change(self) -> dict:
+    def apply_change(self, human_approved: bool = False) -> dict:
         """
         Aplica el cambio pendiente.
+
+        Args:
+            human_approved: True solo cuando un humano aprobó explícitamente
+                (ej: comando /apply). Los archivos CRITICAL_FILES SOLO se aplican
+                con human_approved=True; el modo autónomo (human_approved=False)
+                no puede tocarlos.
 
         Returns:
             Dict con resultado de la aplicacion
@@ -249,6 +284,19 @@ class SelfModifier:
             return {"status": "error", "message": "No hay cambio pendiente."}
 
         change = self.pending_change
+
+        # Gate de archivos críticos: el modo autónomo NO puede aplicarlos.
+        if change.get("is_critical") and not human_approved:
+            self.pending_change = None
+            return {
+                "status": "blocked",
+                "message": (
+                    f"Cambio a {change['rel_path']} BLOQUEADO: es un archivo crítico "
+                    f"y requiere aprobación humana explícita (/apply). El modo "
+                    f"autónomo no puede modificarlo."
+                ),
+            }
+
         target = Path(change["filepath"])
 
         try:
@@ -362,7 +410,7 @@ class SelfModifier:
         for test_file in test_files:
             try:
                 result = subprocess.run(
-                    ["python", str(test_file)],
+                    [sys.executable, str(test_file)],
                     capture_output=True,
                     text=True,
                     timeout=60,
@@ -383,9 +431,11 @@ class SelfModifier:
                 all_output.append(f"--- {test_file.name}: TIMEOUT ---")
                 all_passed = False
             except Exception as e:
+                # FAIL-SAFE: si no podemos correr un test, NO confiamos en el
+                # cambio. Antes esto hacía 'pass' (pasaba vacuamente) → una
+                # auto-mutación podía aplicarse sin gate real. Ahora falla.
                 all_output.append(f"--- {test_file.name}: ERROR: {e} ---")
-                # No fallar por error al correr tests
-                pass
+                all_passed = False
 
         return {
             "passed": all_passed,

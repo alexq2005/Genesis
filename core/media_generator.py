@@ -22,6 +22,9 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
+# Pipeline de Stable Diffusion local cacheado (se carga 1 vez, queda en VRAM).
+_SD_PIPE = None
+
 
 class MediaGenerator:
     """
@@ -44,6 +47,57 @@ class MediaGenerator:
     # =========================================================
     # IMAGE GENERATION
     # =========================================================
+    def _try_local_sd(self, full_prompt: str, width: int, height: int, output_path,
+                      prompt: str, style: str, start: float) -> Optional[dict]:
+        """Stable Diffusion LOCAL en GPU (sd-turbo, offline). None si no disponible.
+
+        Carga el pipeline una sola vez (cacheado en VRAM). La PRIMERA llamada baja
+        el modelo (~2.5GB) desde HuggingFace; después es 100% offline."""
+        global _SD_PIPE
+        try:
+            import torch
+            if not torch.cuda.is_available():
+                return None
+            from diffusers import AutoPipelineForText2Image
+        except Exception:
+            return None
+        try:
+            if _SD_PIPE is None:
+                try:
+                    _SD_PIPE = AutoPipelineForText2Image.from_pretrained(
+                        "stabilityai/sd-turbo", torch_dtype=torch.float16, variant="fp16")
+                except Exception:
+                    _SD_PIPE = AutoPipelineForText2Image.from_pretrained(
+                        "stabilityai/sd-turbo", torch_dtype=torch.float16)
+                _SD_PIPE = _SD_PIPE.to("cuda")
+                try:
+                    _SD_PIPE.enable_attention_slicing()
+                except Exception:
+                    pass
+            # sd-turbo es nativo 512px → cap para calidad y VRAM (8GB)
+            w = min(int(width), 512)
+            h = min(int(height), 512)
+            image = _SD_PIPE(prompt=full_prompt, num_inference_steps=3,
+                             guidance_scale=0.0, width=w, height=h).images[0]
+            image.save(str(output_path))
+            elapsed = round(time.time() - start, 1)
+            result = {
+                "success": True, "is_real": True, "path": str(output_path),
+                "filename": output_path.name, "prompt": prompt, "style": style,
+                "dimensions": f"{w}x{h}",
+                "size_kb": round(output_path.stat().st_size / 1024, 1),
+                "time_s": elapsed, "method": "stable-diffusion-local (sd-turbo, GPU)",
+            }
+            self.generated.append(result)
+            return result
+        except Exception:
+            try:
+                import torch
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
+            return None
+
     def generate_image(self, prompt: str, width: int = 1024, height: int = 1024,
                        style: str = "", filename: str = "") -> dict:
         """
@@ -75,11 +129,17 @@ class MediaGenerator:
 
         output_path = self.output_dir / "images" / filename
 
+        # 0) Stable Diffusion LOCAL (GPU, offline) — backend principal
+        _local = self._try_local_sd(full_prompt, width, height, output_path,
+                                    prompt, style, start)
+        if _local:
+            return _local
+
         try:
             import urllib.request
             import urllib.parse
 
-            # Pollinations.ai — API gratuita sin key
+            # Pollinations.ai — API gratuita sin key (fallback; hoy da 402)
             encoded_prompt = urllib.parse.quote(full_prompt)
             url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={width}&height={height}&nologo=true"
 
@@ -92,9 +152,14 @@ class MediaGenerator:
             with open(output_path, "wb") as f:
                 f.write(img_data)
 
+            # Validar que de verdad vino una imagen (no HTML de error / paywall)
+            if not (img_data[:8].startswith(b"\x89PNG") or img_data[:2] == b"\xff\xd8"):
+                raise ValueError("la respuesta no es una imagen (posible paywall/HTML)")
+
             elapsed = round(time.time() - start, 1)
             result = {
                 "success": True,
+                "is_real": True,  # imagen IA real
                 "path": str(output_path),
                 "filename": filename,
                 "prompt": prompt,
@@ -167,13 +232,14 @@ class MediaGenerator:
 
             result = {
                 "success": True,
+                "is_real": False,  # NO es una imagen IA real, es un placeholder de texto
                 "path": str(output_path),
                 "filename": output_path.name,
                 "prompt": prompt,
                 "dimensions": f"{width}x{height}",
                 "time_s": elapsed,
                 "method": "pillow_placeholder",
-                "warning": "Imagen generada localmente (sin IA). " + error_msg,
+                "warning": "NO es una imagen IA — placeholder de texto. Backend caido: " + error_msg,
             }
             self.generated.append(result)
             return result

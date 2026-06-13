@@ -234,6 +234,21 @@ class ProviderRouter:
         )
 
     # ------------------------------------------------------------
+    def get_coding_brain(self) -> Brain:
+        """Retorna el Brain especializado en CÓDIGO (qwen-coder si está).
+
+        Lo usan el BuilderEngine y la auto-evolución para no programar con el
+        modelo conversacional (8B), que genera código roto. Si Ollama no está
+        disponible, cae al primer provider disponible (ej. Gemini/OpenAI).
+        """
+        if "ollama" in self.brains and self.breaker.is_up("ollama"):
+            return self._get_brain_for("ollama", "coding")
+        # Sin ollama: usar el primer provider disponible
+        order = self._pick_order("coding")
+        if order:
+            return self._get_brain_for(order[0], "coding")
+        return self.brains.get("ollama") or next(iter(self.brains.values()))
+
     # Multi-model Ollama: elige Brain segun task_type
     # ------------------------------------------------------------
     def _get_brain_for(self, provider: str, task_type: str) -> Brain:

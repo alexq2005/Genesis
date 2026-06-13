@@ -610,9 +610,23 @@ test("Import AgentSystem", importlib.import_module("core.agents") is not None)
 test("Import WorkflowEngine", importlib.import_module("core.workflows") is not None)
 test("Import SessionManager", importlib.import_module("core.sessions") is not None)
 
-# Verificar que genesis.py tiene las lineas de import
-with open("genesis.py", "r", encoding="utf-8") as f:
-    genesis_src = f.read()
+# Verificar que genesis.py tiene las lineas de import.
+# El refactor movio comandos/help/status a mixins en core/genesis_*.py,
+# asi que la "fuente de Genesis" es la concatenacion de genesis.py + mixins.
+_genesis_files = [
+    "genesis.py",
+    "core/genesis_processing.py",
+    "core/genesis_commands.py",
+    "core/genesis_tools.py",
+]
+_parts = []
+for _gf in _genesis_files:
+    try:
+        with open(_gf, "r", encoding="utf-8") as f:
+            _parts.append(f.read())
+    except FileNotFoundError:
+        pass
+genesis_src = "\n".join(_parts)
 
 test("genesis.py importa AgentSystem", "from core.agents import AgentSystem" in genesis_src)
 test("genesis.py importa WorkflowEngine", "from core.workflows import WorkflowEngine" in genesis_src)

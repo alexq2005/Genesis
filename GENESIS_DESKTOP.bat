@@ -9,11 +9,17 @@ echo   Ctrl+Shift+G = Mostrar/Ocultar
 echo =======================================
 echo.
 
+if not exist "venv\Scripts\python.exe" (
+    echo [ERROR] No existe el entorno virtual ^(venv^). Ejecuta setup.bat primero.
+    pause
+    exit /b 1
+)
+
 :: Limpiar cache Python antes de iniciar
 if exist __pycache__ rd /s /q __pycache__ >nul 2>&1
 if exist core\__pycache__ rd /s /q core\__pycache__ >nul 2>&1
 
 :: Iniciar Genesis como app nativa (sidebar derecha)
-python genesis_desktop.py --right
+"venv\Scripts\python.exe" genesis_desktop.py --right
 
 pause

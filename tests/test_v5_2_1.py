@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 passed = 0
 failed = 0
+skipped = 0
 
 def test(name, condition):
     global passed, failed
@@ -28,15 +29,44 @@ def test(name, condition):
         print(f"  ✗ {name}")
         failed += 1
 
+def skip(name, reason):
+    """Salta un test que requiere una dependencia opcional ausente (no cuenta como fallo)."""
+    global skipped
+    print(f"  ⊘ SKIP {name} ({reason})")
+    skipped += 1
+
+# Deteccion de dependencias opcionales de voz. Si faltan, core/voice.py degrada
+# con available=False (fallback grácil). Los tests de fallback siguen corriendo;
+# los que exigen la dependencia real se SALTAN con motivo claro.
+def _has(mod):
+    try:
+        __import__(mod)
+        return True
+    except ImportError:
+        return False
+
+HAS_VOSK = _has("vosk")
+HAS_PYTTSX3 = _has("pyttsx3")
+HAS_SOUNDDEVICE = _has("sounddevice")
+
 
 # ============================================================
 # 1. Voice Packages Installed
 # ============================================================
 print("\n--- Voice Packages ---")
 
-test("vosk package importable", (lambda: (__import__('vosk'), True)[-1])() if True else False)
-test("sounddevice package importable", (lambda: (__import__('sounddevice'), True)[-1])() if True else False)
-test("pyttsx3 package importable", (lambda: (__import__('pyttsx3'), True)[-1])() if True else False)
+if HAS_VOSK:
+    test("vosk package importable", True)
+else:
+    skip("vosk package importable", "vosk no instalado")
+if HAS_SOUNDDEVICE:
+    test("sounddevice package importable", True)
+else:
+    skip("sounddevice package importable", "sounddevice no instalado")
+if HAS_PYTTSX3:
+    test("pyttsx3 package importable", True)
+else:
+    skip("pyttsx3 package importable", "pyttsx3 no instalado")
 
 
 # ============================================================
@@ -52,17 +82,21 @@ test("vosk model has 'am' subdirectory", os.path.isdir(os.path.join(model_path, 
 test("vosk model has 'conf' subdirectory", os.path.isdir(os.path.join(model_path, "conf")))
 test("vosk model has 'graph' subdirectory", os.path.isdir(os.path.join(model_path, "graph")))
 
-# Test loading model
-try:
-    import vosk
-    vosk.SetLogLevel(-1)
-    model = vosk.Model(model_path)
-    test("vosk model loads successfully", model is not None)
-    rec = vosk.KaldiRecognizer(model, 16000)
-    test("vosk recognizer creates with 16kHz", rec is not None)
-except Exception as e:
-    test(f"vosk model loads successfully (ERROR: {e})", False)
-    test("vosk recognizer creates with 16kHz", False)
+# Test loading model (requiere paquete vosk)
+if HAS_VOSK:
+    try:
+        import vosk
+        vosk.SetLogLevel(-1)
+        model = vosk.Model(model_path)
+        test("vosk model loads successfully", model is not None)
+        rec = vosk.KaldiRecognizer(model, 16000)
+        test("vosk recognizer creates with 16kHz", rec is not None)
+    except Exception as e:
+        test(f"vosk model loads successfully (ERROR: {e})", False)
+        test("vosk recognizer creates with 16kHz", False)
+else:
+    skip("vosk model loads successfully", "vosk no instalado")
+    skip("vosk recognizer creates with 16kHz", "vosk no instalado")
 
 
 # ============================================================
@@ -74,21 +108,29 @@ from core.voice import VoiceSystem, STTEngine, TTSEngine
 
 # Test STTEngine with model path
 stt = STTEngine(model_path=model_path, lang="es")
-test("STTEngine available with valid model path", stt.available)
+if HAS_VOSK:
+    test("STTEngine available with valid model path", stt.available)
+    test("STTEngine model loaded", stt.model is not None)
+else:
+    # Fallback grácil: sin vosk, available debe ser False (no crashea)
+    test("STTEngine fallback: NOT available sin vosk", not stt.available)
+    test("STTEngine fallback: model es None sin vosk", stt.model is None)
 test("STTEngine lang is 'es'", stt.lang == "es")
-test("STTEngine model loaded", stt.model is not None)
 
-# Test STTEngine without model path
+# Test STTEngine without model path (fallback, no requiere dep)
 stt_empty = STTEngine(model_path="", lang="es")
 test("STTEngine NOT available without model path", not stt_empty.available)
 
-# Test STTEngine with bad path
+# Test STTEngine with bad path (fallback, no requiere dep)
 stt_bad = STTEngine(model_path="/nonexistent/path", lang="es")
 test("STTEngine NOT available with bad path", not stt_bad.available)
 
 # Test VoiceSystem full init
 voice = VoiceSystem(vosk_model_path=model_path)
-test("VoiceSystem STT available", voice.stt.available)
+if HAS_VOSK:
+    test("VoiceSystem STT available", voice.stt.available)
+else:
+    test("VoiceSystem STT fallback: NOT available sin vosk", not voice.stt.available)
 test("VoiceSystem enabled defaults to False", not voice.enabled)
 test("VoiceSystem toggle works", voice.toggle() == "Voz ACTIVADA" and voice.enabled)
 test("VoiceSystem toggle back", voice.toggle() == "Voz DESACTIVADA" and not voice.enabled)
@@ -109,12 +151,18 @@ print("\n--- TTSEngine ---")
 
 tts = TTSEngine()
 test("TTSEngine initializes", tts is not None)
-# On Windows with pyttsx3, should be available
-test("TTSEngine available on Windows", tts.available)
 test("TTSEngine default rate is 175", tts.rate == 175)
 test("TTSEngine default volume is 0.9", tts.volume == 0.9)
-test("TTSEngine has voices", len(tts.voices) > 0)
-test("TTSEngine list_voices works", len(tts.list_voices()) > 0)
+if HAS_PYTTSX3:
+    # On Windows with pyttsx3, should be available
+    test("TTSEngine available on Windows", tts.available)
+    test("TTSEngine has voices", len(tts.voices) > 0)
+    test("TTSEngine list_voices works", len(tts.list_voices()) > 0)
+else:
+    # Fallback grácil: sin pyttsx3, available=False y voices vacio (no crashea)
+    test("TTSEngine fallback: NOT available sin pyttsx3", not tts.available)
+    test("TTSEngine fallback: voices vacio sin pyttsx3", len(tts.voices) == 0)
+    test("TTSEngine fallback: list_voices no crashea", isinstance(tts.list_voices(), (list, str)))
 
 # Set rate/volume
 tts.set_rate(200)
@@ -239,21 +287,24 @@ with wave.open(wav_buffer, 'rb') as wf:
     test("WAV framerate = 16000", wf.getframerate() == 16000)
     test("WAV frames = expected", wf.getnframes() == n_samples)
 
-# Test vosk recognizer with silence (should return empty text)
-wav_buffer.seek(0)
-with wave.open(wav_buffer, 'rb') as wf:
-    import vosk, json as _json
-    vosk.SetLogLevel(-1)
-    rec = vosk.KaldiRecognizer(vosk.Model(model_path), wf.getframerate())
-    data = wf.readframes(wf.getnframes())
-    rec.AcceptWaveform(data)
-    result = _json.loads(rec.FinalResult())
-    test("Vosk returns empty text for silence", result.get("text", "").strip() == "")
+# Test vosk recognizer with silence (should return empty text) — requiere vosk
+if HAS_VOSK:
+    wav_buffer.seek(0)
+    with wave.open(wav_buffer, 'rb') as wf:
+        import vosk, json as _json
+        vosk.SetLogLevel(-1)
+        rec = vosk.KaldiRecognizer(vosk.Model(model_path), wf.getframerate())
+        data = wf.readframes(wf.getnframes())
+        rec.AcceptWaveform(data)
+        result = _json.loads(rec.FinalResult())
+        test("Vosk returns empty text for silence", result.get("text", "").strip() == "")
+else:
+    skip("Vosk returns empty text for silence", "vosk no instalado")
 
 
 # ============================================================
 print(f"\n{'='*60}")
-print(f"RESULTADOS: {passed}/{passed+failed} passed, {failed} failed")
+print(f"RESULTADOS: {passed}/{passed+failed} passed, {failed} failed, {skipped} skipped (dep ausente)")
 print(f"{'='*60}")
 
 if failed > 0:

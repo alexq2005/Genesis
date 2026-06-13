@@ -19,9 +19,44 @@ import re
 import json
 import hashlib
 import os
+import socket
+import ipaddress
 from datetime import datetime
 from typing import Optional
+from urllib.parse import urlparse
 from pathlib import Path
+
+
+# ============================================================
+# Anti-SSRF — validación de URLs antes de hacer fetch
+# ============================================================
+def is_safe_public_url(url: str) -> bool:
+    """True si la URL es segura para hacer fetch desde el servidor.
+
+    Bloquea SSRF: una página/documento malicioso (o el LLM influenciado por
+    ellos) podría pedir leer http://127.0.0.1:5100, http://169.254.169.254
+    (metadata cloud), file://, o IPs privadas de la LAN — y ese contenido
+    volvería al prompt del LLM. Solo se permiten http/https hacia IPs
+    públicas resueltas por DNS.
+    """
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        host = parsed.hostname
+        if not host:
+            return False
+        # Resolver TODAS las IPs del host (evita DNS-rebind a una privada)
+        infos = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80))
+        for info in infos:
+            ip_str = info[4][0]
+            ip = ipaddress.ip_address(ip_str)
+            if (ip.is_private or ip.is_loopback or ip.is_link_local
+                    or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+                return False
+        return True
+    except (ValueError, socket.gaierror, OSError):
+        return False
 
 
 # ============================================================
@@ -99,12 +134,19 @@ class WebSearcher:
         self.min_interval = 2.0  # Segundos minimos entre busquedas
         self._ddgs = None
 
+        # Paquete renombrado: 'ddgs' (nuevo) reemplaza a 'duckduckgo_search' (viejo).
+        self._ddgs_class = None
         try:
-            from duckduckgo_search import DDGS
+            from ddgs import DDGS
             self._ddgs_class = DDGS
             self.available = True
         except ImportError:
-            self._ddgs_class = None
+            try:
+                from duckduckgo_search import DDGS
+                self._ddgs_class = DDGS
+                self.available = True
+            except ImportError:
+                self._ddgs_class = None
 
     def search(self, query: str, max_results: int = 8,
                region: str = "wt-wt") -> list:
@@ -225,15 +267,41 @@ class WebReader:
         if not self.available:
             return None
 
+        # Anti-SSRF: validar la URL inicial antes de tocar la red.
+        if not is_safe_public_url(url):
+            self.total_errors += 1
+            return None
+
         t0 = time.time()
         try:
-            resp = self._requests.get(
-                url,
-                headers=self.headers,
-                timeout=self.timeout,
-                allow_redirects=True,
-                stream=True,
-            )
+            # Seguir redirects manualmente validando cada hop (anti-SSRF):
+            # un 30x podría redirigir a 127.0.0.1 / IP privada / metadata cloud.
+            current_url = url
+            resp = None
+            for _hop in range(5):
+                resp = self._requests.get(
+                    current_url,
+                    headers=self.headers,
+                    timeout=self.timeout,
+                    allow_redirects=False,
+                    stream=True,
+                )
+                if resp.is_redirect or resp.status_code in (301, 302, 303, 307, 308):
+                    next_url = resp.headers.get("location", "")
+                    resp.close()
+                    if not next_url:
+                        break
+                    # Resolver relativa→absoluta y revalidar
+                    next_url = self._requests.compat.urljoin(current_url, next_url)
+                    if not is_safe_public_url(next_url):
+                        self.total_errors += 1
+                        return None
+                    current_url = next_url
+                    continue
+                break
+            if resp is None:
+                self.total_errors += 1
+                return None
             resp.raise_for_status()
 
             # Verificar content-type (solo HTML)

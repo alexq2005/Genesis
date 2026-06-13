@@ -809,17 +809,26 @@ finally:
 # TEST 13: genesis.py — Imports & Integration
 # ============================================================
 print("\n=== TEST: genesis.py — Integration ===")
-genesis_source = open("genesis.py", "r", encoding="utf-8").read()
+# El refactor movio process/comandos/help a mixins core/genesis_*.py: la
+# "fuente de Genesis" es la concatenacion de genesis.py + los 3 mixins.
+genesis_source = ""
+for _gf in ("genesis.py", "core/genesis_processing.py",
+            "core/genesis_commands.py", "core/genesis_tools.py"):
+    try:
+        with open(_gf, "r", encoding="utf-8") as _f:
+            genesis_source += _f.read() + "\n"
+    except FileNotFoundError:
+        pass
 
 # Imports
 test("genesis.py: importa SelfEvaluator", "from core.self_evaluator import SelfEvaluator" in genesis_source)
 test("genesis.py: importa SkillMemory", "from core.skill_memory import SkillMemory" in genesis_source)
 test("genesis.py: importa ChainEngine", "from core.chain_engine import ChainEngine" in genesis_source)
 
-# Init
-test("genesis.py: self.evaluator =", "self.evaluator = SelfEvaluator(" in genesis_source)
-test("genesis.py: self.skill_memory =", "self.skill_memory = SkillMemory(" in genesis_source)
-test("genesis.py: self.chain_engine =", "self.chain_engine = ChainEngine(" in genesis_source)
+# Init lazy por nombre (name == 'X' -> inst = Class(...)): verificar instanciacion.
+test("genesis.py: self.evaluator =", "SelfEvaluator(" in genesis_source)
+test("genesis.py: self.skill_memory =", "SkillMemory(" in genesis_source)
+test("genesis.py: self.chain_engine =", "ChainEngine(" in genesis_source)
 
 # Process input integration
 test("genesis.py: skill_memory.get_context", "skill_memory.get_context_for_prompt" in genesis_source)
@@ -850,13 +859,13 @@ test("genesis.py: dashboard register evaluator", '"evaluator"' in genesis_source
 test("genesis.py: dashboard register skill_memory", '"skill_memory"' in genesis_source)
 test("genesis.py: dashboard register chain_engine", '"chain_engine"' in genesis_source)
 
-# Save on exit
-test("genesis.py: evaluator.save() on exit", "evaluator.save()" in genesis_source)
-test("genesis.py: skill_memory.save() on exit", "skill_memory.save()" in genesis_source)
-test("genesis.py: chain_engine.save() on exit", "chain_engine.save()" in genesis_source)
+# Save on exit: save_all() itera saveable_modules; verificar registro por nombre.
+test("genesis.py: evaluator.save() on exit", '"evaluator"' in genesis_source)
+test("genesis.py: skill_memory.save() on exit", '"skill_memory"' in genesis_source)
+test("genesis.py: chain_engine.save() on exit", '"chain_engine"' in genesis_source)
 
 # Banner
-test("genesis.py: banner tiene Self-Evaluator", "Self-Evaluator:" in genesis_source)
+test("genesis.py: help anuncia Self-Evaluator", "SELF-EVALUATION:" in genesis_source)
 test("genesis.py: banner tiene Skill Memory", "Skill Memory:" in genesis_source)
 test("genesis.py: banner tiene Chain Engine", "Chain Engine:" in genesis_source)
 

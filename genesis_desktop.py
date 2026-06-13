@@ -327,8 +327,10 @@ INJECTED_JS = """
     <span class="tb-title">Genesis AI</span>
     <span class="tb-provider" id="tb-provider-badge">LOCAL</span>
     <div class="tb-buttons">
+      <button class="tb-btn home" id="tb-home" title="Volver a Genesis (inicio)">⌂</button>
       <button class="tb-btn pin" id="tb-pin" title="Siempre encima">📌</button>
       <button class="tb-btn minimize" id="tb-minimize" title="Minimizar">─</button>
+      <button class="tb-btn maximize" id="tb-maximize" title="Maximizar / Pantalla completa">□</button>
       <button class="tb-btn close" id="tb-close" title="Cerrar">✕</button>
     </div>
   `;
@@ -351,9 +353,43 @@ INJECTED_JS = """
     }
   });
 
+  // Home: vuelve a la cabina aunque estemos atrapados en una página externa
+  // (ej: clickeaste un resultado de investigación y querés volver).
+  document.getElementById('tb-home').addEventListener('click', function() {
+    window.location.href = 'http://127.0.0.1:""" + str(FLASK_PORT) + """/core';
+  });
+
   document.getElementById('tb-minimize').addEventListener('click', function() {
     if (window.pywebview && window.pywebview.api) {
       window.pywebview.api.minimize_window();
+    }
+  });
+
+  let maximized = false;
+  document.getElementById('tb-maximize').addEventListener('click', function() {
+    if (window.pywebview && window.pywebview.api) {
+      var p = window.pywebview.api.toggle_maximize();
+      Promise.resolve(p).then(function(isMax) {
+        maximized = !!isMax;
+        // ❐ = restaurar (cuando está maximizado), □ = maximizar
+        document.getElementById('tb-maximize').textContent = maximized ? '❐' : '□';
+        document.getElementById('tb-maximize').title = maximized
+          ? 'Restaurar tamaño' : 'Maximizar';
+      });
+    }
+  });
+
+  // Pantalla completa REAL (inmersiva): F11 entra/sale, Esc sale.
+  let fullscreen = false;
+  document.addEventListener('keydown', function(e) {
+    if (!window.pywebview || !window.pywebview.api) return;
+    if (e.key === 'F11') {
+      e.preventDefault();
+      window.pywebview.api.toggle_fullscreen();
+      fullscreen = !fullscreen;
+    } else if (e.key === 'Escape' && fullscreen) {
+      window.pywebview.api.toggle_fullscreen();
+      fullscreen = false;
     }
   });
 
@@ -441,6 +477,45 @@ class GenesisDesktopAPI:
     def minimize_window(self):
         if self._window:
             self._window.minimize()
+
+    def toggle_maximize(self):
+        """Maximiza a pantalla completa o restaura al tamaño anterior.
+        Devuelve True si quedó maximizada, False si restaurada."""
+        if not self._window:
+            return False
+        if getattr(self, "_maximized", False):
+            try:
+                self._window.restore()
+            except Exception:
+                pass
+            self._maximized = False
+        else:
+            try:
+                self._window.maximize()
+            except Exception:
+                pass
+            self._maximized = True
+        return self._maximized
+
+    def toggle_fullscreen(self):
+        """Pantalla completa real (inmersiva, sin barra). Toggle. Salir con F11/Esc."""
+        if self._window:
+            try:
+                self._window.toggle_fullscreen()
+            except Exception:
+                pass
+
+    def open_external(self, url):
+        """Abre una URL en el navegador del sistema (no en la cabina).
+        Evita que clickear un resultado de investigación secuestre la ventana."""
+        try:
+            import webbrowser
+            if url and (url.startswith("http://") or url.startswith("https://")):
+                webbrowser.open(url)
+                return True
+        except Exception:
+            pass
+        return False
 
     def hide_to_tray(self):
         if self._window:
@@ -590,6 +665,13 @@ def _on_loaded(window):
 def main():
     global _webview_window, WINDOW_MODE
 
+    # Habilitar autoplay de audio en WebView2 (sino la voz/TTS no suena: la
+    # política por defecto bloquea audio.play() tras un fetch asíncrono).
+    os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
+        os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
+        + " --autoplay-policy=no-user-gesture-required"
+    ).strip()
+
     if "--left" in sys.argv:
         WINDOW_MODE = "left"
     elif "--center" in sys.argv:
@@ -642,9 +724,9 @@ def main():
 
         print("  [2/3] Esperando servidor...")
         if _wait_for_server():
-            print(f"  [OK]  Servidor listo — http://{FLASK_HOST}:{FLASK_PORT}")
-            # Navegar a la app real
-            _webview_window.load_url(f"http://{FLASK_HOST}:{FLASK_PORT}")
+            print(f"  [OK]  Servidor listo — http://{FLASK_HOST}:{FLASK_PORT}/jarvis")
+            # Navegar al HUD JARVIS (cabina nativa, sin navegador)
+            _webview_window.load_url(f"http://{FLASK_HOST}:{FLASK_PORT}/core")
             # Esperar carga e inyectar UI custom
             time.sleep(2)
             _on_loaded(_webview_window)

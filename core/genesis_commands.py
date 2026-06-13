@@ -282,6 +282,20 @@ class GenesisCommandsMixin:
         elif cmd == "/briefing" or cmd == "/brief" or cmd == "/jarvis":
             return self._cmd_briefing()
         # === SELF-MODIFIER ===
+        elif cmd == "/deep" or cmd.startswith("/deep "):
+            return self._cmd_deep(command.strip())
+        elif cmd == "/build_queue" or cmd.startswith("/build_queue "):
+            parts = command.split(maxsplit=1)
+            if len(parts) < 2:
+                q = getattr(self.builder_engine, "queue", [])
+                return ("Cola de construcción autónoma (" + str(len(q)) + "):\n" +
+                        ("\n".join(f"  {i+1}. {s}" for i, s in enumerate(q)) if q
+                         else "  (vacía) — agregá con: /build_queue <descripción>"))
+            pos = self.builder_engine.queue_goal(parts[1].strip())
+            return (f"✅ Objetivo encolado (posición {pos}). Genesis lo construirá "
+                    f"solo en el próximo ciclo autónomo (cada ~20 min).")
+        elif cmd == "/build" or cmd.startswith("/build "):
+            return self._cmd_build(command.strip())
         elif cmd == "/mutate" or cmd.startswith("/mutate "):
             return self._cmd_mutate(command.strip())
         elif cmd == "/self_history":
@@ -1450,9 +1464,110 @@ class GenesisCommandsMixin:
         """Aplica el cambio pendiente del self-modifier."""
         if not self.self_modifier.pending_change:
             return "No hay cambio pendiente. Genesis debe proponer uno primero."
-        result = self.self_modifier.apply_change()
+        # /apply = aprobación humana explícita → puede aplicar archivos críticos.
+        result = self.self_modifier.apply_change(human_approved=True)
         self.log.info(f"Self-Modifier: {result['message']}")
         return result["message"]
+
+    def _coding_brain(self):
+        """Brain especializado en CÓDIGO (qwen-coder) para generar/mutar código.
+
+        El 8B conversacional genera código roto (por eso la auto-mejora fallaba
+        por sintaxis). qwen2.5-coder produce código válido → la evolución aplica
+        mejoras reales en vez de rebotar contra el gate.
+        """
+        b = getattr(self, "brain", None)
+        if b is not None and hasattr(b, "get_coding_brain"):
+            try:
+                return b.get_coding_brain()
+            except Exception:
+                pass
+        return b
+
+    def _generate_code(self, prompt: str, system: str, max_tokens: int = 8192) -> str:
+        """Genera código con qwen y tokens ALTOS.
+
+        NO usar quick_think aquí: fuerza max_tokens=512, que trunca módulos
+        enteros (la causa real de los 'syntax invalid' en la auto-mejora).
+        """
+        brain = self._coding_brain()
+        return brain.think(system, [{"role": "user", "content": prompt}],
+                           temperature=0.2, max_tokens=max_tokens)
+
+    def _cmd_deep(self, command: str) -> str:
+        """
+        Razonamiento profundo con qwen3:30b (modelo grande, MoE 30B-A3B).
+
+        /deep <pregunta>  — usa el modelo grande a través de Genesis (con
+        personalidad + contexto de la conversación). Lento en 8GB VRAM (offload),
+        pero potente. Para probar el modelo grande sin frenar la cabina normal.
+        """
+        parts = command.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            return "Uso: /deep <pregunta> — razona con qwen3:30b (potente pero lento)"
+        q = parts[1].strip()
+        try:
+            import time as _t
+            from core.brain import Brain
+            from config import OLLAMA_URL
+            # Verificar que el modelo esté descargado
+            try:
+                import urllib.request
+                with urllib.request.urlopen(OLLAMA_URL + "/api/tags", timeout=4) as r:
+                    if "qwen3:30b" not in r.read().decode("utf-8", "replace"):
+                        return ("⏳ qwen3:30b todavía no está descargado. Esperá a que "
+                                "termine la descarga y volvé a probar /deep.")
+            except Exception:
+                pass
+            if not hasattr(self, "_deep_brain"):
+                self._deep_brain = Brain(provider="ollama", model="qwen3:30b",
+                                         ollama_url=OLLAMA_URL)
+            sys_p = self.build_system_prompt(intent="reasoning")
+            msgs = self.memory.get_conversation_messages() + [{"role": "user", "content": q}]
+            t0 = _t.time()
+            resp = self._deep_brain.think(sys_p, msgs, temperature=0.7, max_tokens=1024)
+            dt = _t.time() - t0
+            self.memory.short_term.add("user", q)
+            self.memory.short_term.add("assistant", resp)
+            return f"🧠 **qwen3:30b** · {dt:.0f}s\n\n{resp}"
+        except Exception as e:
+            return f"[ERROR] No pude usar qwen3:30b: {e}"
+
+    def _cmd_build(self, command: str) -> str:
+        """
+        Genesis CONSTRUYE un proyecto real con qwen-coder y lo deja FUNCIONANDO.
+
+        /build <descripcion>   — ej: /build una calculadora de IMC en python
+
+        Loop: genera con qwen → escribe en generated_media/projects → ejecuta →
+        lee errores reales → corrige → repite hasta que corre limpio.
+        """
+        parts = command.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            return ("Uso: /build <descripcion del proyecto>\n"
+                    "Ej: /build un juego de adivinar numero / una API de tareas / "
+                    "un parser de CSV a JSON")
+        spec = parts[1].strip()
+        try:
+            r = self.builder_engine.build(spec, max_iters=4, run_timeout=45)
+        except Exception as e:
+            return f"[ERROR] Builder fallo: {e}"
+
+        if r.success:
+            return (
+                f"🛠️ **Proyecto construido y FUNCIONANDO** (iter {r.iterations})\n\n"
+                f"**Spec:** {spec}\n"
+                f"**Archivos:** {', '.join(r.files)}\n"
+                f"**Entry:** {r.entry}\n"
+                f"📁 `{r.project_dir}`\n\n"
+                f"**Salida real de la ejecución:**\n```\n{r.output[:800]}\n```"
+            )
+        return (
+            f"⚠️ No logré dejarlo funcionando tras {r.iterations} iteraciones.\n"
+            f"**Spec:** {spec}\n"
+            f"📁 `{r.project_dir}`\n"
+            f"**Último error:**\n```\n{(r.error or r.output)[:600]}\n```"
+        )
 
     def _cmd_mutate(self, command: str) -> str:
         """
@@ -1528,14 +1643,13 @@ class GenesisCommandsMixin:
         self.log.info(f"Self-Modifier: Analizando {target_file} para mutacion...")
         print(f"  Analizando {target_file} ({len(current_code)} bytes)...")
 
-        new_code = self.brain.quick_think(
+        new_code = self._generate_code(
             mutate_prompt,
             system=(
                 "Eres un ingeniero de software experto. Analiza el codigo y genera "
                 "una version mejorada. Responde UNICAMENTE con codigo Python valido. "
                 "Sin explicaciones, sin markdown, sin bloques de codigo. Solo Python puro."
             ),
-            temperature=0.3,
         )
 
         if not new_code or len(new_code) < 50 or "[ERROR]" in new_code:
@@ -1607,6 +1721,56 @@ class GenesisCommandsMixin:
         else:
             return f"Estado inesperado: {status}"
 
+    @staticmethod
+    def _tolerant_replace(code: str, old: str, new: str):
+        """Find/replace tolerante a whitespace. El LLM rara vez reproduce la
+        sangría exacta, así que: 1) intenta match exacto; 2) si falla, matchea
+        por líneas con strip y re-indenta el reemplazo a la sangría real del
+        bloque original. Devuelve el código nuevo, o None si no hay match único."""
+        if code.count(old) == 1:
+            return code.replace(old, new, 1)
+
+        def _trim(block):
+            ls = block.split("\n")
+            while ls and not ls[0].strip():
+                ls.pop(0)
+            while ls and not ls[-1].strip():
+                ls.pop()
+            return ls
+
+        old_lines = _trim(old)
+        new_lines = _trim(new)
+        if not old_lines or not new_lines:
+            return None
+        old_stripped = [l.strip() for l in old_lines]
+        code_lines = code.split("\n")
+        n = len(old_stripped)
+        matches = [i for i in range(len(code_lines) - n + 1)
+                   if [code_lines[i + j].strip() for j in range(n)] == old_stripped]
+        if len(matches) != 1:
+            return None  # 0 o ambiguo → no tocar
+        i = matches[0]
+        orig_first = code_lines[i]
+        old_indent = len(orig_first) - len(orig_first.lstrip())
+        first_new = next((l for l in new_lines if l.strip()), new_lines[0])
+        new_indent = len(first_new) - len(first_new.lstrip())
+        # Shift UNIFORME: preserva la sangría RELATIVA del bloque nuevo (no aplana
+        # los anidados, que rompía la sintaxis). Solo desplaza todo el bloque.
+        shift = old_indent - new_indent
+        reindented = []
+        for nl in new_lines:
+            if not nl.strip():
+                reindented.append("")
+            elif shift >= 0:
+                reindented.append(" " * shift + nl)
+            else:
+                k = 0
+                while k < -shift and k < len(nl) and nl[k] == " ":
+                    k += 1
+                reindented.append(nl[k:])
+        result = code_lines[:i] + reindented + code_lines[i + n:]
+        return "\n".join(result)
+
     def _auto_mutate_code(self) -> dict:
         """
         Mutacion autonoma de codigo: elige un archivo, genera mejora via LLM,
@@ -1639,43 +1803,63 @@ class GenesisCommandsMixin:
         if len(current_code) > 15000:
             return {"mutated": False, "message": f"{target_file} demasiado grande para mutacion auto"}
 
-        # 3. Pedir al LLM que proponga UNA mejora concreta
+        # 3. Pedir al LLM UNA mejora QUIRÚRGICA (find/replace chico), NO el archivo entero.
+        #    Reescribir todo el archivo hacía que el LLM borrara bloques (-300 líneas) y los
+        #    tests fallaran SIEMPRE → auto-revert. Con un cambio mínimo, el 99% del archivo
+        #    queda byte-idéntico y la mutación tiene chance real de pasar el gate.
         mutate_prompt = (
-            f"TAREA: Analizar y mejorar este codigo Python de Genesis.\n"
-            f"Archivo: {target_file}\n\n"
-            f"CODIGO ACTUAL:\n```python\n{current_code}\n```\n\n"
-            f"INSTRUCCIONES:\n"
-            f"1. Identifica UNA mejora concreta: bug fix, optimizacion, mejor manejo de errores, "
-            f"o micro-funcionalidad nueva que encaje naturalmente\n"
-            f"2. Genera el archivo COMPLETO con la mejora aplicada\n"
-            f"3. NO cambies la estructura general, solo haz la mejora puntual\n"
-            f"4. Manten TODOS los imports, clases y metodos existentes\n"
-            f"5. Responde SOLO con el codigo Python mejorado, sin explicaciones\n"
-            f"6. NO uses bloques ``` markdown, solo el codigo puro\n"
+            f"Proponé UNA mejora PEQUEÑA y quirúrgica a este código Python.\n"
+            f"Archivo: {target_file}\n\n```python\n{current_code}\n```\n\n"
+            f"Respondé EXACTAMENTE en este formato, sin nada más:\n"
+            f"BUSCAR:\n<fragmento EXACTO del código actual, entre 2 y 25 líneas, copiado LITERAL "
+            f"con su sangría>\n"
+            f"REEMPLAZAR:\n<ese mismo fragmento, mejorado>\n\n"
+            f"Reglas: el bloque BUSCAR debe existir TAL CUAL (mismos espacios/sangría) y ser "
+            f"ÚNICO en el archivo. Cambiá lo MÍNIMO (una función o un bloque chico). NO "
+            f"reescribas el archivo entero. Mejora válida: arreglar un bug, mejor manejo de "
+            f"errores, una optimización chica, o un docstring/typing faltante."
         )
-
-        new_code = self.brain.quick_think(
+        raw = self._generate_code(
             mutate_prompt,
             system=(
-                "Eres un ingeniero de software experto. Analiza el codigo y genera "
-                "una version mejorada. Responde UNICAMENTE con codigo Python valido. "
-                "Sin explicaciones, sin markdown, sin bloques de codigo. Solo Python puro."
+                "Sos un ingeniero senior. Devolvés SOLO un bloque BUSCAR/REEMPLAZAR con un "
+                "cambio mínimo y seguro. Sin explicaciones, sin markdown extra."
             ),
-            temperature=0.3,
         )
+        if not raw or "[ERROR]" in raw:
+            return {"mutated": False, "message": f"LLM no propuso mejora para {target_file}"}
 
-        if not new_code or len(new_code) < 50 or "[ERROR]" in new_code:
-            return {"mutated": False, "message": f"LLM no genero mejora para {target_file}"}
+        # 4. Parsear y validar el cambio quirúrgico
+        import re as _re
 
-        # 4. Limpiar artefactos del LLM
-        new_code = new_code.strip()
-        if new_code.startswith("```"):
-            code_lines = new_code.split("\n")
-            if code_lines[0].startswith("```"):
-                code_lines = code_lines[1:]
-            if code_lines and code_lines[-1].strip() == "```":
-                code_lines = code_lines[:-1]
-            new_code = "\n".join(code_lines)
+        def _strip_fence(s):
+            ls = s.split("\n")
+            if ls and ls[0].strip().startswith("```"):
+                ls = ls[1:]
+            if ls and ls[-1].strip() == "```":
+                ls = ls[:-1]
+            return "\n".join(ls)
+
+        m = _re.search(r"BUSCAR:\s*\n(.*?)\n\s*REEMPLAZAR:\s*\n(.*)$", raw, _re.DOTALL)
+        if not m:
+            return {"mutated": False, "message": "El LLM no devolvió el formato BUSCAR/REEMPLAZAR"}
+        old = _strip_fence(m.group(1)).rstrip("\n")
+        new = _strip_fence(m.group(2)).rstrip("\n")
+        if not old or old == new:
+            return {"mutated": False, "message": "Cambio vacío o sin diferencia real"}
+        # Mutación QUIRÚRGICA: fragmentos chicos
+        if len(old) > 2000 or len(new) > 2500:
+            return {"mutated": False, "message": "Mutación demasiado grande (no quirúrgica), descartada"}
+        # Replace tolerante a whitespace (el LLM no clava la sangría exacta).
+        new_code = self._tolerant_replace(current_code, old, new)
+        if new_code is None:
+            return {"mutated": False, "message": "El fragmento BUSCAR no matchea (único) en el archivo"}
+        if new_code == current_code:
+            return {"mutated": False, "message": "Sin cambio efectivo"}
+        # Guard final: el cambio NETO de líneas debe ser chico (anti reescritura masiva)
+        net = abs(new_code.count("\n") - current_code.count("\n"))
+        if net > 60:
+            return {"mutated": False, "message": f"Cambio neto de {net} líneas: demasiado grande, descartado"}
 
         # 5. Proponer via SelfModifier (valida syntax + seguridad)
         result = self.self_modifier.propose_change(
@@ -1693,8 +1877,10 @@ class GenesisCommandsMixin:
         elif status != "pending":
             return {"mutated": False, "message": f"Estado inesperado: {status}"}
 
-        # 6. Auto-aplicar (SelfModifier corre tests y auto-revierte si fallan)
-        apply_result = self.self_modifier.apply_change()
+        # 6. Auto-aplicar SIN aprobación humana (modo autónomo).
+        # SelfModifier corre tests y auto-revierte si fallan; los archivos
+        # críticos quedan bloqueados (requieren /apply manual).
+        apply_result = self.self_modifier.apply_change(human_approved=False)
         apply_status = apply_result.get("status")
 
         if apply_status == "applied":

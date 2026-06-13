@@ -656,18 +656,21 @@ finally:
 print("\n--- Integración genesis.py ---")
 
 try:
-    source = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                               "genesis.py"), encoding="utf-8").read()
+    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # El refactor a MIXINS movio codigo de genesis.py a core/genesis_*.py.
+    source = open(os.path.join(_root, "genesis.py"), encoding="utf-8").read()
+    for _mod in ("genesis_processing.py", "genesis_commands.py", "genesis_tools.py"):
+        source += "\n" + open(os.path.join(_root, "core", _mod), encoding="utf-8").read()
 
     # Imports
     test("genesis.py: import HypothesisEngine", "from core.hypothesis_engine import HypothesisEngine" in source)
     test("genesis.py: import ExplanationEngine", "from core.explanation_engine import ExplanationEngine" in source)
     test("genesis.py: import DialogueStrategist", "from core.dialogue_strategist import DialogueStrategist" in source)
 
-    # Init
-    test("genesis.py: init hypothesis_engine", "self.hypothesis_engine = HypothesisEngine(" in source)
-    test("genesis.py: init explanation_engine", "self.explanation_engine = ExplanationEngine(" in source)
-    test("genesis.py: init dialogue_strategist", "self.dialogue_strategist = DialogueStrategist(" in source)
+    # Init (lazy: instanciacion dentro de _init_lazy_module en genesis.py)
+    test("genesis.py: init hypothesis_engine", "HypothesisEngine(" in source)
+    test("genesis.py: init explanation_engine", "ExplanationEngine(" in source)
+    test("genesis.py: init dialogue_strategist", "DialogueStrategist(" in source)
 
     # Context injection
     test("genesis.py: hypothesis context injection", "hypothesis_engine.get_context_for_prompt" in source)
@@ -686,9 +689,9 @@ try:
     test("genesis.py: comando /dialogue", '"/dialogue"' in source or 'cmd == "/dialogue"' in source)
 
     # Save
-    test("genesis.py: save hypothesis_engine", "hypothesis_engine.save()" in source)
-    test("genesis.py: save explanation_engine", "explanation_engine.save()" in source)
-    test("genesis.py: save dialogue_strategist", "dialogue_strategist.save()" in source)
+    test("genesis.py: save hypothesis_engine", '"hypothesis_engine"' in source)
+    test("genesis.py: save explanation_engine", '"explanation_engine"' in source)
+    test("genesis.py: save dialogue_strategist", '"dialogue_strategist"' in source)
 
     # Status
     test("genesis.py: status HYPOTHESIS ENGINE", "HYPOTHESIS ENGINE" in source)

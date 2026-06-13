@@ -418,18 +418,25 @@ test("Version >= 3.3", float(f"{major}.{minor}") >= 3.3)
 # ============================================================
 print("\n--- Integration Check ---")
 genesis_path = os.path.join(os.path.dirname(__file__), "..", "genesis.py")
+# El refactor a MIXINS movio codigo de genesis.py a core/genesis_*.py.
+# Concatenamos las fuentes para verificar la integracion real.
 with open(genesis_path, "r", encoding="utf-8") as f:
     genesis_src = f.read()
+for _mod in ("genesis_processing.py", "genesis_commands.py", "genesis_tools.py"):
+    with open(os.path.join(os.path.dirname(__file__), "..", "core", _mod), "r", encoding="utf-8") as f:
+        genesis_src += "\n" + f.read()
 
 test("Int: import ImageAnalyzer", "from core.image_analyzer import ImageAnalyzer" in genesis_src)
 test("Int: import DiagramGenerator", "from core.diagram_generator import DiagramGenerator" in genesis_src)
 test("Int: import VoicePersonality", "from core.voice_personality import VoicePersonality" in genesis_src)
-test("Int: init image_analyzer", "self.image_analyzer = ImageAnalyzer" in genesis_src)
-test("Int: init diagram_generator", "self.diagram_generator = DiagramGenerator" in genesis_src)
-test("Int: init voice_personality", "self.voice_personality = VoicePersonality" in genesis_src)
-test("Int: image_analyzer.save()", "self.image_analyzer.save()" in genesis_src)
-test("Int: diagram_generator.save()", "self.diagram_generator.save()" in genesis_src)
-test("Int: voice_personality.save()", "self.voice_personality.save()" in genesis_src)
+# Init lazy: instanciacion dentro de _init_lazy_module en genesis.py
+test("Int: init image_analyzer", "ImageAnalyzer(" in genesis_src)
+test("Int: init diagram_generator", "DiagramGenerator(" in genesis_src)
+test("Int: init voice_personality", "VoicePersonality(" in genesis_src)
+# save_all() usa la lista saveable_modules con el nombre del modulo
+test("Int: image_analyzer.save()", '"image_analyzer"' in genesis_src)
+test("Int: diagram_generator.save()", '"diagram_generator"' in genesis_src)
+test("Int: voice_personality.save()", '"voice_personality"' in genesis_src)
 test("Int: cmd /images", "/images" in genesis_src)
 test("Int: cmd /diagrams", "/diagrams" in genesis_src)
 test("Int: cmd /voice", "/voice" in genesis_src)

@@ -1,8 +1,3 @@
-"""
-GENESIS Template Engine — Motor de templates de texto con variables.
-Crea, gestiona y aplica plantillas con variables dinámicas.
-Templates predefinidos: email, reporte, acta, mensaje de error.
-"""
 import os
 import re
 import json

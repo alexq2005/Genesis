@@ -60,9 +60,13 @@ with tempfile.TemporaryDirectory() as tmpdir:
     log_file = Path(tmpdir) / "genesis.log"
     test("Archivo de log creado", log_file.exists())
 
-    # Read recent logs
+    # Read recent logs: filtro level="WARN" => devuelve entradas con nivel >= WARN.
+    # Aqui se loggeo un ERROR (nivel > WARN), por lo que el filtro debe devolverlo
+    # e incluir [ERROR], descartando DEBUG/INFO.
     recent = logger.get_recent_logs(n=10, level="WARN")
-    test("Logs leidos contienen WARN", "warn" in recent.lower() or "WARN" in recent)
+    test("Filtro WARN devuelve ERROR (nivel >= WARN)", "[ERROR]" in recent)
+    test("Filtro WARN descarta DEBUG", "[DEBUG]" not in recent)
+    test("Filtro WARN descarta INFO", "[INFO]" not in recent)
 
     # Status
     status = logger.status()

@@ -566,8 +566,15 @@ test("Import AutoLearner", importlib.import_module("core.auto_learner") is not N
 test("Import ConversationAnalytics", importlib.import_module("core.conversation_analytics") is not None)
 test("Import AdaptivePrompts", importlib.import_module("core.adaptive_prompts") is not None)
 
-with open("genesis.py", "r", encoding="utf-8") as f:
-    genesis_src = f.read()
+genesis_src = ""
+for _src_path in [
+    "genesis.py",
+    "core/genesis_processing.py",
+    "core/genesis_commands.py",
+    "core/genesis_tools.py",
+]:
+    with open(_src_path, "r", encoding="utf-8") as f:
+        genesis_src += f.read() + "\n"
 
 test("genesis.py importa AutoLearner", "from core.auto_learner import AutoLearner" in genesis_src)
 test("genesis.py importa ConversationAnalytics", "from core.conversation_analytics import ConversationAnalytics" in genesis_src)

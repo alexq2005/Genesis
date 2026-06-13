@@ -350,7 +350,9 @@ test("Web UI tiene ruta /", "def index" in web_content)
 test("Web UI tiene /api/chat", "def api_chat" in web_content)
 test("Web UI tiene /api/info", "def api_info" in web_content)
 test("Web UI tiene /api/status", "def api_status" in web_content)
-test("Web UI tiene HTML template", "HTML_TEMPLATE" in web_content)
+test("Web UI tiene HTML template",
+     "HTML_TEMPLATE" in web_content
+     or ("render_template_string" in web_content and "get_dashboard_html" in web_content))
 test("Web UI tiene SSE o streaming ref", "stream" in web_content.lower() or "SSE" in web_content)
 
 

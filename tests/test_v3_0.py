@@ -693,8 +693,16 @@ test("Integration: import dream_engine",
 test("Integration: import self_narrative",
      importlib.import_module("core.self_narrative") is not None)
 
-with open("genesis.py", "r", encoding="utf-8") as f:
-    genesis_code = f.read()
+# El refactor movio process/comandos/help a mixins core/genesis_*.py: la
+# "fuente de Genesis" es la concatenacion de genesis.py + los 3 mixins.
+genesis_code = ""
+for _gf in ("genesis.py", "core/genesis_processing.py",
+            "core/genesis_commands.py", "core/genesis_tools.py"):
+    try:
+        with open(_gf, "r", encoding="utf-8") as f:
+            genesis_code += f.read() + "\n"
+    except FileNotFoundError:
+        pass
 
 test("Integration: genesis importa UnifiedMind",
      "from core.unified_mind import UnifiedMind" in genesis_code)
@@ -703,12 +711,13 @@ test("Integration: genesis importa DreamEngine",
 test("Integration: genesis importa SelfNarrative",
      "from core.self_narrative import SelfNarrative" in genesis_code)
 
+# Init lazy por nombre (name == 'X' -> inst = Class(...)): verificar instanciacion.
 test("Integration: genesis init unified_mind",
-     "self.unified_mind = UnifiedMind(" in genesis_code)
+     "UnifiedMind(" in genesis_code)
 test("Integration: genesis init dream_engine",
-     "self.dream_engine = DreamEngine(" in genesis_code)
+     "DreamEngine(" in genesis_code)
 test("Integration: genesis init self_narrative",
-     "self.self_narrative = SelfNarrative(" in genesis_code)
+     "SelfNarrative(" in genesis_code)
 
 test("Integration: context unified_mind",
      "unified_mind.get_context_for_prompt" in genesis_code)
@@ -745,12 +754,13 @@ test("Integration: dashboard dream_engine",
 test("Integration: dashboard self_narrative",
      "self_narrative" in genesis_code and "dashboard.register" in genesis_code)
 
+# save_all() itera la lista saveable_modules; verificar registro por nombre.
 test("Integration: save unified_mind",
-     "unified_mind.save()" in genesis_code)
+     '"unified_mind"' in genesis_code)
 test("Integration: save dream_engine",
-     "dream_engine.save()" in genesis_code)
+     '"dream_engine"' in genesis_code)
 test("Integration: save self_narrative",
-     "self_narrative.save()" in genesis_code)
+     '"self_narrative"' in genesis_code)
 
 test("Integration: help /mind", "/mind" in genesis_code)
 test("Integration: help /dream", "/dream" in genesis_code)

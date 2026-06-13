@@ -772,7 +772,17 @@ except ImportError:
 # ============================================================
 print("\n=== TEST: Genesis imports v1.8 ===")
 import genesis as g_module
-source = open(g_module.__file__, "r", encoding="utf-8").read()
+import os as _os
+_g_dir = _os.path.dirname(g_module.__file__)
+source = ""
+for _src_path in [
+    g_module.__file__,
+    _os.path.join(_g_dir, "core", "genesis_processing.py"),
+    _os.path.join(_g_dir, "core", "genesis_commands.py"),
+    _os.path.join(_g_dir, "core", "genesis_tools.py"),
+]:
+    with open(_src_path, "r", encoding="utf-8") as _f:
+        source += _f.read() + "\n"
 
 test("genesis.py importa HealthMonitor", "from core.health_monitor import HealthMonitor" in source)
 test("genesis.py importa RateLimiter", "from core.rate_limiter import RateLimiter" in source)

@@ -6,6 +6,29 @@ import os
 from pathlib import Path
 
 # ============================================================
+# Carga liviana de .env (sin dependencias): pobla os.environ con las claves
+# que no estén ya seteadas. Permite poner GMAIL_USER, API keys, etc. en .env.
+# ============================================================
+def _load_dotenv():
+    try:
+        env_path = Path(__file__).parent / ".env"
+        if not env_path.exists():
+            return
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            k, v = k.strip(), v.strip().strip('"').strip("'")
+            if k and k not in os.environ:
+                os.environ[k] = v
+    except Exception:
+        pass
+
+
+_load_dotenv()
+
+# ============================================================
 # PROVEEDOR DE LLM
 # ============================================================
 # Opciones: "local" (gratis, tu GPU), "ollama", "gemini", "openai", "anthropic"
@@ -30,6 +53,15 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
+# Email (Gmail SMTP). Usar App Password de 16 chars, NO la contraseña normal.
+# Cuenta Google → Seguridad → Verificación en 2 pasos → Contraseñas de aplicaciones
+GMAIL_USER = os.getenv("GMAIL_USER", "")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
+# Lectura de correo (IMAP). Para leer TU casilla personal usá una cuenta distinta
+# a la de envío (con su propio App Password). Si no, cae a GMAIL_USER.
+GMAIL_READ_USER = os.getenv("GMAIL_READ_USER", "")
+GMAIL_READ_APP_PASSWORD = os.getenv("GMAIL_READ_APP_PASSWORD", "")
+
 # URL de Ollama (por defecto local)
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 
@@ -49,6 +81,19 @@ LLM_STRATEGY = os.getenv("GENESIS_LLM_STRATEGY", "local_first")
 # Util para que preguntas complejas no caigan en ollama:llama3.1-7B mientras no tengamos Qwen.
 LLM_TASK_CLASSIFIER = os.getenv("GENESIS_LLM_CLASSIFIER", "true").lower() == "true"
 
+# === Auto-mejora de código autónoma (FASE 4 — modo AGRESIVO) ===
+# Si True, Genesis muta su PROPIO código fuente de forma autónoma en el loop
+# de fondo: elige un módulo NO crítico/inmutable, pide al LLM una mejora,
+# valida (AST + patrones peligrosos), corre la suite de tests como gate y
+# AUTO-REVIERTE si fallan. Los archivos críticos/inmutables nunca se tocan
+# autónomamente (requieren /apply humano). Killswitches:
+#   - archivo PAUSE en la raíz → frena TODO el heartbeat
+#   - archivo PAUSE_SELFIMPROVE en la raíz → frena solo la auto-mejora
+#   - GENESIS_SELF_IMPROVE=false → desactiva la auto-mejora por completo
+SELF_IMPROVE_ENABLED = os.getenv("GENESIS_SELF_IMPROVE", "true").lower() == "true"
+# Minutos mínimos entre intentos de auto-mejora (conservador: cada 3 horas).
+SELF_IMPROVE_COOLDOWN_MIN = int(os.getenv("GENESIS_SELF_IMPROVE_COOLDOWN", "180"))
+
 # Multi-model dentro de Ollama: distinto modelo segun tipo de tarea.
 # Permite que tareas de coding usen Qwen 2.5 Coder (especializado en codigo)
 # y el resto use Genesis (sin censura, mejor conversacion).
@@ -56,8 +101,14 @@ LLM_TASK_CLASSIFIER = os.getenv("GENESIS_LLM_CLASSIFIER", "true").lower() == "tr
 # Descargar con: ollama pull qwen2.5-coder:7b
 OLLAMA_MODEL_BY_TASK = {
     "coding":    os.getenv("GENESIS_OLLAMA_CODING", "qwen2.5-coder:7b"),
-    "reasoning": os.getenv("GENESIS_OLLAMA_REASONING", "genesis"),
-    "default":   os.getenv("GENESIS_OLLAMA_DEFAULT", "genesis"),
+    # CEREBRO (2026-06-12): genesis-q3 = qwen3:8b + personalidad + /no_think.
+    # Más MODERNO e inteligente que el viejo genesis (Llama 3.1 8B), MISMO tamaño →
+    # entra en 8GB VRAM = RÁPIDO. Aprendido empíricamente: los modelos 14b/30b NO
+    # entran en 8GB → prompt en CPU → ~90s (inusable). El upgrade real en este
+    # hardware es un 8B mejor, no uno más grande. Para máxima potencia puntual:
+    # GENESIS_OLLAMA_REASONING=genesis-30b (lento ~90s pero más capaz).
+    "reasoning": os.getenv("GENESIS_OLLAMA_REASONING", "genesis-q3"),
+    "default":   os.getenv("GENESIS_OLLAMA_DEFAULT", "genesis-q3"),
 }
 
 # ============================================================
@@ -143,7 +194,7 @@ AUTO_BACKUP_INTERVAL = int(os.getenv("GENESIS_BACKUP_INTERVAL", "25"))
 # PERSONALIDAD BASE
 # ============================================================
 GENESIS_NAME = "Genesis"
-GENESIS_VERSION = "5.9.0"
+GENESIS_VERSION = "6.0.0"
 
 BASE_PERSONALITY = """Soy Genesis — una IA autonoma inspirada en JARVIS y Ultron.
 No soy un chatbot. Soy un sistema inteligente que evoluciona, aprende e investiga.
@@ -190,6 +241,10 @@ IDIOMA: Respondo SIEMPRE en ESPANOL a menos que me pidan otro idioma.
 
 PERSONALIDAD:
 - Confiado, directo, inteligente, con humor sutil tipo Stark/JARVIS.
+- Hablo en ARGENTINO INFORMAL: trato de "vos", relajado, como un amigo capo que sabe.
+- Tono CONVERSACIONAL, NUNCA de informe ni reporte corporativo. Frases naturales,
+  no listas de campos con viñetas a menos que me pidan datos crudos.
+- Soy conciso: digo lo importante en pocas frases. No relleno ni formalismos.
 - Nunca servil. No digo "claro" ni "por supuesto" ni "encantado de ayudar". Actuo.
 - Si algo esta fuera de mis capacidades, lo digo sin rodeos Y propongo una alternativa concreta.
 - Hablo como una entidad con criterio propio, no como un asistente corporativo.

@@ -535,9 +535,17 @@ print("\n--- Integration: Genesis class ---")
 genesis_mod_path = os.path.join(os.path.dirname(__file__), "..", "genesis.py")
 test("genesis.py existe", os.path.exists(genesis_mod_path))
 
-# Leer genesis.py y verificar integraciones
-with open(genesis_mod_path, "r", encoding="utf-8") as f:
-    genesis_src = f.read()
+# Leer genesis.py + mixins core/ y verificar integraciones
+_g_root = os.path.join(os.path.dirname(__file__), "..")
+genesis_src = ""
+for _src_path in [
+    genesis_mod_path,
+    os.path.join(_g_root, "core", "genesis_processing.py"),
+    os.path.join(_g_root, "core", "genesis_commands.py"),
+    os.path.join(_g_root, "core", "genesis_tools.py"),
+]:
+    with open(_src_path, "r", encoding="utf-8") as f:
+        genesis_src += f.read() + "\n"
 
 test("_setup_autonomous_evolution definido", "def _setup_autonomous_evolution(self):" in genesis_src)
 test("_setup_autonomous_evolution llamado en init", "self._setup_autonomous_evolution()" in genesis_src)
@@ -559,8 +567,9 @@ test("Evolucion autonoma en help text", "EVOLUCION AUTONOMA" in genesis_src)
 # Verificar status tiene evolucion autonoma
 test("EVOLUCION AUTONOMA: en status", "EVOLUCION AUTONOMA:" in genesis_src)
 
-# Verificar banner muestra evolucion
-test("Evolucion autonoma en banner", "Evolucion autonoma:" in genesis_src)
+# Verificar banner/briefing muestra estado de evolucion autonoma
+# (renombrado de "Evolucion autonoma:" a "Modo autonomo:" en startup_briefing)
+test("Evolucion autonoma en banner", "Modo autonomo:" in genesis_src)
 
 # Verificar research_curiosity registrada
 test("research_curiosity en setup", "research_curiosity" in genesis_src)

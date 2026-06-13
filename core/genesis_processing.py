@@ -1,3 +1,5 @@
+import os
+_GX_HOME = os.path.expanduser("~").replace("\\", "/")  # N7: portabilidad multi-usuario
 """
 Genesis Processing Mixin.
 
@@ -15,6 +17,108 @@ from core.timeout import TimeoutExecutor
 
 class GenesisProcessingMixin:
     """Mixin con la lógica de procesamiento de input y respuesta."""
+
+    # Herramientas que MUTAN el sistema o EJECUTAN código. Cuando el contexto
+    # de esta interacción fue "contaminado" por contenido externo no confiable
+    # (página web leída, documento subido, conocimiento web), estas tools NO se
+    # auto-ejecutan: una página/documento malicioso podría inducir al LLM a
+    # emitir [TOOL:python]/[TOOL:shell] y lograr ejecución de código local
+    # (cadena prompt-injection → RCE). Las tools de solo-lectura (leer, listar,
+    # buscar, web, sistema, gpu...) siguen permitidas.
+    DANGEROUS_TOOLS = frozenset({
+        "python", "shell", "editar_codigo", "escribir", "insertar", "editar",
+    })
+
+    def _guard_tool(self, tool_name: str):
+        """Devuelve un mensaje de bloqueo si la tool no debe ejecutarse en
+        contexto contaminado, o None si está permitida.
+
+        Ver DANGEROUS_TOOLS y self._context_tainted.
+        """
+        if getattr(self, "_context_tainted", False) and tool_name in self.DANGEROUS_TOOLS:
+            self.log.error(
+                f"[Seguridad] Tool '{tool_name}' bloqueada: el contexto incluyó "
+                f"contenido externo no confiable (web/documento)."
+            )
+            try:
+                if hasattr(self, "action_tracker"):
+                    self.action_tracker.log_tool(
+                        tool_name, "", "[BLOQUEADA: contexto contaminado]", success=False
+                    )
+            except (AttributeError, TypeError):
+                pass
+            return (
+                f"[🛡️ BLOQUEADA] No ejecuté '{tool_name}' porque esta respuesta se "
+                f"basó en contenido externo (una web o un documento), y ejecutar "
+                f"código/comandos derivados de fuentes no confiables es un riesgo de "
+                f"seguridad (prompt-injection). Si esta acción la pediste vos "
+                f"directamente, repetí el pedido sin que haya contenido web/documento "
+                f"de por medio."
+            )
+        return None
+
+    # Marcadores de resultados que NO se deben reformular (output exacto):
+    # codigo, ejecuciones, listados de archivos, builds, bloqueos de seguridad.
+    _NO_REPHRASE = (
+        "```", "Salida:", "[OK]", "[ERROR]", "Traceback", "📁", "🛠️",
+        "INMUTABLE", "🛡️", "Backup", "self.", "def ", "import ",
+        "Archivo editado", "Codigo de salida", "[[PLAY:", "🎵", "[[STOP]]", "⏹️",
+        "[[PAUSE]]", "[[RESUME]]", "⏸️", "▶️",
+        # Rutinas JARVIS: no reformular (mantener narración + marcadores)
+        "[[ULTRON]]", "[[VOICE:", "🦾", "🌅", "🔧", "⚛️", "🛡️", "🎉", "🧹",
+        "👁️", "🤖", "🌙", "💁",
+        # Operaciones de archivos: respuesta exacta, sin pasar por el LLM lento
+        "🗑️", "📦", "📋", "✏️", "Movido:", "Copiado:", "Renombrado:",
+        "Enviado a papelera", "en la papelera", "Encontré varios", "Encontré ",
+        "No encontré", "¿Cuál", "Pasame la ruta", "Para editar decime",
+        # Desarrollo de código (BuilderEngine en background)
+        "✅", "🔧 Arranqué", "Todavía construyendo", "No tengo ningún desarrollo",
+        "quedó FUNCIONANDO", "no quedó andando",
+        # Email
+        "📧", "¿Confirmás el envío", "App Password", "cancelé el envío",
+        "A qué dirección", "Qué mensaje le mando",
+        "📬", "📭", "Últimos", "correos de", "leer correos",
+        # Control del sistema (volumen/energía/brillo/bloqueo)
+        "🔊", "🔉", "🔇", "🔒", "😴", "🔌", "🔄", "💡", "✋", "👋",
+        "¿Seguro que apago", "¿Seguro que reinicio",
+        "🖨️", "Qué documento imprimo",
+        "🖥️", "Qué abro en esa pantalla",
+        "📶", "🔵", "Qué unidad USB", "Qué abro",
+        "📺", "Qué te casteo", "🎬",
+    )
+
+    def _maybe_spontaneous(self, user_input: str, result: str) -> str:
+        """Reformula un resultado factual de forma natural/espontánea con el LLM.
+
+        Conserva los datos (no inventa ni altera números). Solo aplica a
+        resultados conversacionales cortos; deja intactos código/builds/output
+        exacto. Si algo falla, devuelve el resultado original (nunca rompe).
+        """
+        if not getattr(self, "spontaneous", True):
+            return result
+        if not result or len(result) > 600:
+            return result
+        if any(m in result for m in self._NO_REPHRASE):
+            return result
+        try:
+            sys_p = (
+                "Sos Genesis hablando en argentino informal (vos), relajado y "
+                "espontáneo, como un amigo. Te paso un DATO REAL ya obtenido. "
+                "Reformulalo en 1-2 frases naturales y frescas, distinto a un "
+                "template. REGLA: no cambies ni inventes números, nombres ni "
+                "datos — solo la forma de decirlo. Sin viñetas ni formato de reporte."
+            )
+            usr = f"El usuario preguntó: \"{user_input}\"\nDato real:\n{result}\n\nDecilo natural:"
+            out = self.brain.think(sys_p, [{"role": "user", "content": usr}],
+                                   temperature=0.8, max_tokens=200)
+            out = (out or "").strip()
+            # Si el LLM falla o devuelve algo vacío/raro, usar el original
+            if not out or "[ERROR]" in out or len(out) < 5:
+                return result
+            return out
+        except Exception as e:
+            self.log.debug(f"Spontaneous rephrase skip: {e}")
+            return result
 
     def _is_coding_request(self, text: str) -> bool:
         """Detecta si el usuario pide programar o crear codigo."""
@@ -65,6 +169,10 @@ class GenesisProcessingMixin:
         """
         _start_time = time.time()
         self._current_input = user_input  # Para Knowledge Graph context en build_system_prompt
+        # Flag de seguridad: se activa si esta interacción inyecta contenido
+        # externo no confiable (web/documento) al prompt. Bloquea tools de
+        # sistema downstream. Se resetea en cada interacción. Ver _guard_tool.
+        self._context_tainted = False
 
         # JARVIS: Auto-briefing en la primera interaccion de la sesion
         _briefing_prefix = ""
@@ -73,7 +181,7 @@ class GenesisProcessingMixin:
             try:
                 _briefing_prefix = self.startup_briefing() + "\n\n"
             except Exception as e:
-                self.log.warning(f"Startup briefing failed: {e}")
+                self.log.error(f"Startup briefing failed: {e}")
                 _briefing_prefix = ""
 
         # Agregar a memoria de corto plazo
@@ -110,7 +218,10 @@ class GenesisProcessingMixin:
             ])
 
             if needs_llm:
-                # Solo research/web: inyectar como contexto para que el LLM resuma
+                # Solo research/web: inyectar como contexto para que el LLM resuma.
+                # CONTENIDO EXTERNO NO CONFIABLE → marcar contexto como contaminado
+                # para bloquear tools de sistema downstream (anti prompt-injection).
+                self._context_tainted = True
                 self.memory.short_term.add("assistant", "[Sistema: datos obtenidos]")
                 self.memory.short_term.add("user",
                     f"[DATOS REALES OBTENIDOS]:\n{auto_tool_result}\n\n"
@@ -120,10 +231,13 @@ class GenesisProcessingMixin:
                 )
                 # Continua al LLM para que resuma los resultados web
             else:
-                # TODOS los demas resultados: retorno DIRECTO sin LLM
-                self.memory.short_term.add("user", user_input)
-                self.memory.short_term.add("assistant", auto_tool_result)
-                return auto_tool_result
+                # ESPONTANEIDAD: en vez de devolver el template crudo, paso el
+                # DATO REAL al LLM para que lo formule natural y distinto cada vez
+                # (sin alterar numeros). Solo para resultados conversacionales
+                # cortos — NO para codigo/builds/listados/output exacto.
+                spk = self._maybe_spontaneous(user_input, auto_tool_result)
+                self.memory.short_term.add("assistant", spk)
+                return spk
 
         # === DETECCION DE APRENDIZAJE AUTOMATICO ===
         # Si el usuario pide aprender/especializarse, Genesis actua en vez de solo hablar
@@ -160,7 +274,7 @@ class GenesisProcessingMixin:
                 "\n- Incluye imports necesarios al inicio."
                 "\n- Agrega manejo de errores (try/except) en operaciones I/O."
                 "\n- Usa nombres de variables descriptivos en español o inglés (consistente)."
-                "\n- Si creas archivos, usa rutas absolutas (C:/Users/Lexus/...)."
+                "\n- Si creas archivos, usa rutas absolutas (" + _GX_HOME + "/...)."
                 "\n- Si el código necesita un paquete externo, úsalo — se instalará automáticamente."
                 "\n- EJECUTA el código con [TOOL:python] después de generarlo."
             )
@@ -168,16 +282,19 @@ class GenesisProcessingMixin:
             if extra_context:
                 system_prompt += extra_context
 
-        # RAG: inyectar contexto de documentos indexados
+        # RAG: inyectar contexto de documentos indexados.
+        # Los documentos son contenido externo → contaminan el contexto.
         rag_context = self.rag.get_context(user_input, max_chars=1500, top_k=3)
         if rag_context:
             system_prompt += f"\n\n{rag_context}"
+            self._context_tainted = True
             if self.show_thinking:
                 print(f"  [RAG: contexto inyectado ({len(rag_context)} chars)]")
 
-        # Inyectar conocimiento aprendido de la web si hay
+        # Inyectar conocimiento aprendido de la web si hay (contenido externo).
         if learn_context:
             system_prompt += f"\n\n{learn_context}"
+            self._context_tainted = True
 
         # Semantic Memory: inyectar conversaciones pasadas relevantes
         sem_context = self.semantic_memory.get_context_for_prompt(user_input, max_chars=1000)
@@ -520,6 +637,35 @@ class GenesisProcessingMixin:
                 print(f"\n  [Debate interno completado — "
                       f"{len(self.debate.active_agents)} agentes consultados]")
 
+        # LOOP CERRADO adaptive_prompts: A/B testing real de un directiva de
+        # estilo. Antes el motor epsilon-greedy existía pero ningún experimento
+        # se creaba ni evaluaba (loop muerto). Ahora: se crea un experimento
+        # universal, se elige una variante por epsilon-greedy y se inyecta al
+        # prompt; el score del self_evaluator en _post_process es la recompensa.
+        self._adaptive_idx = None
+        try:
+            _exp = "estilo_respuesta"
+            if _exp not in self.adaptive_prompts.experiments:
+                self.adaptive_prompts.create_experiment(
+                    name=_exp,
+                    base_prompt="",
+                    variants=[
+                        "",  # base (sin directiva)
+                        "Sé conciso y directo: ve al grano sin preámbulos.",
+                        "Estructura la respuesta con viñetas o pasos cuando ayude a la claridad.",
+                        "Incluye un ejemplo concreto cuando aclare el punto.",
+                    ],
+                    min_samples=8,
+                )
+            _variant = self.adaptive_prompts.get_variant(_exp)
+            _sel = self.adaptive_prompts.active_selections.get(_exp)
+            if _sel is not None:
+                self._adaptive_idx = _sel[0]
+            if _variant:
+                system_prompt += f"\n\n[ESTILO] {_variant}"
+        except Exception as e:
+            self.log.debug(f"AdaptivePrompts skip: {e}")
+
         # Fase 2: Generar respuesta final (con timeout protection)
         # Streaming: solo en la respuesta principal, no en tool loops
         use_stream = self.streaming and stream_callback is not None
@@ -529,6 +675,19 @@ class GenesisProcessingMixin:
         else:
             tuned = self.evaluator.get_tuned_config(intent)
             temp = tuned.get("temperature", 0.7)
+            # LOOP CERRADO meta_learner: si acumuló suficientes datos de outcomes
+            # para este intent, su temperatura recomendada (basada en qué temp dio
+            # mejores scores) se mezcla 50/50 con la del auto-tuner. Antes esta
+            # recomendación se calculaba pero nadie la leía (loop abierto).
+            try:
+                ml_rec = self.meta_learner.get_recommendation(intent)
+                ml_temp = ml_rec.get("temperature")
+                if ml_temp is not None:
+                    temp = round((temp + float(ml_temp)) / 2, 3)
+                    if self.show_thinking:
+                        print(f"  [MetaLearner: temp recomendada {ml_temp} → blend {temp}]")
+            except Exception as e:
+                self.log.debug(f"MetaLearner recommendation skip: {e}")
 
         # Model Router: obtener configuracion optima para esta tarea
         route_config = self.model_router.route(user_input, template_name=template_name)
@@ -596,6 +755,11 @@ class GenesisProcessingMixin:
             for mt_name, mt_arg in all_tools:
                 if self.show_thinking:
                     print(f"    → {mt_name}: {mt_arg[:60]}...")
+                # Anti prompt-injection: bloquear tools de sistema en contexto contaminado
+                _blocked = self._guard_tool(mt_name)
+                if _blocked is not None:
+                    combined_results.append(f"[{mt_name}]: {_blocked}")
+                    continue
                 mt_result = execute_tool(mt_name, mt_arg)
                 self.metrics.log_tool_use(mt_name)
                 try:
@@ -639,6 +803,23 @@ class GenesisProcessingMixin:
 
             if self.show_thinking:
                 print(f"\n  [Usando herramienta: {tool_name}]")
+
+            # Anti prompt-injection: bloquear tools de sistema en contexto contaminado
+            _blocked = self._guard_tool(tool_name)
+            if _blocked is not None:
+                response = _blocked
+                break
+
+            # Las tools custom (tools_custom/) ejecutan código arbitrario y no
+            # están en DANGEROUS_TOOLS por nombre → bloquearlas TODAS en contexto
+            # contaminado (no sabemos qué hacen).
+            if (getattr(self, "_context_tainted", False)
+                    and tool_name in getattr(self.tool_creator, "tools", {})):
+                response = (
+                    f"[🛡️ BLOQUEADA] No ejecuté la tool custom '{tool_name}' porque "
+                    f"el contexto incluyó contenido externo no confiable."
+                )
+                break
 
             # Ejecutar herramienta (primero custom tools, luego built-in)
             custom_result = self.tool_creator.execute_tool(tool_name, tool_arg)
@@ -700,10 +881,41 @@ class GenesisProcessingMixin:
                         }
                         pip_package = pip_name_map.get(missing_module, missing_module)
 
-                        if self.show_thinking:
+                        # SEGURIDAD (anti typosquatting / dependency-confusion):
+                        # solo auto-instalar paquetes de una allowlist conocida.
+                        # El nombre del módulo viene de código que escribió el LLM
+                        # (influenciable por contenido web) → NUNCA instalar un
+                        # nombre arbitrario, y NUNCA si el contexto está contaminado.
+                        _pip_allowlist = set(pip_name_map.values()) | {
+                            "numpy", "pandas", "requests", "matplotlib", "scipy",
+                            "flask", "fastapi", "pydantic", "aiohttp", "httpx",
+                            "sqlalchemy", "pytest", "rich", "tqdm", "click",
+                            "seaborn", "plotly", "sympy", "networkx", "pillow",
+                            "openpyxl", "tabulate", "colorama", "python-dateutil",
+                        }
+                        _pkg_norm = pip_package.lower().replace("_", "-")
+                        _pip_allowed = (
+                            not getattr(self, "_context_tainted", False)
+                            and _pkg_norm in {
+                                p.lower().replace("_", "-") for p in _pip_allowlist
+                            }
+                        )
+
+                        if _pip_allowed and self.show_thinking:
                             print(f"  [Auto-Pip: detectado {missing_module} faltante → pip install {pip_package}]")
+                        elif not _pip_allowed:
+                            # No auto-instalar: nombre fuera de allowlist o contexto
+                            # contaminado. Cae al flujo normal de corrección del LLM.
+                            self.log.error(
+                                f"[Seguridad] Auto-pip omitido para '{pip_package}' "
+                                f"(fuera de allowlist o contexto contaminado)."
+                            )
+                            if self.show_thinking:
+                                print(f"  [Auto-Pip: OMITIDO '{pip_package}' por seguridad]")
 
                         try:
+                            if not _pip_allowed:
+                                raise RuntimeError("auto-pip omitido por seguridad")
                             import subprocess as _sp
                             pip_result = _sp.run(
                                 [sys.executable, "-m", "pip", "install", pip_package],
@@ -760,10 +972,12 @@ class GenesisProcessingMixin:
                             else:
                                 if self.show_thinking:
                                     print(f"  [Auto-Pip: pip install falló — {pip_result.stderr[:100]}]")
-                        except (subprocess.SubprocessError, OSError, TimeoutError) as pip_err:
-                            self.log.warning(f"Auto-Pip failed for {pip_package}: {pip_err}")
+                        except (subprocess.SubprocessError, OSError, TimeoutError, RuntimeError) as pip_err:
+                            # RuntimeError = skip por seguridad (allowlist/contexto).
+                            # En todos los casos: cae al flujo normal de corrección del LLM.
+                            self.log.error(f"Auto-Pip omitido/falló para {pip_package}: {pip_err}")
                             if self.show_thinking:
-                                print(f"  [Auto-Pip: excepción — {pip_err}]")
+                                print(f"  [Auto-Pip: no instalado — {pip_err}]")
                     # === FIN AUTO PIP INSTALL ===
 
                     code_attempts += 1
@@ -979,6 +1193,22 @@ class GenesisProcessingMixin:
         # Registrar interaccion para evolucion
         self.evolution.log_interaction(user_input, response)
 
+        # N3 — ALIMENTAR el AutoLearner con señal AUTOMÁTICA de éxito/fracaso.
+        # Antes solo recibía +/- manual (que nunca llegaba) → quedaba vacío. Ahora
+        # cada interacción deja señal: respuesta con error → -1, limpia → +1. El
+        # learner sesga la selección futura (set_auto_learner ya wireado) → compone.
+        try:
+            r = (response or "").lower()
+            err = any(m in r for m in ("[error]", "no pude", "no encontré",
+                                       "no entendí", "error de conexión", "falló",
+                                       "no se pudo", "rechaz"))
+            _intent = self.router.classify(user_input)
+            self.auto_learner.record_interaction(
+                agent=_intent, template="", feedback=(-1 if err else 1),
+                tags=[_intent], query_preview=user_input[:100])
+        except Exception:
+            pass
+
         # Auto-detectar hechos para memoria de largo plazo
         self._extract_facts(user_input)
 
@@ -1021,12 +1251,16 @@ class GenesisProcessingMixin:
                         self.curiosity.generate_questions(self.brain, context)
                         self.log.info(f"Curiosidad: generadas nuevas preguntas ({self.curiosity.questions_generated} total)")
                     except Exception as e:
-                        self.log.warning(f"Curiosidad: error generando preguntas: {e}")
+                        self.log.error(f"Curiosidad: error generando preguntas: {e}")
                 threading.Thread(target=_bg_curiosity, daemon=True, name="curiosity-gen").start()
             except (RuntimeError, AttributeError) as e:
                 self.log.debug(f"Curiosity thread spawn failed: {e}")
 
         # Auto-backup periodico
+        try:
+            from config import AUTO_BACKUP_INTERVAL
+        except Exception:
+            AUTO_BACKUP_INTERVAL = 0  # Sin config → backup automatico desactivado
         self.auto_backup_counter += 1
         if AUTO_BACKUP_INTERVAL > 0 and self.auto_backup_counter >= AUTO_BACKUP_INTERVAL:
             self.auto_backup_counter = 0
@@ -1061,6 +1295,20 @@ class GenesisProcessingMixin:
             grade = eval_result.get("grade", "?")
             overall = eval_result.get("overall", 0)
             print(f"  [SelfEval: {grade} ({overall:.2f})]")
+
+        # LOOP CERRADO adaptive_prompts: recompensa = score del self_evaluator.
+        # La variante de estilo elegida en process_input recibe feedback +/- según
+        # si la respuesta superó el umbral de calidad. Así el epsilon-greedy
+        # converge hacia la directiva de estilo que produce mejores respuestas.
+        if getattr(self, "_adaptive_idx", None) is not None:
+            try:
+                _positive = eval_result.get("overall", 0.0) >= 0.6
+                self.adaptive_prompts.record_feedback(
+                    "estilo_respuesta", positive=_positive,
+                    variant_index=self._adaptive_idx,
+                )
+            except Exception as e:
+                self.log.debug(f"AdaptivePrompts feedback skip: {e}")
 
         # Actualizar calidad en semantic memory con el score
         if eval_result.get("overall", 0) > 0:
@@ -1097,17 +1345,22 @@ class GenesisProcessingMixin:
         self.goal_manager.auto_track(user_input, response)
 
         # Reflection Engine: tick + reflexion periodica
-        self.reflection.tick()
-        if self.reflection.should_reflect():
-            eval_scores = [r.score for r in self.meta_learner.records[-50:]]
-            self.reflection.reflect(
-                eval_scores=eval_scores,
-                intent_counts=self.router.intent_counts,
-                positive_feedback=self.feedback.positive_count,
-                negative_feedback=self.feedback.negative_count,
-                personality_distance=self.personality.get_evolution_distance(),
-                personality_evolutions=self.personality.total_evolutions,
-            )
+        # Envuelto en try/except: es aprendizaje en background, nunca debe
+        # tumbar la respuesta ya generada al usuario.
+        try:
+            self.reflection.tick()
+            if self.reflection.should_reflect():
+                eval_scores = [r.score for r in self.meta_learner.records[-50:]]
+                self.reflection.reflect(
+                    eval_scores=eval_scores,
+                    intent_counts=self.router.intent_counts,
+                    positive_feedback=self.feedback.data["positive_count"],
+                    negative_feedback=self.feedback.data["negative_count"],
+                    personality_distance=self.personality.get_evolution_distance(),
+                    personality_evolutions=self.personality.total_evolutions,
+                )
+        except Exception as e:
+            self.log.error(f"Reflection engine fallo: {e}")
 
         # Causal Reasoner: extraer relaciones causa-efecto de la conversación
         combined_text = f"{user_input} {response}"
@@ -1148,12 +1401,16 @@ class GenesisProcessingMixin:
         self.dialogue_strategist.record_interaction(response_length=len(response))
 
         # Cognitive Monitor: registrar snapshot de carga
+        try:
+            from config import SHORT_TERM_LIMIT as _STL
+        except Exception:
+            _STL = 20  # fallback razonable si no hay config
         context_usage = len(system_prompt) / 4000.0 if 'system_prompt' in dir() else 0.3
         module_count = 40  # Número aproximado de módulos activos
         self.cognitive_monitor.record_snapshot(
             context_util=min(1.0, context_usage),
             latency=min(1.0, self._last_response_time / 60.0),
-            memory_pressure=min(1.0, len(self.memory.short_term.messages) / float(SHORT_TERM_LIMIT)),
+            memory_pressure=min(1.0, len(self.memory.short_term.messages) / float(_STL)),
             module_load=min(1.0, module_count / 50.0),
         )
 

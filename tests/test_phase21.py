@@ -84,11 +84,16 @@ result = smart_launcher.search("notepad")
 test("Search retorna string", isinstance(result, str))
 
 # Search inexistente
-result_none = smart_launcher.search("xyzNoExiste12345")
+# NOTA: "xyzNoExiste12345" hacia falso-positivo con accesos directos reales del
+# escritorio (ej "Forex-mt5.lnk") via SequenceMatcher (ratio exacto 0.4 == umbral).
+# Usamos una cadena aleatoria que no comparte n-gramas con apps/archivos reales,
+# para que el test sea determinista en cualquier entorno.
+_NONSENSE = "zzzzqqqqwwww9999kkkk"
+result_none = smart_launcher.search(_NONSENSE)
 test("Search inexistente", "no encontré" in result_none.lower() or isinstance(result_none, str))
 
 # Launch inexistente
-launch_r = smart_launcher.launch("xyzNoExiste12345")
+launch_r = smart_launcher.launch(_NONSENSE)
 test("Launch inexistente", "no encontré" in launch_r.lower())
 
 # Singleton
