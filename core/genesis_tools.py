@@ -16,6 +16,21 @@ from pathlib import Path
 
 _re = re  # Alias used throughout this module
 
+# Carpetas conocidas del usuario (portable vía _GX_HOME). Constante de módulo
+# compartida por los detectores de archivos/carpetas (Fase 2).
+_PATH_KEYWORDS = {
+    "escritorio": "" + _GX_HOME + "/Desktop",
+    "desktop": "" + _GX_HOME + "/Desktop",
+    "descargas": "" + _GX_HOME + "/Downloads",
+    "downloads": "" + _GX_HOME + "/Downloads",
+    "documentos": "" + _GX_HOME + "/Documents",
+    "documents": "" + _GX_HOME + "/Documents",
+    "imagenes": "" + _GX_HOME + "/Pictures",
+    "pictures": "" + _GX_HOME + "/Pictures",
+    "musica": "" + _GX_HOME + "/Music",
+    "videos": "" + _GX_HOME + "/Videos",
+}
+
 
 def _search_folder_everywhere(qname: str, max_hits: int = 12) -> list:
     """Busca carpetas por nombre exacto (case-insensitive) en raíces conocidas,
@@ -2154,18 +2169,7 @@ class GenesisToolsMixin:
         # --- Listar archivos ---
         list_keywords = ["lista", "muestra", "que hay en", "archivos en", "que tiene",
                          "contenido de", "ver carpeta", "mostrar archivos", "que archivos"]
-        path_keywords = {
-            "escritorio": "" + _GX_HOME + "/Desktop",
-            "desktop": "" + _GX_HOME + "/Desktop",
-            "descargas": "" + _GX_HOME + "/Downloads",
-            "downloads": "" + _GX_HOME + "/Downloads",
-            "documentos": "" + _GX_HOME + "/Documents",
-            "documents": "" + _GX_HOME + "/Documents",
-            "imagenes": "" + _GX_HOME + "/Pictures",
-            "pictures": "" + _GX_HOME + "/Pictures",
-            "musica": "" + _GX_HOME + "/Music",
-            "videos": "" + _GX_HOME + "/Videos",
-        }
+        path_keywords = _PATH_KEYWORDS
 
         if any(k in inp for k in list_keywords):
             target_path = None
