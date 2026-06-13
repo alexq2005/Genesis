@@ -128,3 +128,64 @@ def clone_say_hq(text: str, speaker_wav: str, out_path: str, language: str = "es
 def ref_for(name: str) -> Path:
     """Ruta esperada de la muestra de una voz por nombre (ej: 'milton')."""
     return _VOICES_DIR / f"{name}.wav"
+
+
+# ---------------------------------------------------------------------------
+# Voz hablada del lado SERVIDOR (parlantes) — misma voz clonada que la cabina.
+# Usada por hands-free y voiceprint para que Genesis suene igual en todos lados.
+# ---------------------------------------------------------------------------
+_SPEAK_OUT = _VOICES_DIR / "_speak_out.wav"
+
+
+def _clean_for_speech(text: str) -> str:
+    import re
+    t = re.sub(r"```[\s\S]*?```", " código en pantalla ", text or "")
+    t = re.sub(r"https?://\S+", " enlace ", t)
+    t = re.sub(r"[*#`>_~|]", "", t)
+    # quitar emojis y símbolos raros, conservar acentos/puntuación ES
+    t = re.sub(r"[^\w\sáéíóúñüÁÉÍÓÚÑÜ.,;:¿?¡!()\"'-]", "", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t[:600]
+
+
+def _pyttsx3_say(text: str) -> bool:
+    try:
+        import pythoncom
+        pythoncom.CoInitialize()
+    except Exception:
+        pass
+    try:
+        import pyttsx3
+        e = pyttsx3.init()
+        e.setProperty("rate", 175)
+        e.say(text)
+        e.runAndWait()
+        try:
+            e.stop()
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False
+
+
+def speak_aloud(text: str, voice: str = "milton", temperature: float = 0.55) -> dict:
+    """Habla por los parlantes (lado servidor) con la voz CLONADA (la de la
+    cabina). Si XTTS falla o se queda sin VRAM, cae a pyttsx3. Bloqueante."""
+    clean = _clean_for_speech(text)
+    if not clean:
+        return {"ok": False, "method": "none"}
+    ref = ref_for(voice)
+    if available() and ref.exists():
+        res = clone_say_hq(clean, str(ref), str(_SPEAK_OUT), temperature=temperature)
+        if res.get("ok"):
+            try:
+                import sounddevice as sd
+                import torchaudio
+                wav, sr = torchaudio.load(str(_SPEAK_OUT))
+                sd.play(wav.squeeze(0).numpy(), sr)
+                sd.wait()
+                return {"ok": True, "method": "xtts-clone"}
+            except Exception:
+                pass  # cae a pyttsx3 si no se pudo reproducir
+    return {"ok": _pyttsx3_say(clean), "method": "pyttsx3"}

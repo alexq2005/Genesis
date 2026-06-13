@@ -53,17 +53,10 @@ def _embed(audio_f32):
 
 
 def _speak(genesis, text):
+    # Misma voz clonada que la cabina (con fallback automático a pyttsx3).
     try:
-        import pythoncom
-        pythoncom.CoInitialize()
-    except Exception:
-        pass
-    try:
-        import pyttsx3
-        e = pyttsx3.init()
-        e.setProperty("rate", 175)
-        e.say(text)
-        e.runAndWait()
+        from core import voice_clone
+        voice_clone.speak_aloud(text)
     except Exception:
         pass
 

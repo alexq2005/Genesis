@@ -34,7 +34,8 @@ def _find_vosk_model():
 
 
 class HandsFree:
-    WAKE = ("genesis", "jarvis", "génesis")
+    # Incluye variantes que vosk-es suele confundir (genesis→gemini/génesis/yénesis).
+    WAKE = ("genesis", "génesis", "jarvis", "gemini", "yénesis", "génisis", "jénesis")
 
     def __init__(self, genesis):
         self.genesis = genesis
@@ -94,6 +95,10 @@ class HandsFree:
 
     def _handle(self, txt):
         low = txt.lower().strip()
+        try:
+            self.genesis.log.debug(f"[handsfree] oído: {low!r}")
+        except Exception:
+            pass
         # ¿está la palabra de activación?
         wpos = -1
         for w in self.WAKE:
@@ -125,29 +130,13 @@ class HandsFree:
         self._last = cmd
 
     def _speak(self, text):
-        """TTS lado servidor (pyttsx3) — suena por los parlantes aunque haya un
-        juego en primer plano. Liviano (CPU), no pelea con la GPU del juego."""
-        clean = re.sub(r"```[\s\S]*?```", " código en pantalla ", text or "")
-        clean = re.sub(r"[\*\#`>_~|🎙️🎮🧭🎬📺🔊🔌🖨️🖥️📶🔵🎬📧📬]", "", clean)
-        clean = re.sub(r"https?://\S+", " enlace ", clean)
-        clean = re.sub(r"\s+", " ", clean).strip()[:600]
-        if not clean:
-            return
+        """Voz lado servidor — suena por los parlantes aunque haya un juego en
+        primer plano (no depende del navegador ni del foco). Usa la MISMA voz
+        clonada que la cabina; si XTTS falla/OOM (p.ej. GPU ocupada por el
+        juego) cae solo a pyttsx3."""
         try:
-            import pythoncom
-            pythoncom.CoInitialize()
-        except Exception:
-            pass
-        try:
-            import pyttsx3
-            eng = pyttsx3.init()
-            eng.setProperty("rate", 175)
-            eng.say(clean)
-            eng.runAndWait()
-            try:
-                eng.stop()
-            except Exception:
-                pass
+            from core import voice_clone
+            voice_clone.speak_aloud(text)
         except Exception:
             pass
 
