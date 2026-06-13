@@ -239,6 +239,35 @@ class GenesisProcessingMixin:
                 self.memory.short_term.add("assistant", spk)
                 return spk
 
+        # === COORDINADOR: Genesis enruta al agente especialista (auto-delegación) ===
+        # Si ningún tool directo aplicó y hay un especialista claro (alta confianza),
+        # Genesis delega solo al agente correcto. Si no, sigue el flujo normal.
+        if getattr(self, "_coordinator_enabled", True):
+            try:
+                routed = self.agent_system.route(user_input)
+            except Exception:
+                routed = None
+            if routed:
+                _ctx = ""
+                try:
+                    if self.workspace.is_set():
+                        _ctx = self.workspace.read_relevant_context(user_input) or ""
+                except Exception:
+                    pass
+                try:
+                    _res = self.agent_system.delegate(
+                        user_input, context=_ctx, agent_name=routed["name"])
+                    _resp = (_res.get("response") or "").strip()
+                except Exception as _ce:
+                    self.log.debug(f"Coordinador falló: {_ce}")
+                    _resp = ""
+                if _resp and not _resp.startswith("[Error"):
+                    self.log.debug(
+                        f"Coordinador → agente {routed['name']} (score {routed['score']})")
+                    _out = "🧭 " + _resp
+                    self.memory.short_term.add("assistant", _out)
+                    return _out
+
         # === DETECCION DE APRENDIZAJE AUTOMATICO ===
         # Si el usuario pide aprender/especializarse, Genesis actua en vez de solo hablar
         learn_context = self._detect_and_learn(user_input)

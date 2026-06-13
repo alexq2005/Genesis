@@ -163,20 +163,23 @@ class AgentSystem:
     }
 
     # Mapeo de keywords a capabilities para auto-routing
+    # Keywords por STEM (no forma exacta) → matchean voseo y conjugaciones del
+    # usuario (investigá/investiga/investigar). Regla del proyecto: stems cortos.
     KEYWORD_MAP = {
-        "busca": "research", "investiga": "research", "encuentra": "research",
-        "resume": "summarize", "explica": "explain", "traduce": "translate",
-        "codigo": "code", "programa": "code", "funcion": "code", "clase": "code",
-        "bug": "debug", "error": "debug", "falla": "debug", "fix": "debug",
-        "refactoriza": "refactor", "mejora": "refactor", "optimiza": "refactor",
-        "analiza": "analysis", "compara": "comparison", "evalua": "evaluation",
-        "crea": "creative", "escribe": "writing", "inventa": "brainstorm",
-        "poema": "creative", "historia": "storytelling", "nombre": "naming",
-        "seguridad": "security", "vulnerabilidad": "vulnerability",
-        "hackea": "pentest", "malware": "security", "cifra": "crypto",
-        "planifica": "planning", "organiza": "planning", "roadmap": "roadmap",
-        "arquitectura": "architecture", "descompone": "decompose",
-        "test": "test", "prueba": "test", "review": "review",
+        "investig": "research", "encontr": "research", "averigu": "research",
+        "resum": "summarize", "explic": "explain", "traduc": "translate",
+        "codigo": "code", "código": "code", "program": "code", "funcion": "code",
+        "función": "code", "script": "code",
+        "debug": "debug", "error": "debug", "falla": "debug", "fix": "debug", "depur": "debug",
+        "refactoriz": "refactor", "optimiz": "refactor",
+        "analiz": "analysis", "compar": "comparison", "evalu": "evaluation",
+        "creá": "creative", "crear": "creative", "escrib": "writing", "invent": "brainstorm",
+        "poema": "creative", "historia": "storytelling",
+        "seguridad": "security", "vulnerab": "vulnerability",
+        "hacke": "pentest", "malware": "security", "cifr": "crypto", "pentest": "pentest",
+        "planific": "planning", "roadmap": "roadmap",
+        "arquitectura": "architecture", "descompon": "decompose",
+        "prueba": "test", "review": "review", "revis": "review",
     }
 
     def __init__(self, brain=None):
@@ -243,6 +246,37 @@ class AgentSystem:
         # Desempate por prioridad del agente
         best = max(scores.items(), key=lambda x: (x[1], self.agents[x[0]].priority))
         return best[0]
+
+    ROUTE_MIN_SCORE = 5  # confianza mínima para auto-coordinar (evita secuestrar chat casual)
+
+    def route(self, user_input: str) -> Optional[dict]:
+        """Coordinación: ¿hay un especialista claro para esta tarea? Devuelve
+        {name, role, score} solo si la confianza es ALTA (>= ROUTE_MIN_SCORE);
+        si no, None (→ Genesis responde normal). Reusa el scoring de detect_agent."""
+        input_lower = user_input.lower()
+        if len(input_lower) < 6:
+            return None
+        scores = {}
+        for keyword, capability in self.KEYWORD_MAP.items():
+            if keyword in input_lower:
+                for name, agent in self.agents.items():
+                    if agent.enabled and capability in agent.capabilities:
+                        scores[name] = scores.get(name, 0) + len(keyword)
+        if self.auto_learner is not None:
+            try:
+                for n, d in self.auto_learner.get_agent_adjustments().items():
+                    if n in scores:
+                        scores[n] += d
+            except Exception:
+                pass
+        if not scores:
+            return None
+        name, score = max(scores.items(),
+                          key=lambda x: (x[1], self.agents[x[0]].priority))
+        if score < self.ROUTE_MIN_SCORE:
+            return None
+        a = self.agents[name]
+        return {"name": name, "role": a.role, "score": score}
 
     def delegate(self, user_input: str, context: str = "",
                  agent_name: str = "", use_brain: bool = True) -> dict:
