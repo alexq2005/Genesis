@@ -2674,140 +2674,11 @@ class GenesisToolsMixin:
 
         return None
 
-    def _auto_detect_tool(self, user_input: str) -> str:
-        """
-        Auto-detecta si el usuario pide algo del sistema y ejecuta
-        la herramienta correspondiente sin depender del LLM.
-        Retorna el resultado o cadena vacia si no aplica.
-        """
-        inp = user_input.lower().strip()
+    def _detect_open_apps_folders(self, inp, user_input):
+        """Abrir apps/sitios/carpetas y mostrar contenido de carpeta.
+        Extraído de _auto_detect_tool (Fase 2)."""
         import re as _re
-
-        # --- RUTINAS JARVIS (todas las versiones de Iron Man) — alta prioridad ---
-        try:
-            from core import jarvis_routines as _jr
-            if inp in ("rutinas", "rutinas jarvis", "protocolos", "que rutinas tenes",
-                       "qué rutinas tenés", "lista de rutinas"):
-                return _jr.listar()
-            _rk = _jr.detectar(inp)
-            if _rk:
-                return _jr.ejecutar(self, _rk)
-        except Exception as _e:
-            self.log.debug(f"Rutinas JARVIS skip: {_e}")
-
-        # Capacidades de Genesis: voces disponibles, qué puede hacer, etc (extraído a _detect_capabilities)
-        _capabi_r = self._detect_capabilities(inp, user_input)
-        if _capabi_r is not None:
-            return _capabi_r
-
-        # Fecha, hora y datos básicos del sistema (extraído a _detect_datetime_sysinfo)
-        _dateti_r = self._detect_datetime_sysinfo(inp, user_input)
-        if _dateti_r is not None:
-            return _dateti_r
-
-        # Calculadora: operaciones aritméticas (extraído a _detect_calculator)
-        _calcul_r = self._detect_calculator(inp, user_input)
-        if _calcul_r is not None:
-            return _calcul_r
-
-        # Identidad de Genesis (quién sos, tu nombre, etc (extraído a _detect_identity)
-        _identi_r = self._detect_identity(inp, user_input)
-        if _identi_r is not None:
-            return _identi_r
-
-        # --- Contar archivos / tamano de carpeta ---
-        count_keywords = ["cuantos archivos", "cuántos archivos", "cuantas carpetas",
-                          "cuántas carpetas", "cantidad de archivos", "numero de archivos",
-                          "cuantos elementos", "cuántos elementos"]
-        size_keywords = ["cuanto pesa", "cuánto pesa", "cuanto ocupa", "cuánto ocupa",
-                         "peso de la carpeta", "tamano de la carpeta", "tamaño de la carpeta",
-                         "peso de ", "size de "]
-        if any(k in inp for k in count_keywords + size_keywords):
-            is_size = any(k in inp for k in size_keywords)
-            # Extraer la carpeta mencionada
-            _folder_map = {
-                "escritorio": "" + _GX_HOME + "/Desktop",
-                "desktop": "" + _GX_HOME + "/Desktop",
-                "descargas": "" + _GX_HOME + "/Downloads",
-                "downloads": "" + _GX_HOME + "/Downloads",
-                "documentos": "" + _GX_HOME + "/Documents",
-                "documents": "" + _GX_HOME + "/Documents",
-                "genesis": os.path.dirname(os.path.abspath(__file__)),
-            }
-            # Detectar carpeta por nombre en la query
-            target_dir = None
-            for fname, fpath in _folder_map.items():
-                if fname in inp:
-                    target_dir = fpath
-                    break
-            if not target_dir:
-                # Intentar con ruta
-                _path_m = _re.search(r'[A-Za-z]:[/\\][\w/\\._ -]+', user_input)
-                if _path_m:
-                    target_dir = _path_m.group(0)
-            if target_dir and os.path.isdir(target_dir):
-                try:
-                    if is_size:
-                        total = 0
-                        file_count = 0
-                        dir_count = 0
-                        for dirpath, dirnames, filenames in os.walk(target_dir):
-                            dir_count += len(dirnames)
-                            for f in filenames:
-                                fp = os.path.join(dirpath, f)
-                                try:
-                                    total += os.path.getsize(fp)
-                                    file_count += 1
-                                except OSError:
-                                    pass
-                        # Formatear tamano
-                        if total >= 1024**3:
-                            size_str = f"{total/1024**3:.2f} GB"
-                        elif total >= 1024**2:
-                            size_str = f"{total/1024**2:.1f} MB"
-                        elif total >= 1024:
-                            size_str = f"{total/1024:.0f} KB"
-                        else:
-                            size_str = f"{total} bytes"
-                        return (f"📂 **{os.path.basename(target_dir)}**\n"
-                                f"  Peso total: **{size_str}**\n"
-                                f"  Archivos: {file_count}\n"
-                                f"  Subcarpetas: {dir_count}")
-                    else:
-                        items = os.listdir(target_dir)
-                        files = [i for i in items if os.path.isfile(os.path.join(target_dir, i))]
-                        dirs = [i for i in items if os.path.isdir(os.path.join(target_dir, i))]
-                        return (f"📂 **{os.path.basename(target_dir)}**\n"
-                                f"  Archivos: **{len(files)}**\n"
-                                f"  Carpetas: **{len(dirs)}**\n"
-                                f"  Total: **{len(items)}** elementos")
-                except PermissionError:
-                    return f"❌ Sin permisos para acceder a: {target_dir}"
-
-        # --- Imports de herramientas (lazy, se cargan solo cuando se necesitan) ---
-        from core.device_tools import (
-            file_manager, file_searcher, file_organizer,
-            disk_analyzer, duplicate_finder, process_manager,
-            clipboard_manager, screen_capture, app_launcher,
-        )
-        from core.tools import FileTools, SystemInfoTool
-
-        # Control de dispositivos/sistema (extraído a _detect_device_control)
-        _dev_r = self._detect_device_control(inp, user_input)
-        if _dev_r is not None:
-            return _dev_r
-
-        # Operaciones de archivos/sistema: listar, buscar, organizar, procesos, portapapeles, captura, papelera, duplicados, info del sistema (extraído a _detect_fs_system_ops)
-        _fs_sys_r = self._detect_fs_system_ops(inp, user_input)
-        if _fs_sys_r is not None:
-            return _fs_sys_r
-
-        # --- Automatización de UI (menús/clicks/teclado de cualquier app) ---
-        # ANTES de open/content: "abrí el menú X" no debe caer en el launcher.
-        _ui_res = self._ui_action(inp, user_input)
-        if _ui_res is not None:
-            return _ui_res
-
+        from core.device_tools import app_launcher
         # --- Mostrar contenido de carpeta ---
         content_keywords = ["muestra contenido", "muestrame contenido", "muestra el contenido",
                            "muestra lo que hay", "que hay en ", "que tiene ",
@@ -3283,6 +3154,147 @@ class GenesisToolsMixin:
         _fops_r = self._detect_file_ops(inp, user_input)
         if _fops_r is not None:
             return _fops_r
+
+        return None
+
+    def _auto_detect_tool(self, user_input: str) -> str:
+        """
+        Auto-detecta si el usuario pide algo del sistema y ejecuta
+        la herramienta correspondiente sin depender del LLM.
+        Retorna el resultado o cadena vacia si no aplica.
+        """
+        inp = user_input.lower().strip()
+        import re as _re
+
+        # --- RUTINAS JARVIS (todas las versiones de Iron Man) — alta prioridad ---
+        try:
+            from core import jarvis_routines as _jr
+            if inp in ("rutinas", "rutinas jarvis", "protocolos", "que rutinas tenes",
+                       "qué rutinas tenés", "lista de rutinas"):
+                return _jr.listar()
+            _rk = _jr.detectar(inp)
+            if _rk:
+                return _jr.ejecutar(self, _rk)
+        except Exception as _e:
+            self.log.debug(f"Rutinas JARVIS skip: {_e}")
+
+        # Capacidades de Genesis: voces disponibles, qué puede hacer, etc (extraído a _detect_capabilities)
+        _capabi_r = self._detect_capabilities(inp, user_input)
+        if _capabi_r is not None:
+            return _capabi_r
+
+        # Fecha, hora y datos básicos del sistema (extraído a _detect_datetime_sysinfo)
+        _dateti_r = self._detect_datetime_sysinfo(inp, user_input)
+        if _dateti_r is not None:
+            return _dateti_r
+
+        # Calculadora: operaciones aritméticas (extraído a _detect_calculator)
+        _calcul_r = self._detect_calculator(inp, user_input)
+        if _calcul_r is not None:
+            return _calcul_r
+
+        # Identidad de Genesis (quién sos, tu nombre, etc (extraído a _detect_identity)
+        _identi_r = self._detect_identity(inp, user_input)
+        if _identi_r is not None:
+            return _identi_r
+
+        # --- Contar archivos / tamano de carpeta ---
+        count_keywords = ["cuantos archivos", "cuántos archivos", "cuantas carpetas",
+                          "cuántas carpetas", "cantidad de archivos", "numero de archivos",
+                          "cuantos elementos", "cuántos elementos"]
+        size_keywords = ["cuanto pesa", "cuánto pesa", "cuanto ocupa", "cuánto ocupa",
+                         "peso de la carpeta", "tamano de la carpeta", "tamaño de la carpeta",
+                         "peso de ", "size de "]
+        if any(k in inp for k in count_keywords + size_keywords):
+            is_size = any(k in inp for k in size_keywords)
+            # Extraer la carpeta mencionada
+            _folder_map = {
+                "escritorio": "" + _GX_HOME + "/Desktop",
+                "desktop": "" + _GX_HOME + "/Desktop",
+                "descargas": "" + _GX_HOME + "/Downloads",
+                "downloads": "" + _GX_HOME + "/Downloads",
+                "documentos": "" + _GX_HOME + "/Documents",
+                "documents": "" + _GX_HOME + "/Documents",
+                "genesis": os.path.dirname(os.path.abspath(__file__)),
+            }
+            # Detectar carpeta por nombre en la query
+            target_dir = None
+            for fname, fpath in _folder_map.items():
+                if fname in inp:
+                    target_dir = fpath
+                    break
+            if not target_dir:
+                # Intentar con ruta
+                _path_m = _re.search(r'[A-Za-z]:[/\\][\w/\\._ -]+', user_input)
+                if _path_m:
+                    target_dir = _path_m.group(0)
+            if target_dir and os.path.isdir(target_dir):
+                try:
+                    if is_size:
+                        total = 0
+                        file_count = 0
+                        dir_count = 0
+                        for dirpath, dirnames, filenames in os.walk(target_dir):
+                            dir_count += len(dirnames)
+                            for f in filenames:
+                                fp = os.path.join(dirpath, f)
+                                try:
+                                    total += os.path.getsize(fp)
+                                    file_count += 1
+                                except OSError:
+                                    pass
+                        # Formatear tamano
+                        if total >= 1024**3:
+                            size_str = f"{total/1024**3:.2f} GB"
+                        elif total >= 1024**2:
+                            size_str = f"{total/1024**2:.1f} MB"
+                        elif total >= 1024:
+                            size_str = f"{total/1024:.0f} KB"
+                        else:
+                            size_str = f"{total} bytes"
+                        return (f"📂 **{os.path.basename(target_dir)}**\n"
+                                f"  Peso total: **{size_str}**\n"
+                                f"  Archivos: {file_count}\n"
+                                f"  Subcarpetas: {dir_count}")
+                    else:
+                        items = os.listdir(target_dir)
+                        files = [i for i in items if os.path.isfile(os.path.join(target_dir, i))]
+                        dirs = [i for i in items if os.path.isdir(os.path.join(target_dir, i))]
+                        return (f"📂 **{os.path.basename(target_dir)}**\n"
+                                f"  Archivos: **{len(files)}**\n"
+                                f"  Carpetas: **{len(dirs)}**\n"
+                                f"  Total: **{len(items)}** elementos")
+                except PermissionError:
+                    return f"❌ Sin permisos para acceder a: {target_dir}"
+
+        # --- Imports de herramientas (lazy, se cargan solo cuando se necesitan) ---
+        from core.device_tools import (
+            file_manager, file_searcher, file_organizer,
+            disk_analyzer, duplicate_finder, process_manager,
+            clipboard_manager, screen_capture, app_launcher,
+        )
+        from core.tools import FileTools, SystemInfoTool
+
+        # Control de dispositivos/sistema (extraído a _detect_device_control)
+        _dev_r = self._detect_device_control(inp, user_input)
+        if _dev_r is not None:
+            return _dev_r
+
+        # Operaciones de archivos/sistema: listar, buscar, organizar, procesos, portapapeles, captura, papelera, duplicados, info del sistema (extraído a _detect_fs_system_ops)
+        _fs_sys_r = self._detect_fs_system_ops(inp, user_input)
+        if _fs_sys_r is not None:
+            return _fs_sys_r
+
+        # --- Automatización de UI (menús/clicks/teclado de cualquier app) ---
+        # ANTES de open/content: "abrí el menú X" no debe caer en el launcher.
+        _ui_res = self._ui_action(inp, user_input)
+        if _ui_res is not None:
+            return _ui_res
+
+        # Abrir apps/sitios/carpetas y mostrar contenido de carpeta (extraído a _detect_open_apps_folders)
+        _open_a_r = self._detect_open_apps_folders(inp, user_input)
+        if _open_a_r is not None:
+            return _open_a_r
 
         # --- Notas rápidas ---
         # "nota: comprar leche" → guarda nota
