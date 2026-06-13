@@ -1362,6 +1362,23 @@ class GenesisToolsMixin:
                       r"unidades?\s+usb|pendrives?)\b", inp):
             return _cx.usb_list()
 
+        # === SALIDA DE AUDIO (dispositivo de reproducción por defecto) ===
+        if (_re.search(r"\b(salida\s+de\s+(audio|sonido)|dispositivos?\s+de\s+salida|"
+                       r"salidas?\s+de\s+audio)\b", inp)
+                or (_re.search(r"\bsalida\b", inp)
+                    and _re.search(r"\b(conect\w*|cambi\w*|pon[ée]\w*|pas[áa]\w*|"
+                                   r"audio|sonido|jbl|logitech|parlante|altavoz)\b", inp))
+                or _re.search(r"\b(audio|sonido)\s+(en|a|al|por)\b", inp)):
+            from core import audio_output as _ao
+            _devkey = _re.search(r"\b(jbl|logitech|philips|flip|tune|realtek|nvidia|"
+                                 r"parlante|altavoz|altavoces|auricular\w*|monitor|"
+                                 r"g27|digital|koshi)\b", inp)
+            _islist = _re.search(r"\b(qu[ée]|cu[áa]les|list\w*|mostr\w*|cu[áa]nt\w*)\b",
+                                 inp)
+            if _islist and not _devkey:
+                return _ao.list_text()
+            return _ao.set_output(inp)
+
         # === CHROMECAST / CAST a la TV ===
         _is_cast = bool(_re.search(r"\b(chromecast|chrome\s*cast|caste\w*|transmit\w*|cast|"
                                    r"tv|tele|televisi[óo]n|pantalla\s+grande|dormitorio)\b", inp))

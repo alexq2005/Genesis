@@ -79,7 +79,7 @@ class GenesisProcessingMixin:
         "A qué dirección", "Qué mensaje le mando",
         "📬", "📭", "Últimos", "correos de", "leer correos",
         # Control del sistema (volumen/energía/brillo/bloqueo)
-        "🔊", "🔉", "🔇", "🔒", "😴", "🔌", "🔄", "💡", "✋", "👋",
+        "🔊", "🔉", "🔇", "🔈", "🔒", "😴", "🔌", "🔄", "💡", "✋", "👋",
         "¿Seguro que apago", "¿Seguro que reinicio",
         "🖨️", "Qué documento imprimo",
         "🖥️", "Qué abro en esa pantalla",
