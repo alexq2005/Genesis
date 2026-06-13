@@ -17,6 +17,124 @@ from pathlib import Path
 _re = re  # Alias used throughout this module
 
 
+def _search_folder_everywhere(qname: str, max_hits: int = 12) -> list:
+    """Busca carpetas por nombre exacto (case-insensitive) en raíces conocidas,
+    con profundidad acotada y saltando dirs pesados/de sistema. Devuelve lista
+    de rutas únicas. Para nombres comunes ('logs') puede devolver varias →
+    el caller pregunta cuál abrir en vez de adivinar."""
+    q = (qname or "").lower().strip().replace(" ", "")
+    if not q:
+        return []
+    _genesis_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    roots = ["" + _GX_HOME + "/Desktop", "" + _GX_HOME + "/Documents",
+             "" + _GX_HOME + "/Downloads", "F:/programas", "F:/", "D:/",
+             _genesis_dir]
+    skip = {"$recycle.bin", "system volume information", "msdownld.tmp",
+            "config.msi", "recovery", "$winreagent", "node_modules", "venv",
+            ".git", "__pycache__", ".pytest_cache", "site-packages",
+            ".venv", "windows", "appdata", "$sysreset"}
+    hits, seen = [], set()
+    _t0 = __import__("time").time()
+    for root in roots:
+        if not os.path.isdir(root) or len(hits) >= max_hits:
+            continue
+        if __import__("time").time() - _t0 > 3.0:
+            break  # presupuesto: no colgarse si no existe
+        base_depth = root.rstrip("/\\").count(os.sep)
+        for cur, dirs, _files in os.walk(root):
+            if __import__("time").time() - _t0 > 3.0:
+                break
+            depth = cur.count(os.sep) - base_depth
+            if depth >= 3:
+                dirs[:] = []
+                continue
+            dirs[:] = [d for d in dirs if d.lower() not in skip
+                       and not d.startswith("$")]
+            for d in dirs:
+                if d.lower().replace(" ", "") == q:
+                    fp = os.path.normpath(os.path.join(cur, d))
+                    if fp.lower() not in seen:
+                        seen.add(fp.lower())
+                        hits.append(fp)
+                        if len(hits) >= max_hits:
+                            break
+            if len(hits) >= max_hits:
+                break
+    return hits
+
+
+def _resolve_file(qname: str, max_hits: int = 12) -> list:
+    """Resuelve un ARCHIVO por nombre (sin ruta completa). Si ya es ruta
+    absoluta y existe, la devuelve. Si no, busca por nombre exacto
+    (case-insensitive) en raíces conocidas, depth acotado. Devuelve lista
+    de rutas; si hay varias el caller pregunta cuál."""
+    name = (qname or "").strip().strip('"\'')
+    if not name:
+        return []
+    # ruta absoluta directa
+    if _re.match(r'^[A-Za-z]:[/\\]', name) and os.path.isfile(name):
+        return [os.path.normpath(name)]
+    q = name.lower().replace("\\", "/").split("/")[-1]  # solo el nombre
+    home = os.path.expanduser("~")
+    roots = [os.path.join(home, "Desktop"), os.path.join(home, "Documents"),
+             os.path.join(home, "Downloads"), home, "F:/programas",
+             os.path.dirname(os.path.dirname(os.path.abspath(__file__)))]
+    skip = {"$recycle.bin", "system volume information", "node_modules",
+            "venv", ".venv", ".git", "__pycache__", ".pytest_cache",
+            "site-packages", "windows", "appdata", "$winreagent"}
+    hits, seen = [], set()
+    _t0 = __import__("time").time()
+    _deadline = 3.0  # presupuesto: no colgarse buscando algo inexistente
+    for root in roots:
+        if not os.path.isdir(root) or len(hits) >= max_hits:
+            continue
+        if __import__("time").time() - _t0 > _deadline:
+            break
+        base_depth = root.rstrip("/\\").count(os.sep)
+        for cur, dirs, files in os.walk(root):
+            if __import__("time").time() - _t0 > _deadline:
+                break
+            if cur.count(os.sep) - base_depth >= 4:
+                dirs[:] = []
+                continue
+            dirs[:] = [d for d in dirs if d.lower() not in skip
+                       and not d.startswith("$")]
+            for f in files:
+                if f.lower() == q:
+                    fp = os.path.normpath(os.path.join(cur, f))
+                    if fp.lower() not in seen:
+                        seen.add(fp.lower())
+                        hits.append(fp)
+                        if len(hits) >= max_hits:
+                            break
+            if len(hits) >= max_hits:
+                break
+    return hits
+
+
+def _abs_or_resolve(name, allow_folder=True):
+    """Devuelve (path, error_msg). Resuelve por nombre si no es ruta."""
+    name = (name or "").strip().strip('"\'')
+    for prep in ("el ", "la ", "los ", "las ", "mi ", "archivo ", "carpeta ",
+                 "la carpeta ", "el archivo "):
+        if name.lower().startswith(prep):
+            name = name[len(prep):]
+    name = name.strip().rstrip(".?!,")
+    if _re.match(r'^[A-Za-z]:[/\\]', name) and os.path.exists(name):
+        return name, None
+    hits = _resolve_file(name)
+    # Solo buscar como CARPETA si el nombre no parece archivo (sin extensión)
+    looks_like_file = bool(_re.search(r'\.\w{1,5}$', name))
+    if not hits and allow_folder and not looks_like_file:
+        hits = _search_folder_everywhere(name)
+    if len(hits) == 1:
+        return hits[0], None
+    if len(hits) > 1:
+        lst = "\n".join("  • " + h for h in hits[:8])
+        return None, (f"Encontré varios «{name}». ¿Cuál? Pasame la ruta:\n{lst}")
+    return None, f"No encontré «{name}»."
+
+
 class GenesisToolsMixin:
     """Mixin con auto-detección de herramientas y filtros de calidad."""
 
@@ -2474,98 +2592,7 @@ class GenesisToolsMixin:
                     pass
             return None
 
-        def _search_folder_everywhere(qname: str, max_hits: int = 12) -> list:
-            """Busca carpetas por nombre exacto (case-insensitive) en raíces conocidas,
-            con profundidad acotada y saltando dirs pesados/de sistema. Devuelve lista
-            de rutas únicas. Para nombres comunes ('logs') puede devolver varias →
-            el caller pregunta cuál abrir en vez de adivinar."""
-            q = (qname or "").lower().strip().replace(" ", "")
-            if not q:
-                return []
-            _genesis_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            roots = ["" + _GX_HOME + "/Desktop", "" + _GX_HOME + "/Documents",
-                     "" + _GX_HOME + "/Downloads", "F:/programas", "F:/", "D:/",
-                     _genesis_dir]
-            skip = {"$recycle.bin", "system volume information", "msdownld.tmp",
-                    "config.msi", "recovery", "$winreagent", "node_modules", "venv",
-                    ".git", "__pycache__", ".pytest_cache", "site-packages",
-                    ".venv", "windows", "appdata", "$sysreset"}
-            hits, seen = [], set()
-            _t0 = __import__("time").time()
-            for root in roots:
-                if not os.path.isdir(root) or len(hits) >= max_hits:
-                    continue
-                if __import__("time").time() - _t0 > 3.0:
-                    break  # presupuesto: no colgarse si no existe
-                base_depth = root.rstrip("/\\").count(os.sep)
-                for cur, dirs, _files in os.walk(root):
-                    if __import__("time").time() - _t0 > 3.0:
-                        break
-                    depth = cur.count(os.sep) - base_depth
-                    if depth >= 3:
-                        dirs[:] = []
-                        continue
-                    dirs[:] = [d for d in dirs if d.lower() not in skip
-                               and not d.startswith("$")]
-                    for d in dirs:
-                        if d.lower().replace(" ", "") == q:
-                            fp = os.path.normpath(os.path.join(cur, d))
-                            if fp.lower() not in seen:
-                                seen.add(fp.lower())
-                                hits.append(fp)
-                                if len(hits) >= max_hits:
-                                    break
-                    if len(hits) >= max_hits:
-                        break
-            return hits
 
-        def _resolve_file(qname: str, max_hits: int = 12) -> list:
-            """Resuelve un ARCHIVO por nombre (sin ruta completa). Si ya es ruta
-            absoluta y existe, la devuelve. Si no, busca por nombre exacto
-            (case-insensitive) en raíces conocidas, depth acotado. Devuelve lista
-            de rutas; si hay varias el caller pregunta cuál."""
-            name = (qname or "").strip().strip('"\'')
-            if not name:
-                return []
-            # ruta absoluta directa
-            if _re.match(r'^[A-Za-z]:[/\\]', name) and os.path.isfile(name):
-                return [os.path.normpath(name)]
-            q = name.lower().replace("\\", "/").split("/")[-1]  # solo el nombre
-            home = os.path.expanduser("~")
-            roots = [os.path.join(home, "Desktop"), os.path.join(home, "Documents"),
-                     os.path.join(home, "Downloads"), home, "F:/programas",
-                     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))]
-            skip = {"$recycle.bin", "system volume information", "node_modules",
-                    "venv", ".venv", ".git", "__pycache__", ".pytest_cache",
-                    "site-packages", "windows", "appdata", "$winreagent"}
-            hits, seen = [], set()
-            _t0 = __import__("time").time()
-            _deadline = 3.0  # presupuesto: no colgarse buscando algo inexistente
-            for root in roots:
-                if not os.path.isdir(root) or len(hits) >= max_hits:
-                    continue
-                if __import__("time").time() - _t0 > _deadline:
-                    break
-                base_depth = root.rstrip("/\\").count(os.sep)
-                for cur, dirs, files in os.walk(root):
-                    if __import__("time").time() - _t0 > _deadline:
-                        break
-                    if cur.count(os.sep) - base_depth >= 4:
-                        dirs[:] = []
-                        continue
-                    dirs[:] = [d for d in dirs if d.lower() not in skip
-                               and not d.startswith("$")]
-                    for f in files:
-                        if f.lower() == q:
-                            fp = os.path.normpath(os.path.join(cur, f))
-                            if fp.lower() not in seen:
-                                seen.add(fp.lower())
-                                hits.append(fp)
-                                if len(hits) >= max_hits:
-                                    break
-                    if len(hits) >= max_hits:
-                        break
-            return hits
 
         def _list_folder_contents(path: str, max_items: int = 50) -> str:
             """Lista el contenido de una carpeta de forma legible."""
@@ -3102,27 +3129,6 @@ class GenesisToolsMixin:
             return ""  # Dejar al LLM con herramientas
 
         # === MANEJO DE ARCHIVOS conversacional (mover/copiar/renombrar/editar/borrar) ===
-        def _abs_or_resolve(name, allow_folder=True):
-            """Devuelve (path, error_msg). Resuelve por nombre si no es ruta."""
-            name = (name or "").strip().strip('"\'')
-            for prep in ("el ", "la ", "los ", "las ", "mi ", "archivo ", "carpeta ",
-                         "la carpeta ", "el archivo "):
-                if name.lower().startswith(prep):
-                    name = name[len(prep):]
-            name = name.strip().rstrip(".?!,")
-            if _re.match(r'^[A-Za-z]:[/\\]', name) and os.path.exists(name):
-                return name, None
-            hits = _resolve_file(name)
-            # Solo buscar como CARPETA si el nombre no parece archivo (sin extensión)
-            looks_like_file = bool(_re.search(r'\.\w{1,5}$', name))
-            if not hits and allow_folder and not looks_like_file:
-                hits = _search_folder_everywhere(name)
-            if len(hits) == 1:
-                return hits[0], None
-            if len(hits) > 1:
-                lst = "\n".join("  • " + h for h in hits[:8])
-                return None, (f"Encontré varios «{name}». ¿Cuál? Pasame la ruta:\n{lst}")
-            return None, f"No encontré «{name}»."
 
         # --- Imprimir documento ---
         if _re.search(r'\b(imprim[íi]r?|imprime|mand[áa]\s+a\s+imprimir|sac[áa]\s+(una\s+)?'
