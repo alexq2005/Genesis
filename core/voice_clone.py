@@ -262,6 +262,14 @@ def speak_aloud(text: str, voice: str = None, temperature: float = 0.5) -> dict:
                                temperature=temperature)
             if res.get("ok") and _play_wav(_SPEAK_OUT):
                 return {"ok": True, "method": "xtts-clone"}
+        # XTTS falló/OOM → FALLBACK UNIFICADO a Piper (misma voz que la cabina)
+        try:
+            from core import piper_tts
+            piper_tts.synth_to_wav(clean, "es_ES-davefx-medium", str(_SPEAK_OUT))
+            if _play_wav(_SPEAK_OUT):
+                return {"ok": True, "method": "piper-fallback"}
+        except Exception:
+            pass
     elif _edge_play(clean, sel, rate):
         return {"ok": True, "method": "edge"}
     return {"ok": _pyttsx3_say(clean, rate), "method": "pyttsx3"}

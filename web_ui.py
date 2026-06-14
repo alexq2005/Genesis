@@ -1621,10 +1621,17 @@ def api_tts_speak():
             if _r.get("ok") and _os.path.exists(_out):
                 from flask import send_file
                 return send_file(_out, mimetype="audio/wav", download_name="tts.wav")
-            # XTTS falló/OOM → caer a voz refinada de edge-tts (no quedar mudo)
-            voice = "es-ES-AlvaroNeural"
+            raise RuntimeError("xtts no disponible")
         except Exception:
-            voice = "es-ES-AlvaroNeural"
+            # XTTS falló/OOM → FALLBACK UNIFICADO a Piper (misma voz en cabina y
+            # manos-libres; local, no usa VRAM, nunca queda mudo ni cambia)
+            try:
+                from flask import Response
+                from core import piper_tts as _pp
+                return Response(_pp.synth_bytes(clean, "es_ES-davefx-medium"),
+                                mimetype="audio/wav")
+            except Exception:
+                voice = "es-ES-AlvaroNeural"  # último recurso si Piper falla
 
     try:
         import edge_tts

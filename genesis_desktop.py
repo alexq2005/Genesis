@@ -759,6 +759,14 @@ def main():
                     print("  [OK]  STT Whisper precargado (comandos por voz)")
             except Exception:
                 pass
+            # Voz Piper (fallback unificado): precargar davefx para que el
+            # fallback cuando XTTS no entra en VRAM sea instantáneo y consistente
+            try:
+                from core import piper_tts
+                if piper_tts.available() and piper_tts.warm("es_ES-davefx-medium"):
+                    print("  [OK]  Voz Piper (fallback) precargada")
+            except Exception:
+                pass
         threading.Thread(target=_warm_xtts, daemon=True).start()
 
         # Escucha pasiva (manos libres) auto al arrancar — obedece SOLO tu voz
