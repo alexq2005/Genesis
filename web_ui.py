@@ -1103,17 +1103,14 @@ setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
   +'uniform vec2 uCenter;uniform vec2 uScale;uniform float uTime;uniform float uAmp;uniform float uMaxR;uniform float uPS;'
   +'varying float vB;varying float vC;'
   +'void main(){float depth=aData.x;'
-  +'float speed=0.035+depth*0.11;'                                  // perspectiva: las cercanas se alejan más rápido
-  +'float rad01=fract(aPolar.y+uTime*speed*(1.0+uAmp*1.6));'        // estrella que SE ALEJA del núcleo (0->1, respawn)
-  +'float ang=aPolar.x+uTime*0.02;'                                 // leve giro
-  +'float rad=rad01*uMaxR;'
+  +'float ang=aPolar.x+uTime*(0.02+depth*0.05);'                   // GIRAN alrededor del núcleo (diferencial); nunca vuelven
+  +'float rad=aPolar.y*uMaxR*(1.0+uAmp*0.16*(0.4+depth));'         // radio fijo (+ leve push con la voz)
   +'vec2 off=vec2(cos(ang)*uScale.x,sin(ang)*uScale.y)*rad;'
   +'gl_Position=vec4(uCenter+off,0.0,1.0);'
-  +'float fade=smoothstep(0.0,0.07,rad01)*smoothstep(1.0,0.62,rad01);'  // oculta el respawn (fade in centro / out borde)
-  +'float tw=0.7+0.3*sin(uTime*1.4+aData.z);'
-  +'float fl=pow(0.5+0.5*sin(uTime*0.55+aData.z*5.0),42.0);'        // destello esporádico por estrella
-  +'vB=(aData.y*tw*(0.6+0.5*depth)*(1.0+uAmp*1.5)+fl*2.4)*fade;vC=aCyan;'
-  +'gl_PointSize=(0.9+rad01*3.2+depth*1.4+fl*4.0)*uPS*(1.0+uAmp*0.7);}';   // crecen al alejarse
+  +'float tw=0.6+0.4*sin(uTime*1.4+aData.z);'
+  +'float fl=pow(0.5+0.5*sin(uTime*0.55+aData.z*5.0),42.0);'       // destello esporádico por estrella
+  +'vB=aData.y*tw*(0.55+0.45*depth)*(1.0+uAmp*1.6)+fl*2.2;vC=aCyan;'
+  +'gl_PointSize=(0.7+depth*1.6+fl*2.6)*uPS*(1.0+uAmp*0.7);}';     // puntos más chicos
  var FS='precision mediump float;varying float vB;varying float vC;'
   +'void main(){vec2 d=gl_PointCoord-0.5;float r=length(d);'
   +'float c=smoothstep(0.5,0.0,r);float a=(0.35*c+0.65*c*c)*vB*1.5;'
