@@ -4309,6 +4309,14 @@ class GenesisToolsMixin:
         # =====================================================================
 
         # =====================================================================
+        # NOTICIAS / TITULARES (Google News RSS)
+        if _re.search(r"\b(noticias?|titulares?|novedades|qu[ée]\s+noticias)\b", inp):
+            from core import news as _news
+            _m = _re.search(r"(?:noticias?|titulares?|novedades)\s+"
+                            r"(?:de|sobre|del?|acerca\s+de)\s+(.+)", inp)
+            _topic = _m.group(1).strip().rstrip("?.!") if _m else None
+            return _news.headlines(_topic)
+
         # WEATHER MODULE — Datos en tiempo real
         # =====================================================================
 
