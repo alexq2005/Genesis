@@ -44,8 +44,8 @@ def _text_payload(user_input: str):
         r'(?:may[úu]sculas?|min[úu]sculas?|t[íi]tulo|base\s*64|hash|md5|sha\d*|'
         r'palabras?|texto|caracteres)\s+(.+)$', user_input, _re.I)
     if m:
-        t = _re.sub(r'^(de|del|el|la|los|las|en|a|:)\s+', '', m.group(1).strip(),
-                    flags=_re.I).strip().strip('"\'')
+        t = _re.sub(r'^((?:de|del|el|la|los|las|en|a|:|md5|sha\d*|hash|texto)\s+)+',
+                    '', m.group(1).strip(), flags=_re.I).strip().strip('"\'')
         if len(t) >= 1 and t.lower() not in ("de texto", "del texto"):
             return t
     return None
@@ -3778,7 +3778,7 @@ class GenesisToolsMixin:
             return text_transformer.decode_base64(text)
 
         if any(k in inp for k in ["hash del texto", "hash texto", "hashear", "hash md5",
-                                   "hash sha", "genera hash", "generar hash"]):
+                                   "hash sha", "genera hash", "generar hash", "hash de"]):
             from core.text_transformer import text_transformer
             from core.clipboard_manager import clipboard_manager
             text = _text_payload(user_input) or clipboard_manager._get_clipboard()
