@@ -491,6 +491,7 @@ def play(query: str = "", profile: str = None, screen: int = None) -> str:
 _M_SEARCH = (0.830, 0.076)     # ícono de búsqueda (lupa, arriba-derecha)
 _M_TILE1 = (0.100, 0.235)      # 1er resultado del grid (arriba-izquierda)
 _M_PLAY = (0.296, 0.508)       # botón Reproducir/Reanudar del modal (triángulo)
+_M_BACK = (0.030, 0.075)       # flecha Atrás (←) arriba-izquierda del player/modal
 
 
 def _tess():
@@ -525,6 +526,25 @@ def _search_results_visible(L, T, W, H):
         return None
 
 
+def _cabin_hwnd():
+    """HWND de la ventana de la cabina de Genesis. Está docked a la derecha y
+    always-on-top → TAPA la lupa de Netflix (arriba-derecha). Hay que minimizarla
+    durante el flujo por mouse y restaurarla después. None si no se encuentra."""
+    try:
+        import uiautomation as auto
+        for w in auto.GetRootControl().GetChildren():
+            try:
+                nm = (w.Name or "").lower()
+                if w.ControlTypeName == "WindowControl" and \
+                        ("genesis" in nm or "jarvis" in nm):
+                    return w.NativeWindowHandle
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
+
+
 def play_store_mouse(query: str, profile: str = None) -> str:
     """Reproduce un título en la app de Netflix (Microsoft Store) por MOUSE +
     teclado (sin CDP, sin OCR). Clickea por posición RELATIVA a la ventana:
@@ -548,20 +568,18 @@ def play_store_mouse(query: str, profile: str = None) -> str:
     if not nf:
         return "🎬 No pude encontrar la ventana de Netflix."
     pyautogui.FAILSAFE = True
+    import ctypes
+    cabin = _cabin_hwnd()                    # la cabina tapa la lupa → minimizarla
     try:
+        if cabin:
+            ctypes.windll.user32.ShowWindow(cabin, 6)     # SW_MINIMIZE
+            time.sleep(0.7)
         nf.SetActive()
         try:
             nf.Maximize()
         except Exception:
             pass
         time.sleep(1.6)
-        # Salir de cualquier player/modal abierto para volver a una vista CON
-        # buscador (si ya había un video corriendo, la lupa no está en pantalla y
-        # el flujo fallaba). Esc dos veces: player → página, modal → grilla.
-        pyautogui.press("esc")
-        time.sleep(1.2)
-        pyautogui.press("esc")
-        time.sleep(1.2)
         r = nf.BoundingRectangle
         L, T = r.left, r.top
         W, H = r.right - r.left, r.bottom - r.top
@@ -569,6 +587,17 @@ def play_store_mouse(query: str, profile: str = None) -> str:
         def _click(frac, wait):
             pyautogui.click(int(L + frac[0] * W), int(T + frac[1] * H))
             time.sleep(wait)
+
+        # Salir de cualquier player/modal abierto para volver a la vista CON
+        # buscador (si hay un video corriendo, la lupa no está en pantalla). El
+        # botón ATRÁS (flecha ←, arriba-izq) es más confiable que Esc; mover el
+        # mouse revela los controles. Dos veces: player → título → grilla.
+        for _ in range(2):
+            pyautogui.moveTo(int(L + 0.5 * W), int(T + 0.45 * H))   # revela controles
+            time.sleep(0.5)
+            _click(_M_BACK, 1.6)                     # ← Atrás
+        pyautogui.press("esc")                       # cerrar modal residual si quedó
+        time.sleep(0.8)
 
         _click(_M_SEARCH, 1.5)                       # abrir búsqueda
         pyautogui.write(query, interval=0.05)
@@ -589,6 +618,12 @@ def play_store_mouse(query: str, profile: str = None) -> str:
         return f"🎬 Reproduciendo **{query}** en la app de Netflix (por mouse)."
     except Exception as e:
         return f"[ERROR] Netflix mouse: {str(e)[:120]}"
+    finally:
+        if cabin:
+            try:
+                ctypes.windll.user32.ShowWindow(cabin, 9)     # SW_RESTORE cabina
+            except Exception:
+                pass
 
 
 def _play_chrome(query: str, profile: str = None, screen: int = None) -> str:
