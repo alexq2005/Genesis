@@ -753,6 +753,18 @@ a{color:var(--g);text-decoration:none}
  font-size:13px;line-height:1.55;box-shadow:0 8px 30px rgba(0,0,0,.5),0 0 18px rgba(45,255,174,.15)}
 #tip b{color:var(--g)}
 #tip .x{float:right;cursor:pointer;color:#7fceb3;border:1px solid rgba(45,255,174,.3);border-radius:6px;padding:2px 8px;font-size:12px}
+/* Responsive: usable en pantallas chicas / celular */
+@media (max-width:640px){
+ #core{padding:10px}
+ .hero{min-height:auto;padding-top:6px}
+ .orbwrap{width:210px;height:210px}
+ .orbwrap canvas,.orbwrap svg{width:210px!important;height:210px!important}
+ #tablero{position:static!important;top:auto!important;right:auto!important;width:auto!important;max-width:none!important;max-height:24vh;margin:8px 0 0}
+ .topbar{flex-wrap:wrap;gap:6px}
+ .toprt{gap:6px;flex-wrap:wrap}
+ .bubble{font-size:13px}
+ #cplayer{width:94vw!important}
+}
 </style></head><body><div id="core">
 <div class="scan"></div>
 
@@ -769,7 +781,7 @@ a{color:var(--g);text-decoration:none}
   <span style="color:var(--g);font-size:11px;letter-spacing:.14em"><i class="ti ti-clipboard-data"></i> TABLERO DE EVIDENCIAS</span>
   <span id="boardstatus" style="font-size:9px;color:#4d8a76">en espera</span>
  </div>
- <div id="board" style="color:#3f6b5e;font-size:12px;line-height:1.6;text-align:center">
+ <div id="board" style="color:#6aa78f;font-size:12px;line-height:1.6;text-align:center">
   Aquí aparecen tus investigaciones.<br><span style="color:#4d8a76">ej: <i>investigá el dólar</i></span>
  </div>
 </div>
