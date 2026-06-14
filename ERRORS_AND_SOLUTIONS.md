@@ -711,6 +711,29 @@
 
 ---
 
+## ERR: Genesis responde con voces diferentes (inconsistencia de voz)
+- **Fecha:** 2026-06-13
+- **Contexto:** El usuario notó que Genesis a veces respondía con la voz de Milton (clon), a veces con una voz española, a veces con la robótica de Windows.
+- **Análisis:** La voz por defecto es `clon:milton` (XTTS ~2GB VRAM). Con 8GB compartidos con Ollama (~6GB), XTTS a veces NO entra y cada camino caía a una voz distinta: la cabina a `es-ES-AlvaroNeural` (edge), el manos-libres a `pyttsx3` (robótica). 3 voces según el estado de VRAM.
+- **Solución:** Fallback UNIFICADO a una voz Piper local (`es_ES-davefx-medium`) en ambos caminos (`/api/tts/speak` y `voice_clone.speak_aloud`). Piper corre en CPU → nunca falla por la misma razón que XTTS. Precargado en `_boot_sequence`.
+- **Prevención:** Un fallback debe vivir en UN solo lugar y usar un recurso que NO compita con el principal (Piper/CPU vs XTTS/GPU). Nunca dejar que cada ruta elija su propio plan B.
+
+## ERR: Datos factuales (hora/fecha/cálculo) tardan 13-21s
+- **Fecha:** 2026-06-14
+- **Contexto:** Auditoría funcional: "qué hora es" tardaba 21s, "cuánto es X" 13s.
+- **Análisis:** `_maybe_spontaneous` reformulaba TODO resultado corto sin marker en `_NO_REPHRASE` pasándolo por el LLM lento (~13-21s). Además encolaba pedidos → timeouts bajo carga.
+- **Solución:** (1) markers `🕐📅🔢🗓️🧮` a `_NO_REPHRASE`. (2) Fix sistémico: no reformular si el resultado empieza con emoji/símbolo (`ord>0x2190`) o trae formato (`**`/saltos/viñetas).
+- **Prevención:** Los resultados de herramienta son datos exactos; no reformularlos con el LLM. Opt-out genérico por formato, no lista de emojis caso por caso.
+
+## ERR: N4 function-calling — el 8B local devuelve JSON inconsistente
+- **Fecha:** 2026-06-14
+- **Contexto:** Al activar N4 (router por significado), genesis-q3 (8B) devolvía JSON vacío/truncado ~50% de las veces, nondeterminista incluso a temperature 0.
+- **Análisis:** El problema era de FORMATO (el modelo preludiaba/se cortaba), no de comprensión (elegía bien la herramienta cuando lograba emitir JSON).
+- **Solución:** `tool_router._ollama_json()` llama a Ollama `/api/chat` con `"format":"json"` (constrained decoding) → JSON SIEMPRE válido. El mismo 8B pasó a 100% consistente (6/6 en 2 pasadas). Cero descarga, cero VRAM extra.
+- **Prevención:** Antes de cambiar/escalar el modelo, aislar si el cuello es comprensión o formato. Para salida estructurada usar `format=json` de Ollama.
+
+---
+
 ```markdown
 ## ERR-XXX: [Título descriptivo]
 - **Fecha:** YYYY-MM-DD

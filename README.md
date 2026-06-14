@@ -15,6 +15,7 @@ Sistema de IA autónomo que evoluciona, aprende e investiga. Desktop app tipo Co
 - **Memoria Multi-Nivel** — Corto plazo, largo plazo, episódica, emocional, semántica (embeddings GPU)
 - **Auto-Evolución** — Se auto-evalúa y mejora su comportamiento entre sesiones
 - **Sistema multi-agente** — 6 agentes especialistas (investigador, programador, analista, creativo, seguridad, planificador) con un **coordinador que auto-delega** la tarea al mejor agente. Visibles en Mission Control (`/mission`)
+- **Function-calling híbrido (N4)** — el comando primero pasa por el detector de regex (instantáneo, ~90%); si no matchea, un **router por significado** (LLM con `format=json`) elige la herramienta correcta y extrae los argumentos. Atrapa paráfrasis y voseo que el regex pierde, **sin frenar lo que ya es instantáneo**. Flag `GENESIS_TOOLCALL` (default on), modelo configurable con `GENESIS_TOOLCALL_MODEL`
 - **~150 Módulos** — Desde RAG y procesamiento de documentos hasta control del sistema operativo
 - **Circuit Breaker** — Si un provider cae, el router bypasea automáticamente (5min cooldown)
 - **Desktop App** — PyWebView sidebar tipo Copilot, system tray, hotkey Ctrl+Shift+G
@@ -74,6 +75,8 @@ python genesis_desktop.py --right
 | `python genesis.py` | Terminal | Interfaz de texto en consola |
 | `python web_ui.py` | Web | Interfaz en navegador (localhost:5000) |
 
+**Vistas web** (puerto 5100 en la app de escritorio): `/core` (cabina JARVIS — núcleo de plasma cian + starfield), `/jarvis` (HUD), `/mission` (Mission Control — agentes), `/plasma-lab` (laboratorio de diseños del núcleo).
+
 ## Arquitectura
 
 ```
@@ -86,6 +89,7 @@ genesis.py (~1,800 líneas, split mixin)  — Motor principal, orquestador de 13
 ├── core/memory.py                       — Memoria corto/largo plazo + emocional
 ├── core/evolution.py                    — Auto-evolución con fitness scoring
 ├── core/agents.py                       — 6 agentes especialistas + coordinador (auto-delegación)
+├── core/tool_registry.py · tool_router.py — N4: function-calling híbrido (regex → LLM por significado)
 ├── core/handsfree.py                    — Escucha manos libres (vosk wake-word → Whisper) + feed a cabina
 ├── core/stt.py                          — STT preciso (faster-whisper, local)
 ├── core/voiceprint.py                   — Huella de voz / reconocimiento de hablante (resemblyzer)
@@ -112,7 +116,7 @@ genesis.py (~1,800 líneas, split mixin)  — Motor principal, orquestador de 13
 - **Multi-model Ollama**: distinto modelo según tarea (`coding`→qwen, `default`→genesis)
 - **Telemetría**: `calls_by_provider`, `calls_by_model`, `fallbacks_triggered`, `last_model_used`
 
-Configurable via env vars: `GENESIS_LLM_STRATEGY`, `GENESIS_OLLAMA_CODING`, `GENESIS_OLLAMA_DEFAULT`.
+Configurable via env vars: `GENESIS_LLM_STRATEGY`, `GENESIS_OLLAMA_CODING`, `GENESIS_OLLAMA_DEFAULT`, `GENESIS_TOOLCALL` (on/off — N4 function-calling), `GENESIS_TOOLCALL_MODEL` (modelo del router, ej. `qwen2.5:3b`).
 
 ### Eras de Evolución
 
