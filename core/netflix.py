@@ -599,16 +599,24 @@ def play_store_mouse(query: str, profile: str = None) -> str:
         pyautogui.press("esc")                       # cerrar modal residual si quedó
         time.sleep(0.8)
 
-        _click(_M_SEARCH, 1.5)                       # abrir búsqueda
-        pyautogui.write(query, interval=0.05)
-        time.sleep(2.8)                              # esperar resultados
+        def _open_and_type(q):
+            """Abre la búsqueda y tipea. Re-enfoca Netflix ANTES de escribir para
+            que las teclas no se las robe otra ventana (la cabina compite por el
+            foco en el flujo por voz → el campo quedaba vacío)."""
+            _click(_M_SEARCH, 1.2)                   # abrir búsqueda
+            try:
+                nf.SetActive()                       # re-asegurar foco en Netflix
+            except Exception:
+                pass
+            time.sleep(0.5)
+            pyautogui.write(q, interval=0.06)
+            time.sleep(2.8)                          # esperar resultados
+
+        _open_and_type(query)
         # SEGURO: confirmar que abrió la búsqueda. Si seguimos en el HOME, clickear
         # play dispararía el destacado top-1 del billboard → NO reproducir.
         if _search_results_visible(L, T, W, H) is False:
-            # reintentar una vez (el 1er click pudo no abrir la búsqueda)
-            _click(_M_SEARCH, 1.5)
-            pyautogui.write(query, interval=0.05)
-            time.sleep(2.8)
+            _open_and_type(query)                    # reintentar (foco + tipeo)
             if _search_results_visible(L, T, W, H) is False:
                 return ("🎬 No pude abrir la búsqueda de Netflix (sigo en el inicio) "
                         "→ no reproduje nada para no poner el destacado equivocado. "
