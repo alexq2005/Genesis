@@ -752,6 +752,13 @@ def main():
                     print("  [OK]  Voz clonada (XTTS) precargada en VRAM")
             except Exception:
                 pass
+            # STT preciso (Whisper) para los comandos del manos-libres
+            try:
+                from core import stt
+                if stt.available() and stt.warm():
+                    print("  [OK]  STT Whisper precargado (comandos por voz)")
+            except Exception:
+                pass
         threading.Thread(target=_warm_xtts, daemon=True).start()
 
         # Escucha pasiva (manos libres) auto al arrancar — obedece SOLO tu voz

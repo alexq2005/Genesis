@@ -138,6 +138,13 @@ class HandsFree:
         if wpos < 0:
             return
         cmd = low[wpos:].strip(" ,.:;")
+        # Re-transcribir el comando con Whisper (preciso): vosk detecta barato el
+        # wake-word, pero destroza nombres (JBL→"jota belle"). Whisper sobre el
+        # audio de la frase recupera el comando real. Solo corre tras el wake-word.
+        if audio:
+            acc = self._whisper_cmd(audio)
+            if acc:
+                cmd = acc
         if not cmd:
             return
         # --- VERIFICACIÓN DEL HABLANTE (solo tu voz) ---
@@ -173,6 +180,31 @@ class HandsFree:
         self._speak(resp)
         self._speaking = False
         self._last = cmd
+
+    def _whisper_cmd(self, audio):
+        """Transcribe el audio de la frase con Whisper (preciso) y devuelve el
+        comando sin la palabra de activación. '' si no se pudo."""
+        try:
+            from core import stt
+            if not stt.available():
+                return ""
+            txt = stt.transcribe(audio)
+            if not txt:
+                return ""
+            try:
+                self.genesis.log.debug(f"[handsfree] whisper: {txt!r}")
+            except Exception:
+                pass
+            low = txt.lower().strip()
+            wp = -1
+            for w in self.WAKE:
+                i = low.find(w)
+                if i >= 0:
+                    wp = i + len(w)
+                    break
+            return (low[wp:] if wp >= 0 else low).strip(" ,.:;¿?¡!.")
+        except Exception:
+            return ""
 
     def _speak(self, text):
         """Voz lado servidor — suena por los parlantes aunque haya un juego en

@@ -94,12 +94,27 @@ def set_output(query):
                 "dispositivos", "conecta", "conectate", "conectá", "cambia", "cambiá",
                 "pone", "poné", "pon", "pasa", "pasá", "usa", "usá", "que", "qué",
                 "del", "mi", "reproduce", "reproducí", "sonar", "suena"}
-        for tok in q.split():
-            if len(tok) < 3 or tok in stop:
-                continue
-            matches = [d for d in outs if tok in d["name"].lower()]
-            if matches:
-                break
+        qtok = [t for t in q.split() if len(t) >= 3 and t not in stop]
+        # narrowing progresivo: el dispositivo debe contener TODOS los tokens
+        # útiles que aparezcan en algún nombre (así "jbl flip" → solo Flip 6,
+        # no las dos JBL).
+        cand, used = list(outs), False
+        for tok in qtok:
+            sub = [d for d in cand if tok in d["name"].lower()]
+            if sub:
+                cand, used = sub, True
+        if used and len(cand) < len(outs):
+            matches = cand
+        # fallback difuso: "logiteh"→logitech, "filip"→flip
+        if not matches and qtok:
+            import difflib
+            import re as _re
+            for d in outs:
+                words = [w for w in _re.findall(r"[a-z0-9]+", d["name"].lower())
+                         if len(w) >= 3]
+                if any(difflib.get_close_matches(qt, words, n=1, cutoff=0.78)
+                       for qt in qtok):
+                    matches.append(d)
     if not matches:
         nombres = ", ".join(d["name"] for d in outs)
         return f"🔈 No encontré una salida «{query}». Disponibles: {nombres}."
