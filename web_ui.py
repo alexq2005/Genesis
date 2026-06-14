@@ -727,9 +727,7 @@ _CORE_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
 *{box-sizing:border-box}
 body{margin:0;font-family:ui-monospace,'Cascadia Code',Consolas,monospace;background:#03070a;color:#a9f0d6;overflow-x:hidden;-webkit-font-smoothing:antialiased}
 #core{--g:#2dffae;min-height:100vh;padding:16px;position:relative;overflow:hidden;
- background:radial-gradient(120% 70% at 50% -10%,rgba(45,255,174,.08),transparent 55%),
- repeating-linear-gradient(rgba(45,255,174,.04) 0 1px,transparent 1px 36px),
- repeating-linear-gradient(90deg,rgba(45,255,174,.04) 0 1px,transparent 1px 36px),#03070a}
+ background:radial-gradient(120% 70% at 50% -10%,rgba(45,255,174,.08),transparent 55%),#03070a}
 #core::after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 150px rgba(0,0,0,.7)}
 @keyframes blink{0%,100%{opacity:.4}50%{opacity:1}}
 @keyframes glow{0%,100%{text-shadow:0 0 10px rgba(45,255,174,.5)}50%{text-shadow:0 0 20px rgba(45,255,174,.9)}}
@@ -788,7 +786,6 @@ a{color:var(--g);text-decoration:none}
 }
 </style></head><body><div id="core">
 <canvas id="stars" style="position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none"></canvas>
-<div class="scan"></div>
 
 <div class="topbar">
  <div class="brand" onclick="openTip()" title="Cómo usar Genesis" style="cursor:help"><span style="width:8px;height:8px;border-radius:50%;background:var(--g);box-shadow:0 0 10px var(--g);animation:blink 2s infinite"></span> JARVIS · MARK 5</div>
@@ -1086,12 +1083,13 @@ setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
  function spawnFlash(){var a=Math.random()*6.2832,rad=maxR*0.92*Math.pow(Math.random(),1.4);
   flashes.push({x:cx+Math.cos(a)*rad,y:cy+Math.sin(a)*rad,t:0,dur:90+Math.random()*110,sz:4+Math.random()*9});}
  function build(){W=sc.width=sc.clientWidth;H=sc.height=sc.clientHeight;x=sc.getContext('2d');core();
-  var N=Math.round(W*H/700);if(N<600)N=600;if(N>1500)N=1500;
-  stars=[];for(var i=0;i<N;i++){var b=Math.random();var s={b:b,r:b>0.86?1.4:0.7,vx:(Math.random()-0.5)*2*SPEED,vy:(Math.random()-0.5)*2*SPEED,tw:Math.random()*6.2832};place(s);stars.push(s);}}
+  var N=Math.round(W*H/480);if(N<950)N=950;if(N>2400)N=2400;   // más puntos
+  stars=[];for(var i=0;i<N;i++){var b=Math.random();var s={b:b,r:b>0.86?1.4:0.7,c:Math.random()<0.34?1:0,vx:(Math.random()-0.5)*2*SPEED,vy:(Math.random()-0.5)*2*SPEED,tw:Math.random()*6.2832};place(s);stars.push(s);}}
  function frame(){if(!x)return;x.clearRect(0,0,W,H);for(var i=0;i<stars.length;i++){var s=stars[i];
    s.x+=s.vx;s.y+=s.vy;var dx=s.x-cx,dy=s.y-cy;if(dx*dx+dy*dy>maxR*maxR)place(s);  // se aleja → vuelve cerca del núcleo
    s.tw+=0.07;var a=(0.18+s.b*0.55)*(0.6+0.4*Math.sin(s.tw));
-   x.fillStyle='rgba('+Math.round(150+s.b*105)+','+Math.round(225+s.b*30)+',255,'+a.toFixed(2)+')';
+   if(s.c)x.fillStyle='rgba('+Math.round(40+s.b*70)+','+Math.round(205+s.b*50)+',255,'+a.toFixed(2)+')';   // cian
+   else x.fillStyle='rgba('+Math.round(222+s.b*33)+','+Math.round(234+s.b*21)+',255,'+a.toFixed(2)+')';   // blanco
    x.beginPath();x.arc(s.x,s.y,s.r,0,6.2832);x.fill();}
   // DESTELLOS: nacen al azar alrededor del núcleo, brillan y se apagan
   if(flashes.length<FLASH_MAX&&Math.random()<FLASH_RATE)spawnFlash();
