@@ -977,6 +977,12 @@ var PCV=$('plasma'),GL=null,GPROG=null,GU={};
    float prof=smoothstep(ext,R*0.88,r)*step(R*0.9,r);
    float flare=life*beam*prof;
    col+=vec3(0.75,0.95,1.0)*flare*3.0;al=max(al,clamp(flare*1.3,0.0,0.96));}
+  // LLAMARADAS ENVOLVENTES: capa de fuego turbulento que rodea el núcleo y gira
+  float band=smoothstep(R*1.5,R*0.95,r)*step(R*0.92,r);          // banda justo fuera del borde
+  float aa=ang+t*0.35;                                           // rota alrededor (envolvente)
+  float fe=fbm(vec3(cos(aa)*4.0,sin(aa)*4.0,r*7.0-t*1.0))*0.6+fbm(vec3(cos(aa*1.8)*6.0-t*0.6,sin(aa*1.8)*6.0,r*4.0))*0.5;
+  float env=band*pow(clamp(fe,0.0,1.0),1.7)*(0.7+uAmp*0.7);
+  col+=mix(vec3(0.22,0.62,0.85),vec3(0.7,0.95,1.0),env)*env*1.1;al=max(al,clamp(env*0.95,0.0,0.88));
   // BLOOM atmosférico (capas de glow renderizadas, no CSS) — destella con nflash
   float b1=smoothstep(R*1.5,R*0.2,r),b2=smoothstep(R*3.4,R*0.4,r);
   float bloom=(b1*b1*0.2+b2*b2*0.13)*(1.0+uAmp*0.9+nflash*1.6);
