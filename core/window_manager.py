@@ -260,10 +260,15 @@ Write-Output $b.ToString()'''
                 encoding="utf-8", errors="replace", creationflags=_flags)
             lines = [ln for ln in (r.stdout or "").strip().splitlines() if ln.strip()]
             title = lines[-1] if lines else "la ventana"
-            if "powershell" in title.lower() or "system32" in title.lower():
-                return ("🪟 No pude identificar tu ventana (quedó el sistema en "
-                        "primer plano). Probá de nuevo, o decime el nombre de la app "
-                        "(ej: «mové vlc a la pantalla 2»).")
+            _tl = title.lower()
+            _skip = ("powershell", "system32", "claude", "genesis", "jarvis",
+                     "cmd.exe", "command prompt", "símbolo del sistema", "windows terminal",
+                     "visual studio code", "consola", "conhost")
+            if any(k in _tl for k in _skip) or not title.strip():
+                return ("🪟 La ventana en primer plano es el chat/sistema, no tu "
+                        "película. Para moverla: hacé **clic en la peli** y después "
+                        "decí «mové esto a la segunda pantalla» (por voz, sin tocar "
+                        "nada más) — o nombrá la app: «mové vlc/chrome a la pantalla 2».")
             return f"🪟 Moví «{title[:45]}» a la pantalla {screen} (completa)."
         except Exception as e:
             return f"🪟 Error moviendo la ventana: {str(e)[:80]}"
