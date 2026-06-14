@@ -747,7 +747,7 @@ a{color:var(--g);text-decoration:none}
 .topbar{position:relative;z-index:6;display:flex;justify-content:space-between;align-items:center;padding:2px 4px}
 .brand{display:flex;align-items:center;gap:9px;color:var(--g);letter-spacing:.2em;font-size:13px;font-weight:600;animation:glow 3s infinite}
 .toprt{display:flex;align-items:center;gap:14px;font-size:10px;color:#4d8a76;letter-spacing:.14em}
-.hero{position:relative;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;min-height:80vh;text-align:center;gap:10px;padding-top:18px}
+.hero{position:relative;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:88vh;text-align:center;gap:10px;padding-top:4px}
 .statuslbl{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(45,255,174,.25);background:rgba(7,18,16,.6);border-radius:20px;padding:5px 16px;color:var(--g);font-size:11px;letter-spacing:.2em}
 .orbwrap{position:relative;width:350px;height:350px;margin:2px 0}
 .orbwrap canvas,.orbwrap svg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:350px;height:350px}
