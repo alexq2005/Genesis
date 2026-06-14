@@ -729,9 +729,9 @@ a{color:var(--g);text-decoration:none}
 .toprt{display:flex;align-items:center;gap:14px;font-size:10px;color:#4d8a76;letter-spacing:.14em}
 .hero{position:relative;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;min-height:80vh;text-align:center;gap:10px;padding-top:18px}
 .statuslbl{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(45,255,174,.25);background:rgba(7,18,16,.6);border-radius:20px;padding:5px 16px;color:var(--g);font-size:11px;letter-spacing:.2em}
-.orbwrap{position:relative;width:300px;height:300px;margin:2px 0}
-.orbwrap canvas,.orbwrap svg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:300px;height:300px}
-.orbwrap canvas{filter:drop-shadow(0 0 16px rgba(45,255,174,.32)) drop-shadow(0 0 40px rgba(45,255,174,.16));animation:orbpulse 5s ease-in-out infinite}
+.orbwrap{position:relative;width:350px;height:350px;margin:2px 0}
+.orbwrap canvas,.orbwrap svg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:350px;height:350px}
+.orbwrap canvas{filter:drop-shadow(0 0 18px rgba(39,227,255,.4)) drop-shadow(0 0 48px rgba(39,227,255,.22));animation:orbpulse 5s ease-in-out infinite}
 @keyframes orbpulse{0%,100%{filter:drop-shadow(0 0 14px rgba(45,255,174,.26)) drop-shadow(0 0 34px rgba(45,255,174,.13))}50%{filter:drop-shadow(0 0 22px rgba(45,255,174,.4)) drop-shadow(0 0 52px rgba(45,255,174,.22))}}
 .bubble{max-width:540px;border:1px solid rgba(45,255,174,.2);border-radius:12px;background:rgba(7,18,16,.7);backdrop-filter:blur(6px);padding:12px 16px;font-size:14px;line-height:1.5;text-align:left;max-height:230px;overflow-y:auto}
 .dock{display:flex;gap:11px;flex-wrap:wrap;justify-content:center;margin-top:4px}
@@ -766,6 +766,7 @@ a{color:var(--g);text-decoration:none}
  #cplayer{width:94vw!important}
 }
 </style></head><body><div id="core">
+<canvas id="stars" style="position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none"></canvas>
 <div class="scan"></div>
 
 <div class="topbar">
@@ -878,28 +879,34 @@ var POW=document.querySelector('.orbwrap');  // la esfera escala con la voz
 if(PCV){PCV.width=PW*PR;PCV.height=PW*PR;PCTX.scale(PR,PR);}
 var PCOL=['45,255,174','40,230,205','120,255,215','60,255,185','170,255,225','30,225,255'];
 var PBLOBS=[];for(var _i=0;_i<7;_i++){PBLOBS.push({sp:.45+Math.random()*.7,fx:1+Math.random()*1.6,fy:1+Math.random()*1.6,ph:Math.random()*6.28,r:42+Math.random()*26,h:PCOL[_i%PCOL.length]});}
+var PSPARKS=[];for(var _j=0;_j<9;_j++){PSPARKS.push({rad:28+Math.random()*46,sp:(.5+Math.random()*1.3)*(Math.random()<.5?-1:1),ph:Math.random()*6.28,sz:1+Math.random()*1.5});}
+function _sph(n){var p=[],off=2/n,inc=Math.PI*(3-Math.sqrt(5));for(var i=0;i<n;i++){var y=i*off-1+off/2,r=Math.sqrt(1-y*y),ph=i*inc;p.push([Math.cos(ph)*r,y,Math.sin(ph)*r]);}return p;}
+var PWIRE=_sph(48);var PNEB=_sph(1300);for(var _k=0;_k<PNEB.length;_k++)PNEB[_k][3]=Math.random();
+function _rot(p,a){var s=Math.sin(a),c=Math.cos(a);return [p[0]*c-p[2]*s,p[1],p[0]*s+p[2]*c];}
 function drawPlasma(t,amp){if(!PCTX)return;PCTX.clearRect(0,0,PW,PW);PCTX.globalCompositeOperation='lighter';
- for(var i=0;i<PBLOBS.length;i++){var b=PBLOBS[i];var a=t*b.sp+b.ph;
-  var x=PC+Math.cos(a*b.fx)*(20+amp*30),y=PC+Math.sin(a*b.fy)*(20+amp*30);
-  var r=b.r*(0.7+amp*0.9),al=0.28+amp*0.45;
-  var g=PCTX.createRadialGradient(x,y,0,x,y,r);
-  g.addColorStop(0,'rgba('+b.h+','+al+')');g.addColorStop(.42,'rgba('+b.h+','+(al*0.4).toFixed(3)+')');g.addColorStop(1,'rgba('+b.h+',0)');
-  PCTX.fillStyle=g;PCTX.beginPath();PCTX.arc(x,y,r,0,6.2832);PCTX.fill();}
- var cg=PCTX.createRadialGradient(PC,PC,0,PC,PC,24+amp*36);
- cg.addColorStop(0,'rgba(235,255,248,'+(0.38+amp*0.45)+')');cg.addColorStop(.5,'rgba(120,255,215,'+(0.2+amp*0.35)+')');cg.addColorStop(1,'rgba(60,240,200,0)');
- PCTX.fillStyle=cg;PCTX.beginPath();PCTX.arc(PC,PC,24+amp*36,0,6.2832);PCTX.fill();
- PCTX.globalCompositeOperation='destination-in';
- var m=PCTX.createRadialGradient(PC,PC,18,PC,PC,80);
- m.addColorStop(0,'rgba(255,255,255,1)');m.addColorStop(.8,'rgba(255,255,255,1)');m.addColorStop(1,'rgba(255,255,255,0)');
- PCTX.fillStyle=m;PCTX.fillRect(0,0,PW,PW);PCTX.globalCompositeOperation='source-over';}
+ // === ESFERA DE PUNTOS DENSA (cian) con picos que erupcionan con la voz ===
+ var a=t*0.3;var base=56*(0.95+amp*0.16);
+ for(var i=0;i<PNEB.length;i++){var q=PNEB[i];var p=_rot(q,a);
+  var spike=Math.pow(0.5+0.5*Math.sin(t*1.6+q[3]*40+q[1]*5),10);  // picos agudos ocasionales
+  var d=1+spike*(0.14+amp*0.6)+amp*0.05;
+  var px=PC+p[0]*base*d,py=PC+p[1]*base*d,z=(p[2]+1)/2;
+  PCTX.fillStyle='rgba('+Math.round(40+z*70)+','+Math.round(205+z*50)+',255,'+(0.08+z*0.62).toFixed(3)+')';
+  var s=z>0.55?1.5:1;PCTX.fillRect(px,py,s,s);}
+ // anillo interno (núcleo)
+ PCTX.strokeStyle='rgba(180,240,255,'+(0.22+amp*0.25).toFixed(3)+')';PCTX.lineWidth=1;
+ PCTX.beginPath();PCTX.arc(PC,PC,22+amp*8,0,6.2832);PCTX.stroke();
+ var cg=PCTX.createRadialGradient(PC,PC,0,PC,PC,20+amp*16);
+ cg.addColorStop(0,'rgba(210,248,255,'+(0.42+amp*0.4)+')');cg.addColorStop(.65,'rgba(39,227,255,'+(0.12+amp*0.22)+')');cg.addColorStop(1,'rgba(39,227,255,0)');
+ PCTX.fillStyle=cg;PCTX.beginPath();PCTX.arc(PC,PC,20+amp*16,0,6.2832);PCTX.fill();
+ PCTX.globalCompositeOperation='source-over';}
 function plasmaLoop(){var amp;
  if(pSpeaking&&pAna){pAna.getByteFrequencyData(pFreq);var s=0;for(var i=2;i<pFreq.length;i++)s+=pFreq[i];amp=Math.min(1,(s/(pFreq.length-2))/90);}
  else{amp=0.18+0.07*Math.sin(performance.now()/560);}
- pSmooth+=(amp-pSmooth)*0.22;
+ pSmooth+=(amp-pSmooth)*0.3;
  drawPlasma(performance.now()/1000,pSmooth);
  pRot=(pRot+0.18+pSmooth*0.9)%360;var cr=$('pcr');if(cr)cr.setAttribute('transform','rotate('+pRot+' 86 86)');
  /* La esfera se AMPLÍA con la intensidad de la voz: reposo sutil, picos dramáticos */
- if(POW){var _sc=1+Math.max(0,pSmooth-0.20)*0.55;POW.style.transform='scale('+_sc.toFixed(3)+')';}
+ if(POW){var _sc=1+Math.max(0,pSmooth-0.15)*0.95;POW.style.transform='scale('+_sc.toFixed(3)+')';}
  requestAnimationFrame(plasmaLoop);}
 function plasmaSpeak(audio){try{pAC=pAC||new(window.AudioContext||window.webkitAudioContext)();if(pAC.state==='suspended')pAC.resume();
   var src=pAC.createMediaElementSource(audio);pAna=pAC.createAnalyser();pAna.fftSize=64;pAna.smoothingTimeConstant=0.7;
@@ -983,6 +990,8 @@ function pollVoice(){fetch('/api/voice/feed?since='+_vseq).then(function(r){retu
  if(d.seq>_vseq)_vseq=d.seq;
 }).catch(function(){});}
 setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
+// --- Starfield de fondo (estilo nave) ---
+(function(){var sc=$('stars');if(!sc)return;function ss(){sc.width=sc.clientWidth;sc.height=sc.clientHeight;var x=sc.getContext('2d');x.clearRect(0,0,sc.width,sc.height);for(var i=0;i<170;i++){var b=Math.random();x.fillStyle='rgba('+Math.round(120+b*135)+','+Math.round(220+b*35)+',255,'+(0.18+b*0.6).toFixed(2)+')';var r=b>0.86?1.6:0.9;x.beginPath();x.arc(Math.random()*sc.width,Math.random()*sc.height,r,0,6.2832);x.fill();}}setTimeout(ss,80);window.addEventListener('resize',ss);})();
 // --- Onboarding (primera vez) ---
 function closeTip(){var t=$('tip');if(t)t.style.display='none';try{localStorage.setItem('gx_seen_tip','1');}catch(e){}}
 function openTip(){var t=$('tip');if(t)t.style.display='block';}
@@ -1001,6 +1010,68 @@ document.querySelectorAll('.dockbtn,.corner,#micbtn,#tip .x').forEach(function(e
 def core_ui():
     """Interfaz JARVIS CORE — Tablero de Evidencias (recreación)."""
     return _CORE_HTML
+
+
+_PLASMALAB_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GENESIS // Plasma Lab</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#03060b;color:#cfeee0;font-family:ui-monospace,Consolas,monospace;padding:20px}
+h1{font-size:17px;color:#2dffae;letter-spacing:.14em;font-weight:500;text-align:center}
+.sub{text-align:center;color:#6aa78f;font-size:13px;margin-bottom:18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;max-width:1100px;margin:0 auto}
+.card{background:#05100d;border:1px solid rgba(45,255,174,.22);border-radius:14px;padding:14px;text-align:center}
+.card canvas{width:160px;height:160px}
+.nm{color:#dff5ea;font-size:14px;margin:10px 0 2px}
+.ds{color:#6aa78f;font-size:12px;line-height:1.45;min-height:34px}
+.bt{margin-top:8px;background:rgba(45,255,174,.1);color:#bfeada;border:1px solid rgba(45,255,174,.5);border-radius:8px;padding:7px 10px;font-size:12px;cursor:pointer;width:100%}
+.bt:hover{background:rgba(45,255,174,.2)}
+</style></head><body>
+<h1>GENESIS · PLASMA LAB</h1>
+<div class="sub">6 diseños del núcleo (voz simulada). Decile a Genesis: «aplicá el diseño N».</div>
+<div class="grid">
+ <div class="card"><canvas id="pl1" width="320" height="320"></canvas><div class="nm">1 · Plasma actual</div><div class="ds">Metaball + chispas + borde de luz</div><button class="bt" onclick="pick(1)">Aplicar 1</button></div>
+ <div class="card"><canvas id="pl2" width="320" height="320"></canvas><div class="nm">2 · Onda Siri</div><div class="ds">Cintas sinusoidales en capas</div><button class="bt" onclick="pick(2)">Aplicar 2</button></div>
+ <div class="card"><canvas id="pl3" width="320" height="320"></canvas><div class="nm">3 · Espectro radial</div><div class="ds">Barras de frecuencia girando</div><button class="bt" onclick="pick(3)">Aplicar 3</button></div>
+ <div class="card"><canvas id="pl4" width="320" height="320"></canvas><div class="nm">4 · Nebulosa</div><div class="ds">Esfera de partículas 3D</div><button class="bt" onclick="pick(4)">Aplicar 4</button></div>
+ <div class="card"><canvas id="pl5" width="320" height="320"></canvas><div class="nm">5 · Blob líquido</div><div class="ds">Gradiente que se deforma</div><button class="bt" onclick="pick(5)">Aplicar 5</button></div>
+ <div class="card"><canvas id="pl6" width="320" height="320"></canvas><div class="nm">6 · Malla wireframe</div><div class="ds">Globo de alambre rotando</div><button class="bt" onclick="pick(6)">Aplicar 6</button></div>
+</div>
+<script>
+function pick(n){var names={1:'plasma actual',2:'onda Siri',3:'espectro radial',4:'nebulosa de particulas',5:'blob liquido',6:'malla wireframe'};
+ try{localStorage.setItem('gx_plasma_choice',n);}catch(e){}
+ alert('Diseno '+n+' ('+names[n]+') elegido.\\nDecile a Genesis: «aplica el diseño '+n+'».');}
+var CT={};for(var i=1;i<=6;i++){var c=document.getElementById('pl'+i);if(c){var x=c.getContext('2d');x.scale(2,2);CT[i]=x;}}
+var PC=80;
+function clipc(x){x.save();x.beginPath();x.arc(PC,PC,76,0,6.2832);x.clip();}
+function sph(n){var p=[],off=2/n,inc=Math.PI*(3-Math.sqrt(5));for(var i=0;i<n;i++){var y=i*off-1+off/2,r=Math.sqrt(1-y*y),ph=i*inc;p.push([Math.cos(ph)*r,y,Math.sin(ph)*r]);}return p;}
+var NEB=sph(150),WIRE=sph(46);
+function rot(p,a){var s=Math.sin(a),c=Math.cos(a);return [p[0]*c-p[2]*s,p[1],p[0]*s+p[2]*c];}
+function d1(x,t,amp){x.clearRect(0,0,160,160);x.globalCompositeOperation='lighter';var sw=t*0.35;var col=['45,255,174','40,230,205','120,255,215','60,255,185','30,225,255'];
+ for(var i=0;i<6;i++){var a=t*(.5+i*.13)+i;var bx=Math.cos(a*1.3)*(16+amp*40),by=Math.sin(a*1.1)*(16+amp*40);var px=PC+bx*Math.cos(sw)-by*Math.sin(sw),py=PC+bx*Math.sin(sw)+by*Math.cos(sw);var r=(40+i*4)*(0.66+amp);var g=x.createRadialGradient(px,py,0,px,py,r);g.addColorStop(0,'rgba('+col[i%5]+','+(0.28+amp*0.45)+')');g.addColorStop(.45,'rgba('+col[i%5]+','+(0.1+amp*0.15)+')');g.addColorStop(1,'rgba('+col[i%5]+',0)');x.fillStyle=g;x.beginPath();x.arc(px,py,r,0,6.2832);x.fill();}
+ for(var s=0;s<8;s++){var sa=t*(s%2?1:-1)*0.8+s;var rr=(30+s*5)*(0.8+amp*0.6);var sx=PC+Math.cos(sa)*rr,sy=PC+Math.sin(sa)*rr;var sg=x.createRadialGradient(sx,sy,0,sx,sy,3);sg.addColorStop(0,'rgba(215,255,240,'+(0.5+amp*0.4)+')');sg.addColorStop(1,'rgba(120,255,215,0)');x.fillStyle=sg;x.beginPath();x.arc(sx,sy,3,0,6.2832);x.fill();}
+ x.globalCompositeOperation='destination-in';var m=x.createRadialGradient(PC,PC,16,PC,PC,78);m.addColorStop(0,'#fff');m.addColorStop(.82,'#fff');m.addColorStop(1,'rgba(255,255,255,0)');x.fillStyle=m;x.fillRect(0,0,160,160);x.globalCompositeOperation='source-over';}
+function d2(x,t,amp){x.clearRect(0,0,160,160);clipc(x);var cols=['rgba(45,255,174,.55)','rgba(60,200,255,.5)','rgba(160,255,220,.45)'];
+ for(var k=0;k<3;k++){x.beginPath();x.moveTo(0,PC);for(var px=0;px<=160;px+=4){var env=Math.sin(px/160*Math.PI);var y=PC+Math.sin(px/22+t*(2+k)+k*2)*(6+amp*46)*env*(1-k*0.22);x.lineTo(px,y);}x.lineWidth=2.4;x.strokeStyle=cols[k];x.stroke();}
+ x.restore();}
+function d3(x,t,amp){x.clearRect(0,0,160,160);var N=52;for(var i=0;i<N;i++){var ang=i/N*6.2832+t*0.3;var v=(0.5+0.5*Math.sin(t*4+i*0.7));var ln=8+v*(10+amp*46);var r0=30,r1=r0+ln;var sx=PC+Math.cos(ang)*r0,sy=PC+Math.sin(ang)*r0,ex=PC+Math.cos(ang)*r1,ey=PC+Math.sin(ang)*r1;x.strokeStyle='rgba('+(45+v*80)+',255,'+(174+v*60)+','+(0.5+amp*0.4)+')';x.lineWidth=2.2;x.beginPath();x.moveTo(sx,sy);x.lineTo(ex,ey);x.stroke();}
+ var cg=x.createRadialGradient(PC,PC,0,PC,PC,26);cg.addColorStop(0,'rgba(180,255,225,'+(0.5+amp*0.4)+')');cg.addColorStop(1,'rgba(45,255,174,0)');x.fillStyle=cg;x.beginPath();x.arc(PC,PC,26,0,6.2832);x.fill();}
+function d4(x,t,amp){x.clearRect(0,0,160,160);x.globalCompositeOperation='lighter';var a=t*0.5;var sc=54*(0.9+amp*0.3);for(var i=0;i<NEB.length;i++){var p=rot(NEB[i],a);var z=(p[2]+1)/2;var px=PC+p[0]*sc,py=PC+p[1]*sc;var sz=0.6+z*2.0;x.fillStyle='rgba('+(45+z*120)+',255,'+(190+z*40)+','+(0.15+z*0.6)+')';x.beginPath();x.arc(px,py,sz,0,6.2832);x.fill();}x.globalCompositeOperation='source-over';}
+function d5(x,t,amp){x.clearRect(0,0,160,160);x.beginPath();var N=48;for(var i=0;i<=N;i++){var ang=i/N*6.2832;var rr=46+amp*16+Math.sin(ang*3+t*1.2)*6+Math.sin(ang*5-t*0.8)*4;var px=PC+Math.cos(ang)*rr,py=PC+Math.sin(ang)*rr;if(i===0)x.moveTo(px,py);else x.lineTo(px,py);}x.closePath();var g=x.createRadialGradient(PC-10,PC-10,4,PC,PC,68);g.addColorStop(0,'rgba(200,255,235,'+(0.85)+')');g.addColorStop(.5,'rgba(60,230,200,.7)');g.addColorStop(1,'rgba(30,150,170,.45)');x.fillStyle=g;x.fill();}
+function d6(x,t,amp){x.clearRect(0,0,160,160);var a=t*0.4;var sc=58*(0.92+amp*0.25);var pts=[];for(var i=0;i<WIRE.length;i++){var p=rot(WIRE[i],a);pts.push([PC+p[0]*sc,PC+p[1]*sc,(p[2]+1)/2]);}
+ for(var i=0;i<pts.length;i++){for(var j=i+1;j<pts.length;j++){var dx=pts[i][0]-pts[j][0],dy=pts[i][1]-pts[j][1];var d=dx*dx+dy*dy;if(d<460){x.strokeStyle='rgba(45,255,174,'+(0.06+amp*0.12)*(pts[i][2])+')';x.lineWidth=0.6;x.beginPath();x.moveTo(pts[i][0],pts[i][1]);x.lineTo(pts[j][0],pts[j][1]);x.stroke();}}}
+ for(var i=0;i<pts.length;i++){var z=pts[i][2];x.fillStyle='rgba('+(60+z*120)+',255,'+(190+z*40)+','+(0.25+z*0.6)+')';x.beginPath();x.arc(pts[i][0],pts[i][1],0.8+z*1.6,0,6.2832);x.fill();}}
+var FN={1:d1,2:d2,3:d3,4:d4,5:d5,6:d6},t0=null;
+function loop(ts){if(t0===null)t0=ts;var t=(ts-t0)/1000;var amp=0.22+0.2*Math.abs(Math.sin(t*0.9))+0.05*Math.sin(t*3.2);for(var i=1;i<=6;i++){if(CT[i])FN[i](CT[i],t,amp);}requestAnimationFrame(loop);}
+requestAnimationFrame(loop);
+</script></body></html>"""
+
+
+@app.route("/plasma-lab")
+def plasma_lab():
+    """Laboratorio de diseños del núcleo de plasma (preview para elegir)."""
+    return _PLASMALAB_HTML
 
 
 _MISSION_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
