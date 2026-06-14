@@ -946,7 +946,9 @@ var PCV=$('plasma'),GL=null,GPROG=null,GU={};
  mat3 rotY(float a){float c=cos(a),s=sin(a);return mat3(c,0.,s,0.,1.,0.,-s,0.,c);}
  void main(){
   vec2 uv=(gl_FragCoord.xy-0.5*uRes)/(0.5*uRes.y);
-  float r=length(uv),t=uTime,R=0.6*(0.96+uAmp*0.12);
+  float r=length(uv),t=uTime;
+  float nflash=pow(0.5+0.5*sin(t*0.5)*sin(t*0.31+1.3),16.0);   // destello esporádico del núcleo
+  float R=0.6*(0.96+uAmp*0.12+nflash*0.05);
   vec3 col=vec3(0.0);float al=0.0;mat3 rot=rotY(t*0.13);
   vec3 bc=vec3(0.16,0.5,0.6);
   if(r<R){
@@ -958,16 +960,27 @@ var PCV=$('plasma'),GL=null,GPROG=null,GU={};
    float limb=pow(clamp(zz/R,0.0,1.0),0.32);
    vec3 cool=vec3(0.015,0.08,0.11),mid=vec3(0.05,0.26,0.34),hot=vec3(0.2,0.52,0.62);
    vec3 sc=mix(cool,mid,smoothstep(0.1,0.55,surf));sc=mix(sc,hot,smoothstep(0.55,0.95,surf));
-   col=sc*(0.4+0.55*surf)*limb+hot*pow(surf,3.0)*0.32;al=1.0;}
+   col=(sc*(0.4+0.55*surf)*limb+hot*pow(surf,3.0)*0.32)*(1.0+nflash*1.2);al=1.0;}
   float edge=smoothstep(R*2.6,R*0.95,r);float ang=atan(uv.y,uv.x);
   float fil=fbm(vec3(cos(ang)*3.0,sin(ang)*3.0,r*7.0-t*0.55))*0.6+fbm(vec3(ang*5.0,r*4.0,t*0.4))*0.4;
   float corona=pow(edge,1.7)*(0.22+0.7*fil)*(1.0+uAmp*0.5);
   if(r>=R){corona*=smoothstep(R*2.6,R,r);}
   col+=vec3(0.12,0.42,0.52)*corona;al=max(al,clamp(corona*1.1,0.0,0.85));
-  // BLOOM atmosférico (capas de glow renderizadas, no CSS)
+  // EXPLOSIONES SOLARES: jets que erupcionan esporádicamente del borde
+  for(int k=0;k<4;k++){float fk=float(k);
+   float ph=fract(t*0.06+fk*0.31);
+   float life=smoothstep(0.0,0.1,ph)*smoothstep(0.5,0.16,ph);
+   float fang=fk*1.9+t*0.04+sin(fk*3.0)*2.0;
+   float adiff=abs(mod(ang-fang+3.14159,6.2832)-3.14159);
+   float beam=smoothstep(0.5,0.0,adiff);
+   float ext=R*(1.0+life*1.3);
+   float along=smoothstep(ext,R*0.92,r)*step(R*0.85,r);
+   float flare=life*beam*along;
+   col+=vec3(0.5,0.9,1.0)*flare*0.8;al=max(al,clamp(flare*0.85,0.0,0.9));}
+  // BLOOM atmosférico (capas de glow renderizadas, no CSS) — destella con nflash
   float b1=smoothstep(R*1.5,R*0.2,r),b2=smoothstep(R*3.4,R*0.4,r);
-  float bloom=(b1*b1*0.2+b2*b2*0.13)*(1.0+uAmp*0.9);
-  col+=bc*bloom;al=max(al,clamp(bloom,0.0,0.88));
+  float bloom=(b1*b1*0.2+b2*b2*0.13)*(1.0+uAmp*0.9+nflash*1.6);
+  col+=bc*bloom;al=max(al,clamp(bloom,0.0,0.9));
   // ONDA DE VOZ: anillo que se expande del núcleo al hablar
   float rr=R*(1.14+uAmp*0.55);float ring=smoothstep(0.07,0.0,abs(r-rr))*uAmp;
   col+=vec3(0.45,0.85,1.0)*ring*0.6;al=max(al,ring*0.7);
@@ -1089,8 +1102,9 @@ setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
   +'vec2 off=vec2(cos(ang)*uScale.x,sin(ang)*uScale.y)*rad;'
   +'gl_Position=vec4(uCenter+off,0.0,1.0);'
   +'float tw=0.6+0.4*sin(uTime*1.4+aData.z);'
-  +'vB=aData.y*tw*(0.55+0.45*depth)*(1.0+uAmp*1.7);vC=aCyan;'
-  +'gl_PointSize=(1.4+depth*3.4)*uPS*(1.0+uAmp*0.9);}';
+  +'float fl=pow(0.5+0.5*sin(uTime*0.55+aData.z*5.0),42.0);'   // destello esporádico por estrella
+  +'vB=aData.y*tw*(0.55+0.45*depth)*(1.0+uAmp*1.7)+fl*2.4;vC=aCyan;'
+  +'gl_PointSize=(1.4+depth*3.4+fl*4.0)*uPS*(1.0+uAmp*0.9);}';
  var FS='precision mediump float;varying float vB;varying float vC;'
   +'void main(){vec2 d=gl_PointCoord-0.5;float r=length(d);'
   +'float c=smoothstep(0.5,0.0,r);float a=(0.35*c+0.65*c*c)*vB*1.5;'
@@ -1113,7 +1127,7 @@ setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
  function recompute(){W=sc.clientWidth||300;H=sc.clientHeight||300;sc.width=Math.round(W*DPR);sc.height=Math.round(H*DPR);gl.viewport(0,0,sc.width,sc.height);
   var sr=sc.getBoundingClientRect(),ob=document.querySelector('.orbwrap');
   if(ob){var r=ob.getBoundingClientRect();cx=r.left+r.width/2-sr.left;cy=r.top+r.height/2-sr.top;}else{cx=W/2;cy=H*0.32;}
-  maxR=Math.min(W,H)*0.72;}
+  maxR=Math.min(W,H)*0.62;}    // puntos un poco más cercanos al núcleo
  function frame(){if(!gl)return;
   var va=(typeof pSmooth!=='undefined'&&pSmooth>0.15)?(pSmooth-0.15)*1.5:0;if(va>1)va=1;
   gl.useProgram(prog);
