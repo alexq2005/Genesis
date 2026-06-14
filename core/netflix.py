@@ -475,6 +475,61 @@ def play(query: str = "", profile: str = None, screen: int = None) -> str:
     return _play_chrome(query, profile=profile, screen=screen)
 
 
+# Posiciones (fracción de la ventana maximizada) calibradas 2026-06-14 sobre la
+# app de la Store a 1936x1048. Verificado end-to-end reproduciendo Vikingos.
+_M_SEARCH = (0.830, 0.076)     # ícono de búsqueda (lupa, arriba-derecha)
+_M_TILE1 = (0.100, 0.235)      # 1er resultado del grid (arriba-izquierda)
+_M_PLAY = (0.296, 0.508)       # botón Reproducir/Reanudar del modal (triángulo)
+
+
+def play_store_mouse(query: str, profile: str = None) -> str:
+    """Reproduce un título en la app de Netflix (Microsoft Store) por MOUSE +
+    teclado (sin CDP, sin OCR). Clickea por posición RELATIVA a la ventana:
+    buscador → tipea el título → 1er resultado → botón Reproducir/Reanudar.
+    VENTAJA vs CDP: el grid visual rankea mejor (ej. «vikingos» → la serie, no la
+    peli «Los Vikingos»). DESVENTAJA: frágil (depende de la ventana maximizada y
+    al frente, y del layout de Netflix). Trae la app al frente (SetActive+Maximize)
+    para que no la tape la cabina."""
+    try:
+        import pyautogui
+    except Exception:
+        return "🎬 Falta pyautogui para el control por mouse."
+    nf = _find_window()
+    if not nf:
+        try:
+            subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{_APP_ID}"])
+        except Exception as e:
+            return f"[ERROR] No pude abrir Netflix: {str(e)[:100]}"
+        time.sleep(9)
+        nf = _find_window()
+    if not nf:
+        return "🎬 No pude encontrar la ventana de Netflix."
+    pyautogui.FAILSAFE = True
+    try:
+        nf.SetActive()
+        try:
+            nf.Maximize()
+        except Exception:
+            pass
+        time.sleep(1.6)
+        r = nf.BoundingRectangle
+        L, T = r.left, r.top
+        W, H = r.right - r.left, r.bottom - r.top
+
+        def _click(frac, wait):
+            pyautogui.click(int(L + frac[0] * W), int(T + frac[1] * H))
+            time.sleep(wait)
+
+        _click(_M_SEARCH, 1.5)                       # abrir búsqueda
+        pyautogui.write(query, interval=0.05)
+        time.sleep(2.8)                              # esperar resultados
+        _click(_M_TILE1, 3.0)                        # 1er resultado → modal
+        _click(_M_PLAY, 2.5)                         # Reproducir/Reanudar
+        return f"🎬 Reproduciendo **{query}** en la app de Netflix (por mouse)."
+    except Exception as e:
+        return f"[ERROR] Netflix mouse: {str(e)[:120]}"
+
+
 def _play_chrome(query: str, profile: str = None, screen: int = None) -> str:
     """Reproduce un título por CDP en la ventana-app de Chrome (modo --app).
     Flujo de DOS saltos: /search → ID del 1er resultado → /title/<id> →

@@ -1486,15 +1486,22 @@ class GenesisToolsMixin:
             _pl = _re.search(r"(?:repro\w*|pon[ée]r?|mir[áa]r?|ve[ar]?|pas[áa]r?|busc[áa]r?|"
                              r"dale?\s+play)\s+(?:a\s+|la\s+|el\s+)?"
                              r"(?:pel[íi]cula\s+|serie\s+)?(.+?)\s+en\s+netflix", inp)
+            # ¿pidió la vía MOUSE? ("con el mouse/ratón/puntero") → app de la Store
+            _mouse = bool(_re.search(r"con\s+(?:el\s+)?(?:mouse|rat[oó]n|puntero)", inp))
             _qp = _pl.group(1).strip() if _pl else ""
+            # quitar la coletilla del modo del título si quedó dentro
+            _qp = _re.sub(r"\s+con\s+(?:el\s+)?(?:mouse|rat[oó]n|puntero)\s*$", "", _qp).strip()
             _qp = "" if _qp in ("algo", "una", "una pelicula", "una película",
                                 "una serie", "peliculas", "películas") else _qp
             _pm = _re.search(r"perfil\s+(?:de\s+|del\s+)?([a-záéíóúñ0-9]+)", inp)
             _prof = _pm.group(1).strip() if _pm else None
             _scr = 2 if _re.search(r"(segund[ao]|2da?)\s+(pantalla|monitor)|"
                                    r"pantalla\s*2", inp) else None
+            if _qp and _mouse:
+                # vía MOUSE sobre la app de la Store (grid visual rankea mejor)
+                return _nf.play_store_mouse(_qp, profile=_prof)
             if _qp:
-                # título presente → buscar y reproducir (Chrome+CDP, la vía que funciona)
+                # vía CDP (ventana Chrome --app): busca y reproduce hablándole al DOM
                 return _nf.play(_qp, profile=_prof, screen=_scr)
             # sin título → solo abrir la app de la Store (+ perfil best-effort)
             return _nf.launch_app(profile=_prof)
