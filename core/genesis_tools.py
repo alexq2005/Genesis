@@ -3318,6 +3318,29 @@ class GenesisToolsMixin:
             from core import voiceprint as _vp
             return _vp.start_verify(self)
 
+        # --- VISIÓN DE PANTALLA: Genesis mira el monitor y describe qué hay ---
+        if _re.search(r"\b(mir[áa]\s+(mi\s+)?(pantalla|monitor)|"
+                      r"qu[ée]\s+(hay|ves|tengo)\s+(en\s+)?(mi\s+)?(pantalla|monitor)|"
+                      r"qu[ée]\s+estoy\s+(viendo|mirando)|"
+                      r"describ[íie]r?\s+(mi\s+)?(pantalla|monitor)|"
+                      r"analiz[áa]r?\s+(mi\s+)?(pantalla|monitor)|"
+                      r"qu[ée]\s+pel[íi]cula\s+(es\s+esta|estoy\s+(viendo|mirando)))\b", inp):
+            try:
+                import os as _os
+                import tempfile as _tf
+                from core.device_tools import ScreenCapture
+                from core.image_analyzer import ImageAnalyzer
+                _shot = _os.path.join(_tf.gettempdir(), "gx_screen.png")
+                ScreenCapture.capture(_shot)
+                _r = ImageAnalyzer().analyze(_shot, prompt=(
+                    "Mirá esta captura de pantalla y describí en 1-2 frases qué está "
+                    "haciendo el usuario. Si hay una película, serie o video, decí el "
+                    "título y la app/plataforma si los reconocés."))
+                _d = _r.get("description") if isinstance(_r, dict) else str(_r)
+                return f"👁️ En tu pantalla veo:\n{_d}"
+            except Exception as _e:
+                return f"👁️ No pude analizar la pantalla: {str(_e)[:120]}"
+
         # --- RUTINAS JARVIS (todas las versiones de Iron Man) — alta prioridad ---
         try:
             from core import jarvis_routines as _jr
