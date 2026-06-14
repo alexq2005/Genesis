@@ -983,6 +983,14 @@ var PCV=$('plasma'),GL=null,GPROG=null,GU={};
   float fe=fbm(vec3(cos(aa)*4.0,sin(aa)*4.0,r*7.0-t*1.0))*0.6+fbm(vec3(cos(aa*1.8)*6.0-t*0.6,sin(aa*1.8)*6.0,r*4.0))*0.5;
   float env=band*pow(clamp(fe,0.0,1.0),1.7)*(0.7+uAmp*0.7);
   col+=mix(vec3(0.22,0.62,0.85),vec3(0.7,0.95,1.0),env)*env*1.1;al=max(al,clamp(env*0.95,0.0,0.88));
+  // ANILLOS DE FUEGO concéntricos que rodean el núcleo (textura de fuego que gira)
+  for(int k=0;k<3;k++){float fk=float(k);
+   float ringR=R*(1.32+fk*0.42);
+   float rb=smoothstep(0.16,0.0,abs(r-ringR));
+   float fire=fbm(vec3(cos(ang)*5.0+t*(0.4+fk*0.22),sin(ang)*5.0,fk*3.0+t*0.5));
+   fire=pow(clamp(fire,0.0,1.0),1.05);
+   float ringI=rb*fire*(1.05+uAmp*0.7);
+   col+=mix(vec3(0.25,0.68,0.95),vec3(0.85,0.97,1.0),fire)*ringI*2.4;al=max(al,clamp(ringI*1.1,0.0,0.85));}
   // BLOOM atmosférico (capas de glow renderizadas, no CSS) — destella con nflash
   float b1=smoothstep(R*1.5,R*0.2,r),b2=smoothstep(R*3.4,R*0.4,r);
   float bloom=(b1*b1*0.2+b2*b2*0.13)*(1.0+uAmp*0.9+nflash*1.6);
@@ -1110,7 +1118,7 @@ setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
   +'float tw=0.6+0.4*sin(uTime*1.4+aData.z);'
   +'float fl=pow(0.5+0.5*sin(uTime*0.55+aData.z*5.0),42.0);'       // destello esporádico por estrella
   +'vB=aData.y*tw*(0.55+0.45*depth)*(1.0+uAmp*1.6)+fl*2.2;vC=aCyan;'
-  +'gl_PointSize=(0.7+depth*1.6+fl*2.6)*uPS*(1.0+uAmp*0.7);}';     // puntos más chicos
+  +'gl_PointSize=(0.45+depth*1.1+fl*2.2)*uPS*(1.0+uAmp*0.7);}';    // puntos más chicos
  var FS='precision mediump float;varying float vB;varying float vC;'
   +'void main(){vec2 d=gl_PointCoord-0.5;float r=length(d);'
   +'float c=smoothstep(0.5,0.0,r);float a=(0.35*c+0.65*c*c)*vB*1.5;'
