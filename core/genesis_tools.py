@@ -1491,11 +1491,13 @@ class GenesisToolsMixin:
                                 "una serie", "peliculas", "películas") else _qp
             _pm = _re.search(r"perfil\s+(?:de\s+|del\s+)?([a-záéíóúñ0-9]+)", inp)
             _prof = _pm.group(1).strip() if _pm else None
-            _r = _nf.launch_app(profile=_prof)
+            _scr = 2 if _re.search(r"(segund[ao]|2da?)\s+(pantalla|monitor)|"
+                                   r"pantalla\s*2", inp) else None
             if _qp:
-                _r += (f"\nℹ️ Buscá **{_qp}** en la app y dale play (dentro de la app no "
-                       f"puedo buscar por código). ¿Querés que la castee a la TV?")
-            return _r
+                # título presente → buscar y reproducir (Chrome+CDP, la vía que funciona)
+                return _nf.play(_qp, profile=_prof, screen=_scr)
+            # sin título → solo abrir la app de la Store (+ perfil best-effort)
+            return _nf.launch_app(profile=_prof)
 
         # ABRIR EN OTRA PANTALLA (multi-monitor): "poné netflix en la segunda pantalla"
         # NO si es un comando de MOVER ventana existente (mové/pasá/llevá…) → eso lo

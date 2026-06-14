@@ -192,6 +192,10 @@ _FIND_WATCH = """
   if(a){return a.href;}
   var t = document.querySelector('a[href*="/title/"]');
   if(t){return t.href.replace('/title/','/watch/');}
+  // resultados de búsqueda modernos: el ID viene en suggestionId=Video:<ID>
+  var s = document.querySelector('a[href*="suggestionId=Video"]');
+  if(s){var m=(s.getAttribute('href')||'').match(/Video(?:%3A|:)(\\d+)/);
+        if(m){return location.origin+'/watch/'+m[1];}}
   return '';
 })()
 """
@@ -382,14 +386,21 @@ def cast_app(device_name: str = None) -> str:
 
 
 def play(query: str = "", profile: str = None, screen: int = None) -> str:
-    """Netflix = SOLO la app de la Store (decisión del usuario 2026-06-12).
-    Esta función NUNCA abre Chrome. Redirige a la app para no abrir 'otra app'.
-    La ruta Chrome quedó deshabilitada (ver _play_chrome)."""
-    r = launch_app()
-    if query:
-        r += (f"\nℹ️ Buscá **{query}** en la app y dale play (dentro de la app no "
-              f"puedo buscar por código). ¿Querés que la castee a la TV?")
-    return r
+    """Reproduce en Netflix.
+    - SIN título → abre la app de la Store (lo que el usuario quiere para 'abrí netflix').
+    - CON título → ventana Chrome dedicada (CDP): busca en /search, extrae el primer
+      /watch/<ID> y navega → Netflix auto-reproduce. Es la ÚNICA vía que realmente
+      BUSCA y REPRODUCE sola (la app de la Store no se deja automatizar adentro:
+      verificado 2026-06-14 — sin protocolo, sin app-URI-handler, su WebView2 ignora
+      CDP, y los tiles no exponen nombre a UIA). Misma arquitectura que la música.
+    Cae a la app Store si no hay Chrome."""
+    if not query:
+        return launch_app(profile)
+    if not _chrome_exe():
+        r = launch_app(profile)
+        return r + (f"\nℹ️ Buscá **{query}** en la app — no encontré Chrome para "
+                    f"reproducir solo.")
+    return _play_chrome(query, profile=profile, screen=screen)
 
 
 def _play_chrome(query: str, profile: str = None, screen: int = None) -> str:
