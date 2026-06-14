@@ -207,17 +207,25 @@ def _move_to_screen(target_id, screen):
 _FIND_RESULTS = """
 (function(){
   var out=[], seen={};
-  var as=document.querySelectorAll('a[href*="suggestionId="]');
+  // Netflix usa VARIOS formatos de link para los resultados según la query:
+  //   suggestionId=Video:<ID>   (ej. 'vikingos')
+  //   jbv=<ID>                  (ej. 'joven sheldon')
+  // El nombre sale de .fallback-text, aria-label o alt (de la <a> o su <img>).
+  var as=document.querySelectorAll('a[href*="suggestionId=Video"], a[href*="jbv="]');
   for(var i=0;i<as.length;i++){
     var a=as[i], h=a.getAttribute('href')||'';
-    var m=h.match(/suggestionId=([^&]+)/);
+    var m=h.match(/(?:suggestionId=Video(?:%3A|:)|jbv=)(\\d+)/);
     if(!m){continue;}
-    var sug=decodeURIComponent(m[1]);
+    var id=m[1];
+    if(seen[id]){continue;}
     var fb=a.querySelector('.fallback-text, p, .title');
-    var nm=(fb?fb.textContent:a.textContent||'').trim();
-    if(!nm || seen[sug]){continue;}
-    seen[sug]=1;
-    out.push({sug:sug, name:nm.slice(0,80)});
+    var img=a.querySelector('img');
+    var nm=((fb?fb.textContent:'') || a.getAttribute('aria-label') ||
+            a.getAttribute('alt') || (img?img.getAttribute('alt'):'') ||
+            a.textContent || '').trim();
+    if(!nm){continue;}
+    seen[id]=1;
+    out.push({sug:'Video:'+id, name:nm.slice(0,80)});
     if(out.length>=15){break;}
   }
   return JSON.stringify(out);
@@ -229,8 +237,11 @@ _FIND_RESULTS = """
 # pelada /watch/<serieID> sólo da la página de descripción, sin video).
 _FIND_PLAY = """
 (function(){
-  var pb = document.querySelector('a[data-uia*="play"][href*="/watch/"]')
-        || document.querySelector('a[href*="/watch/"]');
+  // SÓLO el botón de play del título (data-uia con 'play'). El fallback genérico
+  // a[href*="/watch/"] agarraba links stale de 'Seguir viendo' (ej. Vikingos) que
+  // quedaban en el DOM → reproducía el título equivocado. Si aún no renderizó, se
+  // devuelve '' y el poll de _play_chrome reintenta.
+  var pb = document.querySelector('a[data-uia*="play"][href*="/watch/"]');
   if(!pb){return '';}
   var name = (document.querySelector('h1,[data-uia="title-card-title"]')||{}).textContent
              || (document.title||'').replace(/\\s*[—|-]\\s*Netflix.*/,'');
@@ -482,6 +493,38 @@ _M_TILE1 = (0.100, 0.235)      # 1er resultado del grid (arriba-izquierda)
 _M_PLAY = (0.296, 0.508)       # botón Reproducir/Reanudar del modal (triángulo)
 
 
+def _tess():
+    """Configura y devuelve pytesseract, o None si no se puede importar."""
+    try:
+        import pytesseract
+    except Exception:
+        return None
+    for c in (r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+              r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+              os.path.expanduser(r"~\AppData\Local\Tesseract-OCR\tesseract.exe")):
+        if os.path.exists(c):
+            pytesseract.pytesseract.tesseract_cmd = c
+            break
+    return pytesseract
+
+
+def _search_results_visible(L, T, W, H):
+    """True si la pantalla muestra RESULTADOS de búsqueda (no el home). Detecta por
+    OCR el encabezado «Más contenido para explorar», que SÓLO aparece en la página
+    de resultados (verificado: ausente en el home). Devuelve None si no hay OCR
+    disponible (no se puede verificar → no bloquear)."""
+    pt = _tess()
+    if pt is None:
+        return None
+    try:
+        from PIL import ImageGrab
+        img = ImageGrab.grab(bbox=(L, T + int(0.10 * H), L + W, T + int(0.18 * H)))
+        txt = pt.image_to_string(img, lang="spa+eng").lower()
+        return ("explorar" in txt) or ("contenido" in txt)
+    except Exception:
+        return None
+
+
 def play_store_mouse(query: str, profile: str = None) -> str:
     """Reproduce un título en la app de Netflix (Microsoft Store) por MOUSE +
     teclado (sin CDP, sin OCR). Clickea por posición RELATIVA a la ventana:
@@ -530,6 +573,17 @@ def play_store_mouse(query: str, profile: str = None) -> str:
         _click(_M_SEARCH, 1.5)                       # abrir búsqueda
         pyautogui.write(query, interval=0.05)
         time.sleep(2.8)                              # esperar resultados
+        # SEGURO: confirmar que abrió la búsqueda. Si seguimos en el HOME, clickear
+        # play dispararía el destacado top-1 del billboard → NO reproducir.
+        if _search_results_visible(L, T, W, H) is False:
+            # reintentar una vez (el 1er click pudo no abrir la búsqueda)
+            _click(_M_SEARCH, 1.5)
+            pyautogui.write(query, interval=0.05)
+            time.sleep(2.8)
+            if _search_results_visible(L, T, W, H) is False:
+                return ("🎬 No pude abrir la búsqueda de Netflix (sigo en el inicio) "
+                        "→ no reproduje nada para no poner el destacado equivocado. "
+                        "Fijate que la app esté al frente y volvé a pedirlo.")
         _click(_M_TILE1, 3.0)                        # 1er resultado → modal
         _click(_M_PLAY, 2.5)                         # Reproducir/Reanudar
         return f"🎬 Reproduciendo **{query}** en la app de Netflix (por mouse)."
