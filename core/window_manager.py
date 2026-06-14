@@ -251,12 +251,19 @@ $b = New-Object System.Text.StringBuilder 256
 [FgW]::MoveWindow($h,{x},{y},{w},{h},$true) | Out-Null
 Write-Output $b.ToString()'''
         try:
+            # CREATE_NO_WINDOW: sin esto, la consola de PowerShell roba el foco y
+            # GetForegroundWindow devuelve la PROPIA consola en vez de tu película.
+            _flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
             r = subprocess.run(
                 ["powershell", "-NoProfile", "-Command", ps],
                 capture_output=True, text=True, timeout=12,
-                encoding="utf-8", errors="replace")
+                encoding="utf-8", errors="replace", creationflags=_flags)
             lines = [ln for ln in (r.stdout or "").strip().splitlines() if ln.strip()]
             title = lines[-1] if lines else "la ventana"
+            if "powershell" in title.lower() or "system32" in title.lower():
+                return ("🪟 No pude identificar tu ventana (quedó el sistema en "
+                        "primer plano). Probá de nuevo, o decime el nombre de la app "
+                        "(ej: «mové vlc a la pantalla 2»).")
             return f"🪟 Moví «{title[:45]}» a la pantalla {screen} (completa)."
         except Exception as e:
             return f"🪟 Error moviendo la ventana: {str(e)[:80]}"
