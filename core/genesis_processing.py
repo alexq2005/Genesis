@@ -88,6 +88,8 @@ class GenesisProcessingMixin:
         # Clima/pronóstico: respuesta ya natural con datos — no reformular
         "☀️", "🌤️", "⛅", "☁️", "🌧️", "🌦️", "⛈️", "🌩️", "❄️", "🌫️", "🌡️", "🌬️",
         "📰",  # noticias/titulares
+        # Datos factuales exactos: no reformular (rápido + no altera números)
+        "🕐", "📅", "🔢", "🗓️", "🧮",
     )
 
     def _maybe_spontaneous(self, user_input: str, result: str) -> str:
