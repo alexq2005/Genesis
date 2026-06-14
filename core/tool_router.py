@@ -9,7 +9,26 @@ Solo corre en el camino NONE → no agrega latencia al 90% que el regex resuelve
 Devuelve None si ninguna herramienta aplica (→ sigue al cerebro conversacional).
 """
 import json
+import os
 import re
+import urllib.request
+
+
+def _ollama_json(system, user_msg, model, url, timeout=120):
+    """Llama a Ollama /api/chat con format=json (constrained decoding → JSON
+    siempre válido). Devuelve el contenido (string JSON)."""
+    payload = {
+        "model": model, "stream": False, "format": "json",
+        "messages": [{"role": "system", "content": system},
+                     {"role": "user", "content": user_msg}],
+        "options": {"temperature": 0.0, "num_predict": 200},
+    }
+    req = urllib.request.Request(
+        url + "/api/chat", data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        d = json.loads(r.read())
+    return d.get("message", {}).get("content", "")
 
 
 def _extract_json(text):
@@ -73,11 +92,15 @@ def route(genesis, user_input):
         "Usuario: gracias, sos un genio\n"
         '{"tool":null}'
     )
+    # Modelo del router (configurable). Default: el mismo cerebro (genesis-q3).
+    # format=json fuerza JSON válido → elimina vacíos/truncados.
+    model = os.environ.get("GENESIS_TOOLCALL_MODEL",
+                           getattr(brain, "model", None) or "genesis-q3")
+    url = getattr(brain, "ollama_url", None) or "http://localhost:11434"
     data = None
-    for _try in range(2):  # 1 reintento: genesis-q3 a veces devuelve vacío/truncado
+    for _try in range(2):  # 1 reintento por las dudas
         try:
-            out = brain.think(sys_p, [{"role": "user", "content": user_input}],
-                              temperature=0.0, max_tokens=160)
+            out = _ollama_json(sys_p, user_input, model, url)
         except Exception:
             return None
         data = _extract_json(out or "")

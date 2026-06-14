@@ -257,13 +257,13 @@ class GenesisProcessingMixin:
         # Atrapa paráfrasis/voseo de comandos de herramienta por SIGNIFICADO.
         # Aditivo: solo en el camino NONE; pre-filtrado por dominio para no
         # gastar LLM en charla. Flag: GENESIS_TOOLCALL=off para desactivar.
-        # Default OFF: genesis-q3 (8B local) no es lo bastante confiable para
-        # function-calling (devuelve JSON inconsistente, ~50% nondeterminista).
-        # La infra queda lista; activar con GENESIS_TOOLCALL=on cuando haya un
-        # modelo mejor (o más VRAM para uno grande con tool-calling nativo).
+        # Default ON: con format=json (constrained decoding en tool_router) el
+        # 8B local (genesis-q3) rutea confiable y consistente (100% en pruebas).
+        # Desactivar con GENESIS_TOOLCALL=off; modelo del router configurable con
+        # GENESIS_TOOLCALL_MODEL (ej. qwen2.5:3b si se baja).
         if not auto_tool_result and getattr(
                 self, "_toolcall_enabled",
-                os.environ.get("GENESIS_TOOLCALL", "off").lower()
+                os.environ.get("GENESIS_TOOLCALL", "on").lower()
                 in ("1", "on", "true", "yes")):
             try:
                 from core import tool_router
