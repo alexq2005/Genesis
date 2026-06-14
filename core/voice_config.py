@@ -29,6 +29,29 @@ VOICES = [
 ]
 
 
+_FLAGS = {"es_ES": "🇪🇸", "es_AR": "🇦🇷", "es_MX": "🇲🇽", "es_US": "🌎",
+          "es_CO": "🇨🇴"}
+
+
+def _piper_label(n):
+    parts = n.split("-")
+    loc = parts[0] if parts else n
+    name = parts[1] if len(parts) > 1 else n
+    return f"{name} {_FLAGS.get(loc, '')} (Piper · local)".strip()
+
+
+def all_voices():
+    """Catálogo completo: clon + edge-tts + Piper instaladas (dinámico)."""
+    vs = list(VOICES)
+    try:
+        from core import piper_tts
+        for n in piper_tts.list_voices():
+            vs.append({"id": "piper:" + n, "label": _piper_label(n)})
+    except Exception:
+        pass
+    return vs
+
+
 def get():
     try:
         with open(_PATH, encoding="utf-8") as f:

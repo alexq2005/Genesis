@@ -223,7 +223,15 @@ def speak_aloud(text: str, voice: str = None, temperature: float = 0.55) -> dict
         rate = cfg.get("rate", 0)
     except Exception:
         sel, rate = (voice or "clon:milton"), 0
-    if sel.startswith("clon:"):
+    if sel.startswith("piper:"):
+        try:
+            from core import piper_tts
+            piper_tts.synth_to_wav(clean, sel.split(":", 1)[1], str(_SPEAK_OUT))
+            if _play_wav(_SPEAK_OUT):
+                return {"ok": True, "method": "piper"}
+        except Exception:
+            pass
+    elif sel.startswith("clon:"):
         name = sel.split(":", 1)[1].strip() or "milton"
         ref = ref_for(name)
         if available() and ref.exists():

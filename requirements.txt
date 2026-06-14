@@ -43,6 +43,7 @@ edge-tts==7.2.7                  # TTS neural (Azure, gratis)
 pyttsx3==2.99                    # TTS local (fallback)
 vosk==0.3.45                     # STT offline (wake-word, streaming barato)
 faster-whisper==1.2.1            # STT preciso (comandos: nombres/marcas)
+piper-tts==1.4.2                  # TTS neural 100% local (offline, models/piper/)
 sounddevice==0.5.5               # Audio I/O
 mutagen==1.47.0                  # Audio metadata
 

@@ -1228,7 +1228,7 @@ def api_voice_config():
         d = request.get_json() or {}
         cfg = voice_config.set(voice=d.get("voice"), rate=d.get("rate"))
         return jsonify({"ok": True, "config": cfg})
-    return jsonify({"config": voice_config.get(), "voices": voice_config.VOICES})
+    return jsonify({"config": voice_config.get(), "voices": voice_config.all_voices()})
 
 
 @app.route("/api/upload", methods=["POST"])
@@ -1486,6 +1486,17 @@ def api_tts_speak():
     # Limitar a 5000 chars para evitar timeouts
     if len(clean) > 5000:
         clean = clean[:5000]
+
+    # === VOZ PIPER (TTS local, offline) — voice="piper:<nombre>" ===
+    if voice.startswith("piper:"):
+        try:
+            from flask import Response
+            from core import piper_tts as _pp
+            _name = voice.split(":", 1)[1]
+            _wav = _pp.synth_bytes(clean, _name)
+            return Response(_wav, mimetype="audio/wav")
+        except Exception:
+            voice = "es-ES-AlvaroNeural"  # fallback edge si Piper falla
 
     # === VOZ CLONADA (XTTS local) — voice="clon:<nombre>" ===
     if voice.startswith("clon:"):
