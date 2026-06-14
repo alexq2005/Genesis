@@ -1077,13 +1077,13 @@ setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
  function core(){var sr=sc.getBoundingClientRect();var o=document.querySelector('.orbwrap');
   if(o){var r=o.getBoundingClientRect();cx=r.left+r.width/2-sr.left;cy=r.top+r.height/2-sr.top;}
   else{cx=W/2;cy=H*0.32;}                     // fallback si el orbe no está listo
-  maxR=Math.min(W,H)*0.55;}                    // radio del halo alrededor del núcleo
+  maxR=Math.min(W,H)*0.72;}                    // radio del halo alrededor del núcleo (expandido)
  function place(s){var a=Math.random()*6.2832,rad=maxR*Math.pow(Math.random(),CONC);
   s.x=cx+Math.cos(a)*rad;s.y=cy+Math.sin(a)*rad;}
  function spawnFlash(){var a=Math.random()*6.2832,rad=maxR*0.92*Math.pow(Math.random(),1.4);
   flashes.push({x:cx+Math.cos(a)*rad,y:cy+Math.sin(a)*rad,t:0,dur:90+Math.random()*110,sz:4+Math.random()*9});}
  function build(){W=sc.width=sc.clientWidth;H=sc.height=sc.clientHeight;x=sc.getContext('2d');core();
-  var N=Math.round(W*H/480);if(N<950)N=950;if(N>2400)N=2400;   // más puntos
+  var N=Math.round(W*H/330);if(N<1400)N=1400;if(N>3400)N=3400;   // más puntos (cian + blanco)
   stars=[];for(var i=0;i<N;i++){var b=Math.random();var s={b:b,r:b>0.86?1.4:0.7,c:Math.random()<0.34?1:0,vx:(Math.random()-0.5)*2*SPEED,vy:(Math.random()-0.5)*2*SPEED,tw:Math.random()*6.2832};place(s);stars.push(s);}}
  function frame(){if(!x)return;x.clearRect(0,0,W,H);for(var i=0;i<stars.length;i++){var s=stars[i];
    s.x+=s.vx;s.y+=s.vy;var dx=s.x-cx,dy=s.y-cy;if(dx*dx+dy*dy>maxR*maxR)place(s);  // se aleja → vuelve cerca del núcleo
@@ -1091,22 +1091,6 @@ setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
    if(s.c)x.fillStyle='rgba('+Math.round(40+s.b*70)+','+Math.round(205+s.b*50)+',255,'+a.toFixed(2)+')';   // cian
    else x.fillStyle='rgba('+Math.round(222+s.b*33)+','+Math.round(234+s.b*21)+',255,'+a.toFixed(2)+')';   // blanco
    x.beginPath();x.arc(s.x,s.y,s.r,0,6.2832);x.fill();}
-  // DESTELLOS: nacen al azar alrededor del núcleo, brillan y se apagan
-  if(flashes.length<FLASH_MAX&&Math.random()<FLASH_RATE)spawnFlash();
-  x.globalCompositeOperation='lighter';
-  for(var j=flashes.length-1;j>=0;j--){var f=flashes[j];f.t++;var k=f.t/f.dur;if(k>=1){flashes.splice(j,1);continue;}
-   var br=Math.sin(k*Math.PI),R=f.sz*(0.6+k*0.6);
-   // núcleo blanco-azulado del destello
-   var g=x.createRadialGradient(f.x,f.y,0,f.x,f.y,R);
-   g.addColorStop(0,'rgba(240,248,255,'+(0.95*br).toFixed(2)+')');g.addColorStop(.45,'rgba(180,210,255,'+(0.45*br).toFixed(2)+')');g.addColorStop(1,'rgba(160,195,255,0)');
-   x.fillStyle=g;x.beginPath();x.arc(f.x,f.y,R,0,6.2832);x.fill();
-   // gleam de 4 puntas: rayos que se desvanecen en las puntas (combina con el núcleo)
-   var L=R*2.6,ca=(0.8*br).toFixed(2);
-   var gh=x.createLinearGradient(f.x-L,f.y,f.x+L,f.y);gh.addColorStop(0,'rgba(160,195,255,0)');gh.addColorStop(.5,'rgba(235,244,255,'+ca+')');gh.addColorStop(1,'rgba(160,195,255,0)');
-   x.strokeStyle=gh;x.lineWidth=1.1;x.beginPath();x.moveTo(f.x-L,f.y);x.lineTo(f.x+L,f.y);x.stroke();
-   var gv=x.createLinearGradient(f.x,f.y-L,f.x,f.y+L);gv.addColorStop(0,'rgba(160,195,255,0)');gv.addColorStop(.5,'rgba(235,244,255,'+ca+')');gv.addColorStop(1,'rgba(160,195,255,0)');
-   x.strokeStyle=gv;x.lineWidth=1.1;x.beginPath();x.moveTo(f.x,f.y-L);x.lineTo(f.x,f.y+L);x.stroke();}
-  x.globalCompositeOperation='source-over';
   requestAnimationFrame(frame);}
  setTimeout(function(){build();frame();},140);window.addEventListener('resize',build);})();
 // --- Onboarding (primera vez) ---
