@@ -809,11 +809,7 @@ a{color:var(--g);text-decoration:none}
  <div class="corecenter">
  <div id="state" class="statuslbl"><span id="statedot" style="width:9px;height:9px;border-radius:50%;background:var(--g);box-shadow:0 0 8px var(--g)"></span><span id="statetxt">JARVIS · CALMADO</span></div>
  <div class="orbwrap">
-  <canvas id="plasma" width="172" height="172" style="border-radius:50%"></canvas>
-  <svg viewBox="0 0 172 172" style="pointer-events:none">
-   <circle cx="86" cy="86" r="83" fill="none" stroke="rgba(200,225,255,.14)" stroke-width="1"/>
-   <circle id="pcr" cx="86" cy="86" r="71" fill="none" stroke="rgba(190,220,255,.12)" stroke-width="1" stroke-dasharray="3 11" transform-origin="86 86"/>
-  </svg>
+  <canvas id="plasma" width="172" height="172"></canvas>
  </div>
  <div id="answer" class="bubble" style="display:none"></div>
  <div id="cplayer" class="panel" style="display:none;padding:8px 12px;width:540px;max-width:92vw">
@@ -1072,7 +1068,7 @@ setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
 // --- Starfield de fondo (estilo nave) ---
 (function(){var sc=$('stars');if(!sc)return;var x,W,H,cx,cy,maxR,stars=[],flashes=[];
  var SPEED=0.2;            // velocidad de deriva (px/frame) — subila para más rápido
- var CONC=2.0;             // concentración: + alto = más apretadas al núcleo
+ var CONC=3.0;             // concentración: + alto = más apretadas al núcleo (densas al centro, ralas lejos)
  var FLASH_RATE=0.05, FLASH_MAX=8;    // frecuencia y máximo de destellos simultáneos
  function core(){var sr=sc.getBoundingClientRect();var o=document.querySelector('.orbwrap');
   if(o){var r=o.getBoundingClientRect();cx=r.left+r.width/2-sr.left;cy=r.top+r.height/2-sr.top;}
@@ -1083,14 +1079,19 @@ setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
  function spawnFlash(){var a=Math.random()*6.2832,rad=maxR*0.92*Math.pow(Math.random(),1.4);
   flashes.push({x:cx+Math.cos(a)*rad,y:cy+Math.sin(a)*rad,t:0,dur:90+Math.random()*110,sz:4+Math.random()*9});}
  function build(){W=sc.width=sc.clientWidth;H=sc.height=sc.clientHeight;x=sc.getContext('2d');core();
-  var N=Math.round(W*H/330);if(N<1400)N=1400;if(N>3400)N=3400;   // más puntos (cian + blanco)
+  var N=Math.round(W*H/230);if(N<2000)N=2000;if(N>4800)N=4800;   // más puntos (cian + blanco)
   stars=[];for(var i=0;i<N;i++){var b=Math.random();var s={b:b,r:b>0.86?1.4:0.7,c:Math.random()<0.34?1:0,vx:(Math.random()-0.5)*2*SPEED,vy:(Math.random()-0.5)*2*SPEED,tw:Math.random()*6.2832};place(s);stars.push(s);}}
- function frame(){if(!x)return;x.clearRect(0,0,W,H);for(var i=0;i<stars.length;i++){var s=stars[i];
+ function frame(){if(!x)return;x.clearRect(0,0,W,H);
+  // reacción a la VOZ: lee pSmooth (amplitud del shader); >0.15 = baseline en reposo
+  var va=(typeof pSmooth!=='undefined'&&pSmooth>0.15)?(pSmooth-0.15)*1.5:0;if(va>1)va=1;
+  var push=1+va*0.16,asz=1+va*0.8,abr=1+va*1.9;   // empuje hacia afuera, tamaño, brillo
+  for(var i=0;i<stars.length;i++){var s=stars[i];
    s.x+=s.vx;s.y+=s.vy;var dx=s.x-cx,dy=s.y-cy;if(dx*dx+dy*dy>maxR*maxR)place(s);  // se aleja → vuelve cerca del núcleo
-   s.tw+=0.07;var a=(0.18+s.b*0.55)*(0.6+0.4*Math.sin(s.tw));
+   s.tw+=0.07+va*0.22;var a=(0.18+s.b*0.55)*(0.6+0.4*Math.sin(s.tw))*abr;if(a>1)a=1;
+   var px=cx+dx*push,py=cy+dy*push;     // empuje radial con la voz (no altera la posición real)
    if(s.c)x.fillStyle='rgba('+Math.round(40+s.b*70)+','+Math.round(205+s.b*50)+',255,'+a.toFixed(2)+')';   // cian
    else x.fillStyle='rgba('+Math.round(222+s.b*33)+','+Math.round(234+s.b*21)+',255,'+a.toFixed(2)+')';   // blanco
-   x.beginPath();x.arc(s.x,s.y,s.r,0,6.2832);x.fill();}
+   x.beginPath();x.arc(px,py,s.r*asz,0,6.2832);x.fill();}
   requestAnimationFrame(frame);}
  setTimeout(function(){build();frame();},140);window.addEventListener('resize',build);})();
 // --- Onboarding (primera vez) ---
