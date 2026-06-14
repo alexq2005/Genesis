@@ -512,6 +512,13 @@ def play_store_mouse(query: str, profile: str = None) -> str:
         except Exception:
             pass
         time.sleep(1.6)
+        # Salir de cualquier player/modal abierto para volver a una vista CON
+        # buscador (si ya había un video corriendo, la lupa no está en pantalla y
+        # el flujo fallaba). Esc dos veces: player → página, modal → grilla.
+        pyautogui.press("esc")
+        time.sleep(1.2)
+        pyautogui.press("esc")
+        time.sleep(1.2)
         r = nf.BoundingRectangle
         L, T = r.left, r.top
         W, H = r.right - r.left, r.bottom - r.top
