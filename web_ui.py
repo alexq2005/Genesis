@@ -1071,7 +1071,7 @@ function pollVoice(){fetch('/api/voice/feed?since='+_vseq).then(function(r){retu
 setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
 // --- Starfield de fondo (estilo nave) ---
 (function(){var sc=$('stars');if(!sc)return;var x,W,H,cx,cy,maxR,stars=[],flashes=[];
- var SPEED=0.5;            // velocidad de deriva (px/frame) — subila para más rápido
+ var SPEED=0.2;            // velocidad de deriva (px/frame) — subila para más rápido
  var CONC=2.0;             // concentración: + alto = más apretadas al núcleo
  var FLASH_RATE=0.05, FLASH_MAX=8;    // frecuencia y máximo de destellos simultáneos
  function core(){var sr=sc.getBoundingClientRect();var o=document.querySelector('.orbwrap');
