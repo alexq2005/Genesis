@@ -148,7 +148,7 @@ def _clean_for_speech(text: str) -> str:
     return t[:600]
 
 
-def _pyttsx3_say(text: str) -> bool:
+def _pyttsx3_say(text: str, rate: int = 0) -> bool:
     try:
         import pythoncom
         pythoncom.CoInitialize()
@@ -157,7 +157,7 @@ def _pyttsx3_say(text: str) -> bool:
     try:
         import pyttsx3
         e = pyttsx3.init()
-        e.setProperty("rate", 175)
+        e.setProperty("rate", int(175 * (1 + (rate or 0) / 100.0)))
         e.say(text)
         e.runAndWait()
         try:
@@ -169,23 +169,68 @@ def _pyttsx3_say(text: str) -> bool:
         return False
 
 
-def speak_aloud(text: str, voice: str = "milton", temperature: float = 0.55) -> dict:
-    """Habla por los parlantes (lado servidor) con la voz CLONADA (la de la
-    cabina). Si XTTS falla o se queda sin VRAM, cae a pyttsx3. Bloqueante."""
+def _play_wav(path) -> bool:
+    try:
+        import sounddevice as sd
+        import torchaudio
+        wav, sr = torchaudio.load(str(path))
+        sd.play(wav.squeeze(0).numpy(), sr)
+        sd.wait()
+        return True
+    except Exception:
+        return False
+
+
+def _edge_play(text: str, voice: str, rate: int = 0) -> bool:
+    """Sintetiza con edge-tts (voz neural) y reproduce por parlantes."""
+    try:
+        import asyncio
+        import subprocess
+
+        import edge_tts
+        import imageio_ffmpeg
+        import sounddevice as sd
+        import soundfile as sf
+        mp3 = str(_VOICES_DIR / "_speak_out.mp3")
+        wav = str(_SPEAK_OUT)
+        rs = f"{'+' if (rate or 0) >= 0 else ''}{int(rate or 0)}%"
+
+        async def _gen():
+            await edge_tts.Communicate(text, voice, rate=rs).save(mp3)
+        asyncio.run(_gen())
+        ff = imageio_ffmpeg.get_ffmpeg_exe()
+        subprocess.run([ff, "-y", "-i", mp3, "-ar", "24000", "-ac", "1", wav],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        data, sr = sf.read(wav, dtype="float32")
+        sd.play(data, sr)
+        sd.wait()
+        return True
+    except Exception:
+        return False
+
+
+def speak_aloud(text: str, voice: str = None, temperature: float = 0.55) -> dict:
+    """Habla por los parlantes (lado servidor) con la voz CONFIGURADA (la misma
+    de la cabina: clon XTTS o voz neural edge-tts, con velocidad). Si todo
+    falla, cae a pyttsx3. Bloqueante."""
     clean = _clean_for_speech(text)
     if not clean:
         return {"ok": False, "method": "none"}
-    ref = ref_for(voice)
-    if available() and ref.exists():
-        res = clone_say_hq(clean, str(ref), str(_SPEAK_OUT), temperature=temperature)
-        if res.get("ok"):
-            try:
-                import sounddevice as sd
-                import torchaudio
-                wav, sr = torchaudio.load(str(_SPEAK_OUT))
-                sd.play(wav.squeeze(0).numpy(), sr)
-                sd.wait()
+    try:
+        from core import voice_config
+        cfg = voice_config.get()
+        sel = voice or cfg.get("voice", "clon:milton")
+        rate = cfg.get("rate", 0)
+    except Exception:
+        sel, rate = (voice or "clon:milton"), 0
+    if sel.startswith("clon:"):
+        name = sel.split(":", 1)[1].strip() or "milton"
+        ref = ref_for(name)
+        if available() and ref.exists():
+            res = clone_say_hq(clean, str(ref), str(_SPEAK_OUT),
+                               temperature=temperature)
+            if res.get("ok") and _play_wav(_SPEAK_OUT):
                 return {"ok": True, "method": "xtts-clone"}
-            except Exception:
-                pass  # cae a pyttsx3 si no se pudo reproducir
-    return {"ok": _pyttsx3_say(clean), "method": "pyttsx3"}
+    elif _edge_play(clean, sel, rate):
+        return {"ok": True, "method": "edge"}
+    return {"ok": _pyttsx3_say(clean, rate), "method": "pyttsx3"}

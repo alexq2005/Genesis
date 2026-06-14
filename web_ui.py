@@ -799,14 +799,14 @@ a{color:var(--g);text-decoration:none}
 </div>
 
 <div id="camrow" class="corner" style="left:14px" onclick="toggleCam()"><i class="ti ti-camera-off"></i> CÁMARA · APAGADA</div>
-<div class="corner" style="right:14px" onclick="location.href='/mission'"><i class="ti ti-settings" style="font-size:16px"></i></div>
+<div class="corner" style="right:14px" onclick="openVoiceCfg()" title="Configuración de voz"><i class="ti ti-settings" style="font-size:16px"></i></div>
 <div id="modal" class="modalbg" onclick="if(event.target===this)closeModal()"></div>
 </div>
 <script>
 function $(i){return document.getElementById(i)}
 var H=$('core');
-/* Migración de voz: si quedó una voz vieja guardada, pasar a la refinada (Álvaro) */
-try{if(['es-AR-TomasNeural','es-AR-ElenaNeural','es-ES-AlvaroNeural'].indexOf(localStorage.getItem('gx_voice'))>=0)localStorage.setItem('gx_voice','clon:milton');}catch(e){}
+/* La voz ahora se elige en el panel de Configuración de voz (engranaje). */
+try{if(!localStorage.getItem('gx_voice'))localStorage.setItem('gx_voice','clon:milton');}catch(e){}
 /* Los links EXTERNOS (resultados de investigación, etc.) abren en el navegador
    del sistema — nunca secuestran la cabina (antes te dejaba atrapado con 502). */
 document.addEventListener('click',function(e){
@@ -821,7 +821,29 @@ document.addEventListener('click',function(e){
 function setState(s){var m={calm:['JARVIS · CALMADO','var(--g)'],proc:['JARVIS · PROCESANDO','#ffd24d'],talk:['JARVIS · HABLANDO','var(--g)'],listen:['JARVIS · ESCUCHANDO','#2dffae']};var x=m[s]||m.calm;$('statetxt').textContent=x[0];$('statedot').style.background=x[1];}
 function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function md(t){t=esc(t).replace(/```[a-zA-Z0-9+]*\n?([\s\S]*?)```/g,function(_,c){return '<pre style="background:#021410;border:1px solid rgba(45,255,174,.25);border-radius:8px;padding:10px;overflow-x:auto;margin:8px 0"><code style="color:#9fe9c9;font-size:12px">'+c.replace(/\n$/,'')+'</code></pre>';});t=t.replace(/`([^`]+)`/g,'<code style="background:rgba(45,255,174,.12);padding:1px 5px;border-radius:4px">$1</code>');t=t.replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');t=t.replace(/\n/g,'<br>');return t;}
-function speak(text){var v=localStorage.getItem('gx_voice')||'clon:milton';fetch('/api/tts/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,voice:v})}).then(r=>r.ok?r.blob():null).then(b=>{if(!b)return;setState('talk');var a=new Audio(URL.createObjectURL(b));plasmaSpeak(a);a.onended=function(){setState('calm');plasmaCalm();};a.play().catch(function(){setState('calm');plasmaCalm();});}).catch(function(){setState('calm');plasmaCalm();});}
+function speak(text){var v=localStorage.getItem('gx_voice')||'clon:milton';var rn=parseInt(localStorage.getItem('gx_rate')||'0',10)||0;var rs=(rn>=0?'+':'')+rn+'%';fetch('/api/tts/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,voice:v,rate:rs})}).then(r=>r.ok?r.blob():null).then(b=>{if(!b)return;setState('talk');var a=new Audio(URL.createObjectURL(b));plasmaSpeak(a);a.onended=function(){setState('calm');plasmaCalm();};a.play().catch(function(){setState('calm');plasmaCalm();});}).catch(function(){setState('calm');plasmaCalm();});}
+function openVoiceCfg(){
+ fetch('/api/voice/config').then(function(r){return r.json();}).then(function(d){
+  var cur=localStorage.getItem('gx_voice')||(d.config&&d.config.voice)||'clon:milton';
+  var rate=parseInt(localStorage.getItem('gx_rate'),10);if(isNaN(rate))rate=(d.config&&d.config.rate)||0;
+  var opts=(d.voices||[]).map(function(v){return '<option value="'+v.id+'"'+(v.id===cur?' selected':'')+'>'+esc(v.label)+'</option>';}).join('');
+  var h='<div class="panel" style="width:430px;max-width:94vw;padding:20px" onclick="event.stopPropagation()">';
+  h+='<div style="color:var(--g);font-size:13px;letter-spacing:.12em;margin-bottom:14px"><i class="ti ti-microphone-2"></i> CONFIGURACIÓN DE VOZ</div>';
+  h+='<div style="font-size:11px;color:#7fceb3;margin-bottom:5px">Tipo de voz</div>';
+  h+='<select id="vcsel" style="width:100%;padding:9px;background:#06120e;color:#cfeee0;border:1px solid rgba(45,255,174,.3);border-radius:7px;font-size:13px">'+opts+'</select>';
+  h+='<div style="font-size:11px;color:#7fceb3;margin:14px 0 5px">Velocidad: <b id="vcrl">'+(rate>=0?'+':'')+rate+'%</b></div>';
+  h+='<input id="vcrate" type="range" min="-50" max="50" step="5" value="'+rate+'" style="width:100%" oninput="$(\'vcrl\').textContent=(this.value>=0?\'+\':\'\')+this.value+\'%\'">';
+  h+='<div style="font-size:10px;color:#4d8a76;margin-top:4px">Milton (clon) ignora la velocidad. Las voces neurales necesitan internet.</div>';
+  h+='<div style="display:flex;gap:8px;margin-top:18px">';
+  h+='<button class="btn" style="flex:1" onclick="testVoiceCfg()"><i class="ti ti-player-play"></i> PROBAR</button>';
+  h+='<button class="btn" style="flex:1" onclick="saveVoiceCfg()"><i class="ti ti-device-floppy"></i> GUARDAR</button>';
+  h+='</div></div>';
+  $('modal').innerHTML=h;$('modal').style.display='flex';
+ }).catch(function(){});
+}
+function testVoiceCfg(){var v=$('vcsel').value;var rn=parseInt($('vcrate').value,10)||0;localStorage.setItem('gx_voice',v);localStorage.setItem('gx_rate',rn);speak('Hola, señor. Así sueno con esta voz. Sistemas en línea.');}
+function saveVoiceCfg(){var v=$('vcsel').value;var rn=parseInt($('vcrate').value,10)||0;localStorage.setItem('gx_voice',v);localStorage.setItem('gx_rate',rn);
+ fetch('/api/voice/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({voice:v,rate:rn})}).then(function(){closeModal();showAnswer('<i class="ti ti-check" style="color:var(--g)"></i> Voz guardada: '+esc($('vcsel').options[$('vcsel').selectedIndex].text));}).catch(function(){closeModal();});}
 /* ===== NÚCLEO DE PLASMA: vive siempre, late suave en reposo y erupciona con la voz real de Genesis ===== */
 var pAC=null,pAna=null,pFreq=null,pSpeaking=false,pSmooth=0.12,pRot=0;
 var PCV=$('plasma'),PCTX=PCV?PCV.getContext('2d'):null,PR=2,PW=172,PC=86;
@@ -1196,6 +1218,17 @@ def api_voice_feed():
         return jsonify(handsfree.get_feed(since))
     except Exception:
         return jsonify({"seq": 0, "events": []})
+
+
+@app.route("/api/voice/config", methods=["GET", "POST"])
+def api_voice_config():
+    """Configuración de voz (voz + velocidad), compartida cabina/manos-libres."""
+    from core import voice_config
+    if request.method == "POST":
+        d = request.get_json() or {}
+        cfg = voice_config.set(voice=d.get("voice"), rate=d.get("rate"))
+        return jsonify({"ok": True, "config": cfg})
+    return jsonify({"config": voice_config.get(), "voices": voice_config.VOICES})
 
 
 @app.route("/api/upload", methods=["POST"])
