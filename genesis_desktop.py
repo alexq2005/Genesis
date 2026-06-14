@@ -658,10 +658,17 @@ def _calculate_window_geometry(mode):
 
 
 def _on_loaded(window):
-    """Se ejecuta cuando la pagina termina de cargar — inyecta la UI custom."""
+    """Se ejecuta cuando la pagina termina de cargar — inyecta la UI custom.
+    Lee el nombre FRESCO en cada carga: si el usuario renombró el asistente y la
+    cabina recargó, el titlebar refleja el nombre nuevo sin reiniciar el proceso."""
     time.sleep(0.5)
     try:
-        window.evaluate_js(INJECTED_JS.replace("Genesis AI", APP_TITLE))
+        try:
+            from core.assistant_identity import get_name
+            title = f"{get_name()} AI"
+        except Exception:
+            title = APP_TITLE
+        window.evaluate_js(INJECTED_JS.replace("Genesis AI", title))
     except Exception:
         pass
 

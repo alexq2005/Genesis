@@ -4039,9 +4039,12 @@ class GenesisToolsMixin:
             from core import assistant_identity
             ok, res = assistant_identity.set_name(_rn.group(1))
             if ok:
-                return (f"🔤 Listo, desde ahora me llamo **{res}**. Llamame «{res}, …» "
-                        f"por voz. Ojo: «Genesis» ya NO es la palabra de activación. Si "
-                        f"la voz no me reconoce, escribí «llamate Genesis» para volver.")
+                _aviso = ("" if res.lower() == "genesis" else
+                          " Ojo: «Genesis» ya NO es la palabra de activación; si la "
+                          "voz no me reconoce, escribí «llamate Genesis» para volver.")
+                # [[RELOAD]] hace que la cabina recargue → se ven los nombres nuevos.
+                return (f"🔤 Listo, desde ahora me llamo **{res}**. Llamame «{res}, …»"
+                        f" por voz.{_aviso} (Recargando la cabina…)[[RELOAD]]")
             return f"🔤 No pude cambiar el nombre: {res}."
 
         # ── CABINA de Genesis: esconder / mostrar por voz ─────────────────────

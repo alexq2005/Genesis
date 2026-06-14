@@ -999,8 +999,10 @@ function send(){
   var pm=t.match(/\[\[PLAY:([\w-]+)\]\]/);
   if(pm){t=t.replace(/\[\[PLAY:[\w-]+\]\]/,'').trim();cplay(pm[1],t.split('\n')[0].slice(0,55));}
   var vm=t.match(/\[\[VOICE:([\w:-]+)\]\]/);if(vm){t=t.replace(/\[\[VOICE:[\w:-]+\]\]/,'').trim();localStorage.setItem('gx_voice',vm[1]);}
+  var doReload=t.indexOf('[[RELOAD]]')>=0;if(doReload)t=t.replace('[[RELOAD]]','').trim();
   t=t.replace('[[ULTRON]]','').trim();
-  showAnswer(md(t));setState('calm');speak(t.replace(/```[\s\S]*?```/g,' código en pantalla ').replace(/[`*#>]/g,'').slice(0,500));}).catch(function(){showAnswer('[error de conexión]');setState('calm');});
+  showAnswer(md(t));setState('calm');speak(t.replace(/```[\s\S]*?```/g,' código en pantalla ').replace(/[`*#>]/g,'').slice(0,500));
+  if(doReload)setTimeout(function(){location.reload();},2600);}).catch(function(){showAnswer('[error de conexión]');setState('calm');});
 }
 function cplay(vid,label){var a=$('cap');a.onerror=function(){$('cnow').innerHTML='<i class="ti ti-alert-triangle" style="color:#ffd24d"></i> No pude bajar el audio: YouTube pide verificación anti-bot. Hay que configurar cookies (decime «configurar cookies»).';};a.src='/api/audio/'+vid;$('cnow').innerHTML='<i class="ti ti-music"></i> '+(label||'reproduciendo');$('cplayer').style.display='block';a.play().catch(function(){});}
 function cstop(){var a=$('cap');try{a.pause();}catch(e){}a.src='';$('cplayer').style.display='none';}
