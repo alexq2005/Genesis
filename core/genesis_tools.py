@@ -1745,23 +1745,28 @@ class GenesisToolsMixin:
                         "las voces", "tus voces", "elegir voz"]
         if any(k in inp for k in cap_keywords):
             return ("🎙️ VOCES DISPONIBLES\n\n"
-                    "Tengo acceso a TODAS las voces instaladas en tu sistema "
-                    "(actualmente ~22 voces en 5+ idiomas, incluyendo 5 en español).\n\n"
+                    "Tengo 3 motores de voz, todos elegibles desde el panel:\n"
+                    "  • Clon XTTS — voz clonada local (ej. JARVIS latino)\n"
+                    "  • 8 voces neurales edge-tts (acentos AR/ES/MX/US/CO)\n"
+                    "  • Piper — voces neurales 100% offline\n\n"
                     "Para cambiar la voz:\n"
-                    "  1. Hacé click en el icono 🎙️ en la barra superior\n"
-                    "  2. Se abre el panel con todas las voces agrupadas por idioma\n"
-                    "  3. Probá cada voz con el botón ▶ Test\n"
-                    "  4. Ajustá velocidad (0.5x - 2.0x) y tono (0.5 - 1.5)\n"
-                    "  5. La voz seleccionada se guarda permanentemente\n\n"
-                    "El TTS se activa con el botón TTS en la barra, o automáticamente al hablar por voz.")
+                    "  1. Tocá el ⚙️ engranaje (abajo a la derecha de la cabina)\n"
+                    "  2. Elegí el tipo de voz y la velocidad\n"
+                    "  3. ▶ PROBAR para escucharla · 💾 GUARDAR para aplicarla\n"
+                    "  (se usa igual en la cabina y en el manos libres)\n\n"
+                    "Importar más voces Piper (offline):\n"
+                    "  python -m piper.download_voices <voz> --data-dir models/piper")
 
         cap_general = ["que puedes hacer", "qué puedes hacer", "que podes hacer", "qué podés hacer",
                        "cuales son tus capacidades", "que capacidades", "que sabes hacer",
                        "para que sirves", "que funciones tienes", "tus habilidades"]
-        if any(k in inp for k in cap_general):
+        if (any(k in inp for k in cap_general)
+                or _re.fullmatch(r"\s*(ayuda|help|men[uú]|comandos|/help)\.?\s*", inp)):
             from config import GENESIS_VERSION as _gv
             return (f"🧠 CAPACIDADES DE GENESIS v{_gv}\n\n"
-                    "▸ 🗣️ VOZ: Hablarme por micrófono (STT) y responder con audio (TTS) — 22 voces\n"
+                    "▸ 🎙️ VOZ MANOS LIBRES: decime «genesis ...» sin tocar nada (vosk + Whisper)\n"
+                    "▸ 🗣️ VOZ: respondo hablando (clon XTTS / edge-tts / Piper) — configurable en ⚙️\n"
+                    "▸ 👤 RECONOZCO TU VOZ: «entrená mi voz» → modo «solo mi voz» (voiceprint)\n"
                     "▸ 🌐 INTERNET: Buscar en la web, leer páginas, investigar temas\n"
                     "▸ 📄 DOCUMENTOS: Procesar PDF, DOCX, XLSX, CSV, TXT — resúmenes y extracción\n"
                     "▸ 📂 ARCHIVOS: Buscar, listar, organizar, mover, eliminar archivos\n"
@@ -1784,6 +1789,15 @@ class GenesisToolsMixin:
                     "▸ 🔍 LAUNCHER: Búsqueda unificada en apps, archivos, notas, clipboard\n"
                     "▸ ☀️ BRIEFING: Resumen diario del sistema, notas, motivación\n"
                     "▸ ⚡ MACROS: Grabar y ejecutar secuencias de comandos\n"
+                    "▸ 📰 NOTICIAS: Titulares actuales («noticias» / «noticias de <tema>»)\n"
+                    "▸ 🌤️ CLIMA: Tiempo actual y pronóstico\n"
+                    "▸ 🛡️ SEGURIDAD: Chequeo de Defender, Firewall, UAC y updates\n"
+                    "▸ 🔈 SALIDA DE AUDIO: Cambiar parlante/auricular por voz («salida jbl»)\n"
+                    "▸ 🎬 MULTIMEDIA: Música (YouTube Music), Netflix, Chromecast\n"
+                    "▸ 🎨 IMÁGENES: Generar imágenes localmente (Stable Diffusion en GPU)\n"
+                    "▸ 🎮 JUEGOS: Lanzar juegos de Steam/Epic por voz («jugá <X>»)\n"
+                    "▸ 📧 EMAIL: Enviar y leer correos (Gmail)\n"
+                    "▸ 🧭 AGENTES: 6 especialistas coordinados que se auto-delegan\n"
                     "▸ 🧬 AUTO-EVOLUCIÓN: Aprender, mutar, evolucionar autónomamente")
 
         return None
