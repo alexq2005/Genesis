@@ -253,6 +253,29 @@ class GenesisProcessingMixin:
                 self.memory.short_term.add("assistant", spk)
                 return spk
 
+        # === N4: function-calling híbrido — solo si el regex NO matchó ===
+        # Atrapa paráfrasis/voseo de comandos de herramienta por SIGNIFICADO.
+        # Aditivo: solo en el camino NONE; pre-filtrado por dominio para no
+        # gastar LLM en charla. Flag: GENESIS_TOOLCALL=off para desactivar.
+        # Default OFF: genesis-q3 (8B local) no es lo bastante confiable para
+        # function-calling (devuelve JSON inconsistente, ~50% nondeterminista).
+        # La infra queda lista; activar con GENESIS_TOOLCALL=on cuando haya un
+        # modelo mejor (o más VRAM para uno grande con tool-calling nativo).
+        if not auto_tool_result and getattr(
+                self, "_toolcall_enabled",
+                os.environ.get("GENESIS_TOOLCALL", "off").lower()
+                in ("1", "on", "true", "yes")):
+            try:
+                from core import tool_router
+                _tr = tool_router.route(self, user_input)
+            except Exception:
+                _tr = None
+            if _tr:
+                self.log.debug("Tool-router (N4) resolvió por significado")
+                spk = self._maybe_spontaneous(user_input, _tr)
+                self.memory.short_term.add("assistant", spk)
+                return spk
+
         # === COORDINADOR: Genesis enruta al agente especialista (auto-delegación) ===
         # Si ningún tool directo aplicó y hay un especialista claro (alta confianza),
         # Genesis delega solo al agente correcto. Si no, sigue el flujo normal.
