@@ -545,6 +545,30 @@ def _cabin_hwnd():
     return None
 
 
+def _win_origin(hwnd):
+    """(left, top) de una ventana por HWND, o None."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        r = wintypes.RECT()
+        ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(r))
+        return r.left, r.top
+    except Exception:
+        return None
+
+
+def _move_window(hwnd, x, y):
+    """Mueve una ventana a (x, y) sin cambiar tamaño / z-order / foco.
+    Se usa para 'aparcar' la cabina fuera de pantalla durante el flujo por mouse
+    (mejor que minimizar: WebView2 se queda en blanco al restaurar desde minimizado)."""
+    try:
+        import ctypes
+        # SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE = 0x0001|0x0004|0x0010
+        ctypes.windll.user32.SetWindowPos(hwnd, 0, int(x), int(y), 0, 0, 0x0015)
+    except Exception:
+        pass
+
+
 def play_store_mouse(query: str, profile: str = None) -> str:
     """Reproduce un título en la app de Netflix (Microsoft Store) por MOUSE +
     teclado (sin CDP, sin OCR). Clickea por posición RELATIVA a la ventana:
@@ -568,12 +592,12 @@ def play_store_mouse(query: str, profile: str = None) -> str:
     if not nf:
         return "🎬 No pude encontrar la ventana de Netflix."
     pyautogui.FAILSAFE = True
-    import ctypes
-    cabin = _cabin_hwnd()                    # la cabina tapa la lupa → minimizarla
+    cabin = _cabin_hwnd()                    # la cabina tapa la lupa → aparcarla
+    cabin_xy = _win_origin(cabin) if cabin else None
     try:
-        if cabin:
-            ctypes.windll.user32.ShowWindow(cabin, 6)     # SW_MINIMIZE
-            time.sleep(0.7)
+        if cabin and cabin_xy:
+            _move_window(cabin, cabin_xy[0], cabin_xy[1] + 3000)   # fuera de vista
+            time.sleep(0.5)
         nf.SetActive()
         try:
             nf.Maximize()
@@ -627,11 +651,8 @@ def play_store_mouse(query: str, profile: str = None) -> str:
     except Exception as e:
         return f"[ERROR] Netflix mouse: {str(e)[:120]}"
     finally:
-        if cabin:
-            try:
-                ctypes.windll.user32.ShowWindow(cabin, 9)     # SW_RESTORE cabina
-            except Exception:
-                pass
+        if cabin and cabin_xy:
+            _move_window(cabin, cabin_xy[0], cabin_xy[1])     # devolver a su lugar
 
 
 def _play_chrome(query: str, profile: str = None, screen: int = None) -> str:
