@@ -185,18 +185,34 @@ def _move_to_screen(target_id, screen):
         return None
 
 
-# JS: primer link reproducible de la página de resultados (o detalle).
-_FIND_WATCH = """
+# JS: en la página de RESULTADOS, devuelve el ID del título del primer resultado.
+# Netflix marca cada resultado con suggestionId=Video:<ID> en orden de ranking
+# (el 1ro = mejor match). Hay que tomar ESTE y NO un /watch/ suelto de 'Seguir
+# viendo' que aparece en la misma página (eso reproducía el título equivocado).
+_FIND_TITLE_ID = """
 (function(){
-  var a = document.querySelector('a[href*="/watch/"]');
-  if(a){return a.href;}
-  var t = document.querySelector('a[href*="/title/"]');
-  if(t){return t.href.replace('/title/','/watch/');}
-  // resultados de búsqueda modernos: el ID viene en suggestionId=Video:<ID>
   var s = document.querySelector('a[href*="suggestionId=Video"]');
   if(s){var m=(s.getAttribute('href')||'').match(/Video(?:%3A|:)(\\d+)/);
-        if(m){return location.origin+'/watch/'+m[1];}}
+        if(m){return m[1];}}
+  var t = document.querySelector('a[href*="/title/"]');
+  if(t){var m2=(t.getAttribute('href')||'').match(/\\/title\\/(\\d+)/);
+        if(m2){return m2[1];}}
   return '';
+})()
+"""
+
+# JS: en la página de TÍTULO (/title/<id>), devuelve {url,name} del botón de play.
+# El billboardPlayButton apunta a /watch/<episodioID> reproducible (la serie
+# pelada /watch/<serieID> sólo da la página de descripción, sin video).
+_FIND_PLAY = """
+(function(){
+  var pb = document.querySelector('a[data-uia*="play"][href*="/watch/"]')
+        || document.querySelector('a[href*="/watch/"]');
+  if(!pb){return '';}
+  var name = (document.querySelector('h1,[data-uia="title-card-title"]')||{}).textContent
+             || (document.title||'').replace(/\\s*[—|-]\\s*Netflix.*/,'');
+  return JSON.stringify({url: location.origin+pb.getAttribute('href'),
+                         name: (name||'').trim().slice(0,80)});
 })()
 """
 
@@ -404,8 +420,10 @@ def play(query: str = "", profile: str = None, screen: int = None) -> str:
 
 
 def _play_chrome(query: str, profile: str = None, screen: int = None) -> str:
-    """[DESHABILITADO] Ruta vieja por Chrome/CDP. Ya no se usa — abría una segunda
-    app de Netflix distinta de la app de la Store. Conservada por referencia."""
+    """Reproduce un título por CDP en la ventana-app de Chrome (modo --app).
+    Flujo de DOS saltos: /search → ID del 1er resultado → /title/<id> →
+    /watch/<episodioID> del botón de play → auto-reproduce. Confirma el nombre
+    real del título antes de declarar éxito."""
     if not _chrome_exe():
         return "🎬 No encontré Chrome para abrir Netflix."
     import urllib.parse as up
@@ -426,25 +444,44 @@ def _play_chrome(query: str, profile: str = None, screen: int = None) -> str:
             _navigate(ws, f"{_BASE}/SwitchProfile?tprofileName=" + up.quote(profile.title()), 11)
             time.sleep(2.5)
             _navigate(ws, search_url, 12)
-        # esperar resultados y extraer link reproducible (poll ~10s)
-        href = ""
+        # SALTO 1: esperar resultados y sacar el ID del 1er título (poll ~10s)
+        title_id = ""
         for i in range(10):
             time.sleep(1.0)
-            href = _eval(ws, _FIND_WATCH, 20 + i)
-            if href:
+            title_id = _eval(ws, _FIND_TITLE_ID, 20 + i)
+            if title_id:
                 break
-        if not href:
+        if not title_id:
             ws.close()
-            return (f"🎬 Abrí Netflix buscando «{query}» pero no encontré un resultado "
-                    f"reproducible. ¿Está en el catálogo? Dale play vos en la ventana.")
-        _navigate(ws, href, 40)        # → Netflix auto-reproduce
+            return (f"🎬 Abrí Netflix buscando «{query}» pero no encontré un resultado. "
+                    f"¿Está en el catálogo? Dale play vos en la ventana.")
+        # SALTO 2: ir a la página del título y sacar el link de play (episodio real)
+        _navigate(ws, f"{_BASE}/title/{title_id}", 30)
+        watch_url, name = "", ""
+        for i in range(10):
+            time.sleep(1.0)
+            raw = _eval(ws, _FIND_PLAY, 31 + i)
+            if raw:
+                try:
+                    d = json.loads(raw)
+                    watch_url, name = d.get("url", ""), d.get("name", "")
+                except Exception:
+                    watch_url = ""
+                if watch_url:
+                    break
+        if not watch_url:
+            ws.close()
+            return (f"🎬 Encontré «{query}» pero no pude arrancar la reproducción. "
+                    f"Dale play vos en la ventana.")
+        _navigate(ws, watch_url, 40)        # → Netflix auto-reproduce el episodio
         ws.close()
         donde = ""
         if screen:
             scr = _move_to_screen(tid, screen)
             if scr:
                 donde = f" en **{scr}** (pantalla completa)"
-        return f"🎬 Reproduciendo **{query}** en Netflix{donde}."
+        shown = name or query           # nombre real confirmado del título
+        return f"🎬 Reproduciendo **{shown}** en Netflix{donde}."
     except Exception as e:
         try:
             ws.close()
