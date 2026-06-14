@@ -105,6 +105,15 @@ class GenesisProcessingMixin:
             return result
         if any(m in result for m in self._NO_REPHRASE):
             return result
+        # Heurística genérica: los resultados de herramientas casi siempre
+        # empiezan con un emoji/símbolo y/o traen formato (negritas, viñetas,
+        # saltos de línea). No reformularlos — es lento (LLM) y arriesga alterar
+        # datos. Solo se reformula texto plano y conversacional.
+        _rs = result.lstrip()
+        if _rs and ord(_rs[0]) > 0x2190:  # primer carácter es símbolo/emoji
+            return result
+        if ("**" in result) or ("\n" in result) or ("•" in result) or ("▸" in result):
+            return result
         try:
             sys_p = (
                 "Sos Genesis hablando en argentino informal (vos), relajado y "
