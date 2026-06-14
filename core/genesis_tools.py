@@ -1648,7 +1648,10 @@ class GenesisToolsMixin:
                         "pon ", "poner ", "ponme ", "poneme ", "ponémela ", "pasame ",
                         "escuchar ", "escucha ", "escuchá ", "quiero escuchar ",
                         "quiero oir ", "play "]
-        if any(inp.startswith(v) or f" {v}" in inp for v in _music_verbs):
+        if any(inp.startswith(v) or f" {v}" in inp for v in _music_verbs) and \
+           not any(w in inp for w in ("pomodoro", "temporizador", "cronometro",
+                                      "cronómetro", "recordatorio", "despertador",
+                                      "alarma")):
             import re as _mre, urllib.parse as _up, webbrowser as _wb
             q = inp
             for v in _music_verbs:
@@ -1896,6 +1899,44 @@ class GenesisToolsMixin:
         """Calculadora: operaciones aritméticas.
         Extraído de _auto_detect_tool (Fase 2 — descomposición del god-method)."""
         import re as _re
+        # --- Conversor de unidades (distancia, peso, temperatura) ---
+        _cv = _re.search(r"([\d]+[.,]?\d*)\s*([a-záéíóú°]+)\s+(?:a|en|son|equivale[ns]?)"
+                         r"\s+([a-záéíóú°]+)", inp)
+        if _cv and ("convert" in inp or "cuant" in inp or " a " in inp):
+            _U = {'km': 1000.0, 'kilometro': 1000.0, 'kilometros': 1000.0,
+                  'kilómetro': 1000.0, 'kilómetros': 1000.0, 'm': 1.0, 'metro': 1.0,
+                  'metros': 1.0, 'cm': 0.01, 'centimetro': 0.01, 'centimetros': 0.01,
+                  'centímetro': 0.01, 'centímetros': 0.01, 'mm': 0.001,
+                  'milla': 1609.34, 'millas': 1609.34, 'mi': 1609.34, 'pie': 0.3048,
+                  'pies': 0.3048, 'ft': 0.3048, 'pulgada': 0.0254, 'pulgadas': 0.0254,
+                  'in': 0.0254, 'yarda': 0.9144, 'yardas': 0.9144}
+            _W = {'kg': 1000.0, 'kilo': 1000.0, 'kilos': 1000.0, 'kilogramo': 1000.0,
+                  'kilogramos': 1000.0, 'g': 1.0, 'gramo': 1.0, 'gramos': 1.0,
+                  'mg': 0.001, 'libra': 453.592, 'libras': 453.592, 'lb': 453.592,
+                  'onza': 28.3495, 'onzas': 28.3495, 'oz': 28.3495,
+                  'tonelada': 1e6, 'toneladas': 1e6}
+            _T = {'c', 'celsius', 'f', 'fahrenheit', 'k', 'kelvin'}
+
+            def _fmt(x):
+                x = round(x, 4)
+                return str(int(x)) if x == int(x) else str(x)
+            try:
+                _v = float(_cv.group(1).replace(",", "."))
+                _fu = _cv.group(2).strip("°"); _tu = _cv.group(3).strip("°")
+                if _fu in _T and _tu in _T:
+                    _c = (_v if _fu[0] == 'c' else (_v - 32) * 5 / 9 if _fu[0] == 'f'
+                          else _v - 273.15)
+                    _o = (_c if _tu[0] == 'c' else _c * 9 / 5 + 32 if _tu[0] == 'f'
+                          else _c + 273.15)
+                    return (f"🔄 {_fmt(_v)}°{_fu[0].upper()} = "
+                            f"**{_fmt(round(_o, 2))}°{_tu[0].upper()}**")
+                for _tab in (_U, _W):
+                    if _fu in _tab and _tu in _tab:
+                        return (f"🔄 {_fmt(_v)} {_cv.group(2)} = "
+                                f"**{_fmt(_v * _tab[_fu] / _tab[_tu])} {_cv.group(3)}**")
+            except Exception:
+                pass
+
         # --- Calculadora ---
         # Detectar expresiones matematicas simples
         math_keywords = ["cuanto es", "cuánto es", "calcula", "calculame", "calculá",
@@ -3805,12 +3846,11 @@ class GenesisToolsMixin:
             return unit_converter.list_categories()
 
         # --- Pomodoro Timer ---
-        pomodoro_start_kw = ["inicia pomodoro", "iniciar pomodoro", "empieza pomodoro",
-                             "empezar pomodoro", "arranca pomodoro",
-                             "pomodoro start", "comenzar pomodoro",
-                             "pon pomodoro", "pon un pomodoro",
-                             "activa pomodoro", "start pomodoro"]
-        if any(k in inp for k in pomodoro_start_kw):
+        # Inicio: cualquier mención de "pomodoro" con intención de arrancar
+        # (poné/iniciá/arrancá/empezá… voseo incluido), EXCEPTO pausar/reanudar/parar.
+        if "pomodoro" in inp and not any(k in inp for k in (
+                "pausa", "pausá", "pause", "para el", "pará el", "reanud", "contin",
+                "resume", "deten", "frena", "stop", "cancel", "termin", "cerra")):
             from core.pomodoro import pomodoro
             # Detectar tiempo personalizado
             import re as _re2
