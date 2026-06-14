@@ -942,7 +942,20 @@ function dockRun(k,i){var c=DOCK[k].items[i].c;closeModal();if(c==='__cam__'){to
 function nucleo(){showAnswer('Modo núcleo activado, señor. A su servicio.');speak('Modo núcleo activado, señor. A su servicio.');}
 /* barra de stats arriba a la derecha */
 function pollStats(){fetch('/api/system').then(r=>r.json()).then(function(d){var s=$('stats');if(s)s.textContent='GPU '+Math.round(d.gpu_percent||0)+'% · CPU '+Math.round(d.cpu_percent||0)+'%';}).catch(function(){});}
-setInterval(pollStats,3000);pollStats();
+// --- Feed de voz (manos libres): mostrar en la cabina lo que pedís por voz ---
+var _vseq=0,_vinit=false;
+function pollVoice(){fetch('/api/voice/feed?since='+_vseq).then(function(r){return r.json();}).then(function(d){
+ if(d.seq===undefined)return;
+ if(!_vinit){_vinit=true;_vseq=Math.max(0,d.seq-1);} // al cargar, mostrar solo el último
+ (d.events||[]).forEach(function(e){_vseq=e.seq;
+  var t=(e.response||'').replace(/\[\[[^\]]*\]\]/g,'').trim();
+  setState('proc');
+  showAnswer('<div style="color:#4d8a76;margin-bottom:6px"><i class="ti ti-microphone"></i> '+esc(e.request)+'</div>'+md(t));
+  setTimeout(function(){setState('calm');},700);
+ });
+ if(d.seq>_vseq)_vseq=d.seq;
+}).catch(function(){});}
+setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
 </script></body></html>"""
 
 
@@ -1062,20 +1075,7 @@ function pollHud(){fetch('/api/hud').then(r=>r.json()).then(function(d){
 var flt='ALL';
 function setFlt(f){flt=f;document.querySelectorAll('.flt').forEach(function(e){e.classList.toggle('on',e.dataset.f===f);});drawLog();}
 function drawLog(){var rows=allLog.filter(function(x){return flt==='ALL'||x.cat===flt;});if(!rows.length){$('log').innerHTML='<div style="color:#3f5b6a">sin eventos</div>';return;}var col={CORE:'var(--g)',SYS:'#7fa3b4',ALERTA:'#ff5d5d'};$('log').innerHTML=rows.map(function(x){return '<div style="display:flex;gap:8px;border-left:2px solid '+(col[x.cat]||'#5a7d8c')+';padding:3px 8px;background:rgba(120,160,180,.03)"><span style="color:'+(col[x.cat]||'#5a7d8c')+';font-size:9px;min-width:46px">'+x.cat+'</span><span style="color:#9fb4c4;font-size:10px">'+(x.act+' '+x.det).slice(0,60)+'</span></div>';}).join('');}
-// --- Feed de voz (manos libres): mostrar en pantalla lo que se pide por voz ---
-var _vseq=0,_vinit=false;
-function pollVoice(){fetch('/api/voice/feed?since='+_vseq).then(function(r){return r.json();}).then(function(d){
- if(d.seq===undefined)return;
- if(!_vinit){_vseq=d.seq;_vinit=true;return;} // al cargar, no repetir historial viejo
- (d.events||[]).forEach(function(e){_vseq=e.seq;
-  var t=(e.response||'').replace(/\[\[[^\]]*\]\]/g,'').trim();
-  setState('proc');
-  showAnswer('<div style="color:#4d8a76;margin-bottom:6px"><i class="ti ti-microphone"></i> '+esc(e.request)+'</div>'+md(t));
-  setTimeout(function(){setState('calm');},600);
- });
- if(d.seq>_vseq)_vseq=d.seq;
-}).catch(function(){});}
-pollSys();pollHud();pollAgents();pollVoice();setInterval(pollSys,4000);setInterval(pollHud,5000);setInterval(pollAgents,6000);setInterval(pollVoice,1500);
+pollSys();pollHud();pollAgents();setInterval(pollSys,4000);setInterval(pollHud,5000);setInterval(pollAgents,6000);
 </script></body></html>"""
 
 
