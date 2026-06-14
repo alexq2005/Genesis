@@ -1378,6 +1378,14 @@ class GenesisToolsMixin:
                 return _ao.list_text()
             return _ao.set_output(inp)
 
+        # === SEGURIDAD DEL SISTEMA (Defender/Firewall/UAC/updates) ===
+        if _re.search(r"\bseguridad\b", inp) and _re.search(
+                r"\b(sistema|pc|computadora|compu|equipo|defender|firewall|"
+                r"antivirus|revis\w*|chequ\w*|verific\w*|estado|escane\w*|"
+                r"analiz\w*|audit\w*)\b", inp):
+            from core import security_check as _sec
+            return _sec.check()
+
         # === CHROMECAST / CAST a la TV ===
         _is_cast = bool(_re.search(r"\b(chromecast|chrome\s*cast|caste\w*|transmit\w*|cast|"
                                    r"tv|tele|televisi[óo]n|pantalla\s+grande|dormitorio)\b", inp))
