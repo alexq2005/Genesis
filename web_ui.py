@@ -948,22 +948,29 @@ var PCV=$('plasma'),GL=null,GPROG=null,GU={};
   vec2 uv=(gl_FragCoord.xy-0.5*uRes)/(0.5*uRes.y);
   float r=length(uv),t=uTime,R=0.6*(0.96+uAmp*0.12);
   vec3 col=vec3(0.0);float al=0.0;mat3 rot=rotY(t*0.13);
+  vec3 bc=vec3(0.16,0.5,0.6);
   if(r<R){
    float zz=sqrt(max(0.0,R*R-dot(uv,uv)));
    vec3 n=normalize(vec3(uv,zz));vec3 sp=rot*n;
    float surf=fbm(sp*3.2+vec3(0.,0.,t*0.16))+0.5*fbm(sp*7.5+vec3(t*0.22,0.,0.));
-   surf=clamp(surf*0.7+0.16,0.0,1.0);
+   float cells=fbm(sp*1.5+vec3(t*0.04,0.,t*0.03));            // celdas de convección
+   surf=clamp(surf*0.7+0.16,0.0,1.0);surf*=mix(0.66,1.2,smoothstep(0.33,0.67,cells));surf=clamp(surf,0.0,1.0);
    float limb=pow(clamp(zz/R,0.0,1.0),0.32);
    vec3 cool=vec3(0.015,0.08,0.11),mid=vec3(0.05,0.26,0.34),hot=vec3(0.2,0.52,0.62);
    vec3 sc=mix(cool,mid,smoothstep(0.1,0.55,surf));sc=mix(sc,hot,smoothstep(0.55,0.95,surf));
-   col=sc*(0.4+0.55*surf)*limb+hot*pow(surf,3.0)*0.3;al=1.0;}
+   col=sc*(0.4+0.55*surf)*limb+hot*pow(surf,3.0)*0.32;al=1.0;}
   float edge=smoothstep(R*2.6,R*0.95,r);float ang=atan(uv.y,uv.x);
   float fil=fbm(vec3(cos(ang)*3.0,sin(ang)*3.0,r*7.0-t*0.55))*0.6+fbm(vec3(ang*5.0,r*4.0,t*0.4))*0.4;
   float corona=pow(edge,1.7)*(0.22+0.7*fil)*(1.0+uAmp*0.5);
   if(r>=R){corona*=smoothstep(R*2.6,R,r);}
   col+=vec3(0.12,0.42,0.52)*corona;al=max(al,clamp(corona*1.1,0.0,0.85));
-  float glow=smoothstep(R*2.2,R*0.5,r)*0.06*(1.0+uAmp);
-  col+=vec3(0.1,0.36,0.46)*glow;al=max(al,glow);
+  // BLOOM atmosférico (capas de glow renderizadas, no CSS)
+  float b1=smoothstep(R*1.5,R*0.2,r),b2=smoothstep(R*3.4,R*0.4,r);
+  float bloom=(b1*b1*0.2+b2*b2*0.13)*(1.0+uAmp*0.9);
+  col+=bc*bloom;al=max(al,clamp(bloom,0.0,0.88));
+  // ONDA DE VOZ: anillo que se expande del núcleo al hablar
+  float rr=R*(1.14+uAmp*0.55);float ring=smoothstep(0.07,0.0,abs(r-rr))*uAmp;
+  col+=vec3(0.45,0.85,1.0)*ring*0.6;al=max(al,ring*0.7);
   col=col/(col+0.7);col=pow(col,vec3(1.05));
   gl_FragColor=vec4(col,clamp(al,0.0,1.0));}`;
  function sh(ty,src){var s=GL.createShader(ty);GL.shaderSource(s,src);GL.compileShader(s);if(!GL.getShaderParameter(s,GL.COMPILE_STATUS))console.warn('GL',GL.getShaderInfoLog(s));return s;}
