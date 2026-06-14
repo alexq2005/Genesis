@@ -1496,8 +1496,12 @@ class GenesisToolsMixin:
             return _r
 
         # ABRIR EN OTRA PANTALLA (multi-monitor): "poné netflix en la segunda pantalla"
-        if _re.search(r"\b(segunda|2da|otra|secundaria|primera|1ra|tercera|3ra)\s+pantalla\b", inp) \
-                or _re.search(r"\b(pantalla|monitor)\s*([123])\b", inp):
+        # NO si es un comando de MOVER ventana existente (mové/pasá/llevá…) → eso lo
+        # maneja move_to_screen más abajo.
+        if (_re.search(r"\b(segunda|2da|otra|secundaria|primera|1ra|tercera|3ra)\s+pantalla\b", inp)
+                or _re.search(r"\b(pantalla|monitor)\s*([123])\b", inp)) \
+                and not _re.search(r"\b(mov[ée]r?|move|pas[áa]r?|llev[áa]r?|mand[áa]r?|"
+                                   r"sac[áa]r?|tir[áa]r?)\b", inp):
             scr = 2
             _mn = _re.search(r"\b(?:pantalla|monitor)\s*([123])\b", inp)
             if _mn:
@@ -3341,6 +3345,33 @@ class GenesisToolsMixin:
             except Exception as _e:
                 return f"👁️ No pude analizar la pantalla: {str(_e)[:120]}"
 
+        # --- Mover ventana/película a otra pantalla (multi-monitor) ---
+        # ALTA PRIORIDAD: antes de file-ops ("mové X a Y") y del abrir-en-pantalla.
+        # Específico: solo dispara con verbo de mover + contexto de pantalla/monitor.
+        if (_re.search(r"\b(mov[ée]r?|move|pas[áa]r?|llev[áa]r?|mand[áa]r?|sac[áa]r?|"
+                       r"tir[áa]r?)\b", inp)
+                and _re.search(r"\b(?:segunda|otra|secundaria)\s+(?:pantalla|monitor)\b"
+                               r"|\b(?:pantalla|monitor)\s*(?:2|dos|secundari\w*|3|tres)\b",
+                               inp)):
+            from core.window_manager import window_manager
+            _scr = 2
+            _ms = _re.search(r"(?:pantalla|monitor)\s*(\d)", inp)
+            if _ms:
+                _scr = int(_ms.group(1))
+            _wn = _re.search(
+                r"(?:mov[ée]r?|move|pas[áa]r?|llev[áa]r?|mand[áa]r?|sac[áa]r?|tir[áa]r?)\s+"
+                r"(?:la\s+ventana\s+de\s+|la\s+ventana\s+|la\s+|el\s+|lo\s+)?"
+                r"(.+?)\s+(?:a|en|hacia|para)\s+(?:la\s+)?"
+                r"(?:segunda|otra|secundaria|pantalla|monitor)", inp)
+            _name = _wn.group(1).strip() if _wn else None
+            if _name in (None, "esta", "esto", "eso", "ventana", "esta ventana",
+                         "la pelicula", "la película", "la peli", "pelicula",
+                         "película", "peli", "el video", "video", "la serie", "serie",
+                         "lo que veo", "lo que estoy viendo", "esta pestaña",
+                         "la pestaña", "pestaña", "todo", "la", "el", "lo"):
+                _name = None
+            return window_manager.move_to_screen(_scr, _name)
+
         # --- RUTINAS JARVIS (todas las versiones de Iron Man) — alta prioridad ---
         try:
             from core import jarvis_routines as _jr
@@ -3949,28 +3980,6 @@ class GenesisToolsMixin:
         # =====================================================================
         # PHASE 21 — JARVIS Intelligence
         # =====================================================================
-
-        # --- Mover ventana/película a otra pantalla (multi-monitor) ---
-        if (_re.search(r"\b(mov[ée]r?|pas[áa]r?|llev[áa]r?|mand[áa]r?|sac[áa]r?|tir[áa]r?)\b", inp)
-                and _re.search(r"\b(?:segunda|otra|secundaria)\s+(?:pantalla|monitor)\b"
-                               r"|\b(?:pantalla|monitor)\s*(?:2|dos|secundari\w*)\b", inp)):
-            from core.window_manager import window_manager
-            _scr = 2
-            _ms = _re.search(r"(?:pantalla|monitor)\s*(\d)", inp)
-            if _ms:
-                _scr = int(_ms.group(1))
-            _wn = _re.search(
-                r"(?:mov[ée]r?|pas[áa]r?|llev[áa]r?|mand[áa]r?|sac[áa]r?|tir[áa]r?)\s+"
-                r"(?:la\s+ventana\s+de\s+|la\s+ventana\s+|la\s+|el\s+|lo\s+)?"
-                r"(.+?)\s+(?:a|en|hacia|para)\s+(?:la\s+)?"
-                r"(?:segunda|otra|secundaria|pantalla|monitor)", inp)
-            _name = _wn.group(1).strip() if _wn else None
-            if _name in (None, "esta", "esto", "eso", "ventana", "esta ventana",
-                         "la pelicula", "la película", "la peli", "el video", "video",
-                         "lo que veo", "lo que estoy viendo", "esta pestaña",
-                         "la pestaña", "pestaña", "todo", "la"):
-                _name = None
-            return window_manager.move_to_screen(_scr, _name)
 
         # --- Window Manager ---
         window_action_kw = ["pon ", "snap ", "mueve la ventana"]
