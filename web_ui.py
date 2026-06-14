@@ -1095,7 +1095,7 @@ setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
 /* ===== CAMPO DE ESTRELLAS 3D (WebGL GL_POINTS): miles de puntos con glow real,
    profundidad/parallax, rotación diferencial alrededor del núcleo, reactivo a la voz ===== */
 (function(){var sc=$('stars');if(!sc)return;
- var CONC=1.3,RMIN=0.32,N=24000,DPR=Math.min(2,window.devicePixelRatio||1);  // RMIN = hueco alrededor del núcleo
+ var N=24000,DPR=Math.min(2,window.devicePixelRatio||1);
  var gl=null,prog=null,U={},W=0,H=0,cx=0,cy=0,maxR=0;
  try{gl=sc.getContext('webgl',{alpha:true,premultipliedAlpha:false,antialias:true})||sc.getContext('experimental-webgl');}catch(e){gl=null;}
  if(!gl)return;
@@ -1103,14 +1103,17 @@ setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
   +'uniform vec2 uCenter;uniform vec2 uScale;uniform float uTime;uniform float uAmp;uniform float uMaxR;uniform float uPS;'
   +'varying float vB;varying float vC;'
   +'void main(){float depth=aData.x;'
-  +'float ang=aPolar.x+uTime*(0.015+depth*0.045);'
-  +'float rad=aPolar.y*uMaxR*(1.0+uAmp*0.18*(0.4+depth));'
+  +'float speed=0.035+depth*0.11;'                                  // perspectiva: las cercanas se alejan más rápido
+  +'float rad01=fract(aPolar.y+uTime*speed*(1.0+uAmp*1.6));'        // estrella que SE ALEJA del núcleo (0->1, respawn)
+  +'float ang=aPolar.x+uTime*0.02;'                                 // leve giro
+  +'float rad=rad01*uMaxR;'
   +'vec2 off=vec2(cos(ang)*uScale.x,sin(ang)*uScale.y)*rad;'
   +'gl_Position=vec4(uCenter+off,0.0,1.0);'
-  +'float tw=0.6+0.4*sin(uTime*1.4+aData.z);'
-  +'float fl=pow(0.5+0.5*sin(uTime*0.55+aData.z*5.0),42.0);'   // destello esporádico por estrella
-  +'vB=aData.y*tw*(0.55+0.45*depth)*(1.0+uAmp*1.7)+fl*2.4;vC=aCyan;'
-  +'gl_PointSize=(1.4+depth*3.4+fl*4.0)*uPS*(1.0+uAmp*0.9);}';
+  +'float fade=smoothstep(0.0,0.07,rad01)*smoothstep(1.0,0.62,rad01);'  // oculta el respawn (fade in centro / out borde)
+  +'float tw=0.7+0.3*sin(uTime*1.4+aData.z);'
+  +'float fl=pow(0.5+0.5*sin(uTime*0.55+aData.z*5.0),42.0);'        // destello esporádico por estrella
+  +'vB=(aData.y*tw*(0.6+0.5*depth)*(1.0+uAmp*1.5)+fl*2.4)*fade;vC=aCyan;'
+  +'gl_PointSize=(0.9+rad01*3.2+depth*1.4+fl*4.0)*uPS*(1.0+uAmp*0.7);}';   // crecen al alejarse
  var FS='precision mediump float;varying float vB;varying float vC;'
   +'void main(){vec2 d=gl_PointCoord-0.5;float r=length(d);'
   +'float c=smoothstep(0.5,0.0,r);float a=(0.35*c+0.65*c*c)*vB*1.5;'
@@ -1120,7 +1123,7 @@ setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
  prog=gl.createProgram();gl.attachShader(prog,sh(gl.VERTEX_SHADER,VS));gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,FS));gl.linkProgram(prog);gl.useProgram(prog);
  var data=new Float32Array(N*6);
  for(var i=0;i<N;i++){var o=i*6;
-  data[o]=Math.random()*6.2832;data[o+1]=RMIN+(1.0-RMIN)*Math.pow(Math.random(),CONC);  // ang, radio (con hueco)
+  data[o]=Math.random()*6.2832;data[o+1]=Math.random();  // ang, fase del flujo de salida (0..1)
   data[o+2]=Math.random();data[o+3]=0.2+Math.random()*0.8;              // depth, brillo
   data[o+4]=Math.random()*6.2832;data[o+5]=Math.random()<0.34?1.0:0.0;} // fase, cian
  var buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
