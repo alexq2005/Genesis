@@ -13,6 +13,7 @@ La PRIMERA vez hay que loguearse 1 sola vez en esa ventana (perfil propio de
 Genesis, separado de tu Chrome). Después reproduce solo, a pedido del usuario.
 """
 import os
+import re
 import json
 import time
 import subprocess
@@ -95,6 +96,20 @@ def _navigate(ws, url, _id):
         return True
     except Exception:
         return False
+
+
+def _wait_url(ws, must_contain, timeout=8.0):
+    """Espera hasta que location.href contenga `must_contain` (confirma que la
+    navegación SPA/real terminó y no leemos un DOM viejo). True si llegó."""
+    end = time.time() + timeout
+    _id = 700
+    while time.time() < end:
+        href = _eval(ws, "location.href", _id)
+        _id += 1
+        if must_contain in (href or ""):
+            return True
+        time.sleep(0.5)
+    return False
 
 
 def _launch(url):
@@ -185,19 +200,27 @@ def _move_to_screen(target_id, screen):
         return None
 
 
-# JS: en la página de RESULTADOS, devuelve el ID del título del primer resultado.
-# Netflix marca cada resultado con suggestionId=Video:<ID> en orden de ranking
-# (el 1ro = mejor match). Hay que tomar ESTE y NO un /watch/ suelto de 'Seguir
-# viendo' que aparece en la misma página (eso reproducía el título equivocado).
-_FIND_TITLE_ID = """
+# JS: en la página de RESULTADOS, devuelve [{sug,name}] de cada resultado en orden
+# de ranking. `sug` = "Video:<ID>" o "Collection:<ID>"; `name` = título visible
+# (.fallback-text). Python elige por COINCIDENCIA DE NOMBRE con lo pedido — NO el
+# #1 a ciegas (eso reproducía "Los Vikingos" cuando se pidió "Vikingos").
+_FIND_RESULTS = """
 (function(){
-  var s = document.querySelector('a[href*="suggestionId=Video"]');
-  if(s){var m=(s.getAttribute('href')||'').match(/Video(?:%3A|:)(\\d+)/);
-        if(m){return m[1];}}
-  var t = document.querySelector('a[href*="/title/"]');
-  if(t){var m2=(t.getAttribute('href')||'').match(/\\/title\\/(\\d+)/);
-        if(m2){return m2[1];}}
-  return '';
+  var out=[], seen={};
+  var as=document.querySelectorAll('a[href*="suggestionId="]');
+  for(var i=0;i<as.length;i++){
+    var a=as[i], h=a.getAttribute('href')||'';
+    var m=h.match(/suggestionId=([^&]+)/);
+    if(!m){continue;}
+    var sug=decodeURIComponent(m[1]);
+    var fb=a.querySelector('.fallback-text, p, .title');
+    var nm=(fb?fb.textContent:a.textContent||'').trim();
+    if(!nm || seen[sug]){continue;}
+    seen[sug]=1;
+    out.push({sug:sug, name:nm.slice(0,80)});
+    if(out.length>=15){break;}
+  }
+  return JSON.stringify(out);
 })()
 """
 
@@ -220,6 +243,39 @@ _IS_LOGIN = """
 (function(){var u=location.href;return (u.indexOf('/login')>=0||
  u.indexOf('/signup')>=0||document.querySelector('input[name=\"userLoginId\"]')!=null)?'1':'';})()
 """
+
+
+def _norm_title(s: str) -> str:
+    """Normaliza un título para comparar: minúsculas, sin acentos, sin
+    puntuación ni espacios extra."""
+    s = (s or "").strip().lower()
+    acc = {"á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u", "ü": "u", "ñ": "n"}
+    s = "".join(acc.get(c, c) for c in s)
+    s = re.sub(r"[^\w\s]", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _choose_result(results, query):
+    """Elige el resultado cuyo NOMBRE coincide EXACTO con lo pedido.
+    Devuelve (result|None, exact:bool). Sólo auto-reproduce con match exacto:
+    si se pide «vikingos» y el catálogo tiene «Los Vikingos» (otro título),
+    NO se reproduce a ciegas — se devuelve None para preguntar al usuario.
+    Excepción razonable: si hay UN ÚNICO resultado Video y su nombre EMPIEZA con
+    lo pedido (ej. «stranger» → «Stranger Things»), se acepta."""
+    q = _norm_title(query)
+    if not q:
+        return None, False
+    vids = [r for r in results if r.get("sug", "").startswith("Video:")]
+    # 1) match exacto de nombre (sobre cualquier tipo, pero preferir Video)
+    for pool in (vids, results):
+        for r in pool:
+            if _norm_title(r.get("name", "")) == q:
+                return r, True
+    # 2) único Video cuyo nombre EMPIEZA con lo pedido → aceptable
+    starts = [r for r in vids if _norm_title(r.get("name", "")).startswith(q + " ")]
+    if len(starts) == 1:
+        return starts[0], False
+    return None, False
 
 
 # --------------------------------------------------------------- API ---
@@ -443,20 +499,48 @@ def _play_chrome(query: str, profile: str = None, screen: int = None) -> str:
         if profile:
             _navigate(ws, f"{_BASE}/SwitchProfile?tprofileName=" + up.quote(profile.title()), 11)
             time.sleep(2.5)
-            _navigate(ws, search_url, 12)
-        # SALTO 1: esperar resultados y sacar el ID del 1er título (poll ~10s)
-        title_id = ""
+        # navegación FRESCA a la búsqueda + esperar a que la URL llegue (evita leer
+        # resultados viejos de una búsqueda anterior que aún están en el DOM)
+        _navigate(ws, search_url, 12)
+        _wait_url(ws, "/search", 8)
+        time.sleep(1.2)
+        # SALTO 1: esperar resultados y ELEGIR POR NOMBRE (no el #1 a ciegas)
+        results = []
         for i in range(10):
             time.sleep(1.0)
-            title_id = _eval(ws, _FIND_TITLE_ID, 20 + i)
-            if title_id:
-                break
+            raw = _eval(ws, _FIND_RESULTS, 20 + i)
+            if raw:
+                try:
+                    results = json.loads(raw)
+                except Exception:
+                    results = []
+                if results:
+                    break
+        if not results:
+            ws.close()
+            return (f"🎬 Abrí Netflix buscando «{query}» pero no encontré resultados. "
+                    f"¿Está en el catálogo? Dale play vos en la ventana.")
+        chosen, exact = _choose_result(results, query)
+        if not chosen:
+            # sin match claro → no reproducir cualquier cosa; ofrecer opciones
+            ws.close()
+            opts = [r["name"] for r in results
+                    if r.get("sug", "").startswith("Video:")][:5]
+            lista = "\n".join(f"  • {o}" for o in opts)
+            return (f"🎬 No encontré un título llamado exactamente «{query}» en el "
+                    f"catálogo. Lo más parecido:\n{lista}\nDecime cuál ponés "
+                    f"(ej: «reproducí {opts[0]} en netflix»).")
+        m = re.search(r"(?:Video|Collection):(\d+)", chosen.get("sug", ""))
+        title_id = m.group(1) if m else ""
         if not title_id:
             ws.close()
-            return (f"🎬 Abrí Netflix buscando «{query}» pero no encontré un resultado. "
-                    f"¿Está en el catálogo? Dale play vos en la ventana.")
+            return f"🎬 Encontré «{chosen.get('name', query)}» pero no pude abrirlo."
         # SALTO 2: ir a la página del título y sacar el link de play (episodio real)
         _navigate(ws, f"{_BASE}/title/{title_id}", 30)
+        # Netflix redirige al ID canónico (/title/60022621 → /title/80170690), así
+        # que esperamos a CUALQUIER /title/, no al id puntual.
+        _wait_url(ws, "/title/", 8)
+        time.sleep(1.2)
         watch_url, name = "", ""
         for i in range(10):
             time.sleep(1.0)
@@ -467,13 +551,17 @@ def _play_chrome(query: str, profile: str = None, screen: int = None) -> str:
                     watch_url, name = d.get("url", ""), d.get("name", "")
                 except Exception:
                     watch_url = ""
-                if watch_url:
+                # rechazar páginas 'home' (si redirigió, name = 'Inicio'/'Home')
+                if watch_url and name.strip().lower() not in (
+                        "inicio", "inicio de netflix", "home", "netflix"):
                     break
+                watch_url = ""
         if not watch_url:
             ws.close()
             return (f"🎬 Encontré «{query}» pero no pude arrancar la reproducción. "
                     f"Dale play vos en la ventana.")
-        _navigate(ws, watch_url, 40)        # → Netflix auto-reproduce el episodio
+        _navigate(ws, watch_url, 45)        # → Netflix auto-reproduce el episodio
+        time.sleep(3.5)                     # dejar que el player commitee antes de cerrar
         ws.close()
         donde = ""
         if screen:
