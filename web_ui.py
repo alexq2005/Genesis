@@ -750,8 +750,8 @@ a{color:var(--g);text-decoration:none}
 .statuslbl{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(45,255,174,.25);background:rgba(7,18,16,.6);border-radius:20px;padding:5px 16px;color:var(--g);font-size:11px;letter-spacing:.2em}
 .orbwrap{position:relative;width:350px;height:350px;margin:2px 0}
 .orbwrap canvas,.orbwrap svg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:350px;height:350px}
-.orbwrap canvas{filter:drop-shadow(0 0 24px rgba(200,225,255,.5)) drop-shadow(0 0 62px rgba(160,195,255,.3));animation:orbpulse 5s ease-in-out infinite}
-@keyframes orbpulse{0%,100%{filter:drop-shadow(0 0 16px rgba(190,220,255,.3)) drop-shadow(0 0 40px rgba(150,190,255,.16))}50%{filter:drop-shadow(0 0 26px rgba(200,228,255,.46)) drop-shadow(0 0 60px rgba(160,200,255,.26))}}
+.orbwrap canvas{filter:drop-shadow(0 0 16px rgba(30,120,150,.28)) drop-shadow(0 0 44px rgba(20,90,130,.16));animation:orbpulse 6s ease-in-out infinite}
+@keyframes orbpulse{0%,100%{filter:drop-shadow(0 0 12px rgba(30,120,150,.18)) drop-shadow(0 0 32px rgba(20,90,130,.1))}50%{filter:drop-shadow(0 0 20px rgba(40,140,170,.28)) drop-shadow(0 0 46px rgba(25,100,140,.16))}}
 .bubble{max-width:540px;border:1px solid rgba(45,255,174,.2);border-radius:12px;background:rgba(7,18,16,.7);backdrop-filter:blur(6px);padding:12px 16px;font-size:14px;line-height:1.5;text-align:left;max-height:230px;overflow-y:auto}
 .dock{display:flex;gap:11px;flex-wrap:wrap;justify-content:center;margin-top:4px}
 .dockbtn{width:80px;height:74px;border:1px solid rgba(45,255,174,.3);border-radius:14px;background:rgba(7,18,16,.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;cursor:pointer;transition:all .18s;color:#9fe9c9}
@@ -954,17 +954,17 @@ var PCV=$('plasma'),GL=null,GPROG=null,GU={};
    float surf=fbm(sp*3.2+vec3(0.,0.,t*0.16))+0.5*fbm(sp*7.5+vec3(t*0.22,0.,0.));
    surf=clamp(surf*0.7+0.16,0.0,1.0);
    float limb=pow(clamp(zz/R,0.0,1.0),0.32);
-   vec3 cool=vec3(0.42,0.6,0.92),mid=vec3(0.72,0.85,1.0),hot=vec3(0.98,0.99,1.0);
+   vec3 cool=vec3(0.015,0.08,0.11),mid=vec3(0.05,0.26,0.34),hot=vec3(0.2,0.52,0.62);
    vec3 sc=mix(cool,mid,smoothstep(0.1,0.55,surf));sc=mix(sc,hot,smoothstep(0.55,0.95,surf));
-   col=sc*(0.72+0.85*surf)*limb+hot*pow(surf,3.0)*0.7;al=1.0;}
-  float edge=smoothstep(R*2.7,R*0.95,r);float ang=atan(uv.y,uv.x);
+   col=sc*(0.4+0.55*surf)*limb+hot*pow(surf,3.0)*0.3;al=1.0;}
+  float edge=smoothstep(R*2.6,R*0.95,r);float ang=atan(uv.y,uv.x);
   float fil=fbm(vec3(cos(ang)*3.0,sin(ang)*3.0,r*7.0-t*0.55))*0.6+fbm(vec3(ang*5.0,r*4.0,t*0.4))*0.4;
-  float corona=pow(edge,1.4)*(0.5+1.5*fil)*(1.0+uAmp*0.6);
-  if(r>=R){corona*=smoothstep(R*2.7,R,r);}
-  col+=vec3(0.84,0.92,1.0)*corona;al=max(al,clamp(corona*1.3,0.0,1.0));
-  float glow=smoothstep(R*2.3,R*0.5,r)*0.12*(1.0+uAmp);
-  col+=vec3(0.62,0.78,1.0)*glow;al=max(al,glow);
-  col=col/(col+0.45);col=pow(col,vec3(0.82));
+  float corona=pow(edge,1.7)*(0.22+0.7*fil)*(1.0+uAmp*0.5);
+  if(r>=R){corona*=smoothstep(R*2.6,R,r);}
+  col+=vec3(0.12,0.42,0.52)*corona;al=max(al,clamp(corona*1.1,0.0,0.85));
+  float glow=smoothstep(R*2.2,R*0.5,r)*0.06*(1.0+uAmp);
+  col+=vec3(0.1,0.36,0.46)*glow;al=max(al,glow);
+  col=col/(col+0.7);col=pow(col,vec3(1.05));
   gl_FragColor=vec4(col,clamp(al,0.0,1.0));}`;
  function sh(ty,src){var s=GL.createShader(ty);GL.shaderSource(s,src);GL.compileShader(s);if(!GL.getShaderParameter(s,GL.COMPILE_STATUS))console.warn('GL',GL.getShaderInfoLog(s));return s;}
  GPROG=GL.createProgram();GL.attachShader(GPROG,sh(GL.VERTEX_SHADER,VS));GL.attachShader(GPROG,sh(GL.FRAGMENT_SHADER,FS));GL.linkProgram(GPROG);GL.useProgram(GPROG);
@@ -1079,7 +1079,7 @@ setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
  function spawnFlash(){var a=Math.random()*6.2832,rad=maxR*0.92*Math.pow(Math.random(),1.4);
   flashes.push({x:cx+Math.cos(a)*rad,y:cy+Math.sin(a)*rad,t:0,dur:90+Math.random()*110,sz:4+Math.random()*9});}
  function build(){W=sc.width=sc.clientWidth;H=sc.height=sc.clientHeight;x=sc.getContext('2d');core();
-  var N=Math.round(W*H/230);if(N<2000)N=2000;if(N>4800)N=4800;   // más puntos (cian + blanco)
+  var N=Math.round(W*H/170);if(N<3000)N=3000;if(N>6800)N=6800;   // más puntos (cian + blanco)
   stars=[];for(var i=0;i<N;i++){var b=Math.random();var s={b:b,r:b>0.86?1.4:0.7,c:Math.random()<0.34?1:0,vx:(Math.random()-0.5)*2*SPEED,vy:(Math.random()-0.5)*2*SPEED,tw:Math.random()*6.2832};place(s);stars.push(s);}}
  function frame(){if(!x)return;x.clearRect(0,0,W,H);
   // reacción a la VOZ: lee pSmooth (amplitud del shader); >0.15 = baseline en reposo
