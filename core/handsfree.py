@@ -202,7 +202,11 @@ class HandsFree:
                 if i >= 0:
                     wp = i + len(w)
                     break
-            return (low[wp:] if wp >= 0 else low).strip(" ,.:;¿?¡!.")
+            cmd = low[wp:] if wp >= 0 else low
+            # Whisper agrega puntuación ("salida, flip") que rompe los regex de
+            # los handlers → la normalizo a espacios.
+            cmd = re.sub(r"[,.;:¿?¡!]+", " ", cmd)
+            return re.sub(r"\s+", " ", cmd).strip()
         except Exception:
             return ""
 
