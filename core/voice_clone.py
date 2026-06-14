@@ -119,10 +119,32 @@ def clone_say_hq(text: str, speaker_wav: str, out_path: str, language: str = "es
             length_penalty=1.0, enable_text_splitting=True)
         wav = torch.tensor(out["wav"]).unsqueeze(0)
         torchaudio.save(str(out_path), wav, 24000)
+        _postprocess(str(out_path))  # denoise + normalización de la salida
         return {"ok": True, "path": str(out_path), "time_s": round(time.time() - t, 1),
                 "method": f"xtts-hq (cond={gpt_cond_len}s, temp={temperature})"}
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
+
+
+def _postprocess(path):
+    """Limpia la salida de XTTS: quita hiss/artefactos leves y normaliza volumen.
+    Gentle a propósito (no sobre-procesar para no meter warble)."""
+    try:
+        import os
+        import subprocess
+
+        import imageio_ffmpeg
+        ff = imageio_ffmpeg.get_ffmpeg_exe()
+        tmp = str(path) + ".pp.wav"
+        subprocess.run(
+            [ff, "-y", "-i", str(path), "-af",
+             "highpass=f=60,afftdn=nf=-28,deesser,loudnorm=I=-16:TP=-1.5:LRA=11",
+             "-ar", "24000", "-ac", "1", tmp],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+        if os.path.exists(tmp) and os.path.getsize(tmp) > 1000:
+            os.replace(tmp, str(path))
+    except Exception:
+        pass
 
 
 def ref_for(name: str) -> Path:
