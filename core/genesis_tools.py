@@ -32,6 +32,25 @@ _PATH_KEYWORDS = {
 }
 
 
+def _text_payload(user_input: str):
+    """Extrae el texto a transformar de un comando de utilidades de texto.
+    Prioridad: texto entre comillas → texto tras la palabra clave → None
+    (None = usar el portapapeles). Preserva mayúsculas/minúsculas originales."""
+    import re as _re
+    m = _re.search(r'["“‘\'](.+?)["”’\']', user_input)
+    if m:
+        return m.group(1).strip()
+    m = _re.search(
+        r'(?:may[úu]sculas?|min[úu]sculas?|t[íi]tulo|base\s*64|hash|md5|sha\d*|'
+        r'palabras?|texto|caracteres)\s+(.+)$', user_input, _re.I)
+    if m:
+        t = _re.sub(r'^(de|del|el|la|los|las|en|a|:)\s+', '', m.group(1).strip(),
+                    flags=_re.I).strip().strip('"\'')
+        if len(t) >= 1 and t.lower() not in ("de texto", "del texto"):
+            return t
+    return None
+
+
 def _search_folder_everywhere(qname: str, max_hits: int = 12) -> list:
     """Busca carpetas por nombre exacto (case-insensitive) en raíces conocidas,
     con profundidad acotada y saltando dirs pesados/de sistema. Devuelve lista
@@ -3705,109 +3724,111 @@ class GenesisToolsMixin:
                                    "en mayusculas", "en mayúsculas", "pasa a mayusculas"]):
             from core.text_transformer import text_transformer
             from core.clipboard_manager import clipboard_manager
-            text = clipboard_manager._get_clipboard()
+            text = _text_payload(user_input) or clipboard_manager._get_clipboard()
             if not text:
-                return "📋 Copiá un texto al portapapeles primero."
+                return "📋 Decime el texto o copiá algo. Ej: «pasá a mayúsculas hola»"
             return text_transformer.to_upper(text)
 
         if any(k in inp for k in ["a minusculas", "a minúsculas", "convierte a minusculas",
                                    "en minusculas", "en minúsculas", "pasa a minusculas"]):
             from core.text_transformer import text_transformer
             from core.clipboard_manager import clipboard_manager
-            text = clipboard_manager._get_clipboard()
+            text = _text_payload(user_input) or clipboard_manager._get_clipboard()
             if not text:
-                return "📋 Copiá un texto al portapapeles primero."
+                return "📋 Decime el texto o copiá algo. Ej: «pasá a mayúsculas hola»"
             return text_transformer.to_lower(text)
 
         if any(k in inp for k in ["a titulo", "a título", "convierte a titulo",
                                    "formato titulo", "formato título"]):
             from core.text_transformer import text_transformer
             from core.clipboard_manager import clipboard_manager
-            text = clipboard_manager._get_clipboard()
+            text = _text_payload(user_input) or clipboard_manager._get_clipboard()
             if not text:
-                return "📋 Copiá un texto al portapapeles primero."
+                return "📋 Decime el texto o copiá algo. Ej: «pasá a mayúsculas hola»"
             return text_transformer.to_title(text)
 
         if any(k in inp for k in ["cuenta palabras", "contar palabras", "cuantas palabras",
-                                   "cuántas palabras", "estadisticas de texto",
+                                   "cuántas palabras", "conta palabras", "contá palabras",
+                                   "conta las palabras", "contá las palabras",
+                                   "palabras tiene", "palabras hay", "estadisticas de texto",
                                    "estadísticas de texto", "analiza texto"]):
             from core.text_transformer import text_transformer
             from core.clipboard_manager import clipboard_manager
-            text = clipboard_manager._get_clipboard()
+            text = _text_payload(user_input) or clipboard_manager._get_clipboard()
             if not text:
-                return "📋 Copiá un texto al portapapeles primero."
+                return "📋 Decime el texto o copiá algo. Ej: «pasá a mayúsculas hola»"
             return text_transformer.count_text(text)
 
         if any(k in inp for k in ["codifica base64", "codificar base64", "encode base64",
-                                   "a base64", "en base64"]):
+                                   "a base64", "en base64", "base64 de", "base64:"]):
             from core.text_transformer import text_transformer
             from core.clipboard_manager import clipboard_manager
-            text = clipboard_manager._get_clipboard()
+            text = _text_payload(user_input) or clipboard_manager._get_clipboard()
             if not text:
-                return "📋 Copiá un texto al portapapeles primero."
+                return "📋 Decime el texto o copiá algo. Ej: «pasá a mayúsculas hola»"
             return text_transformer.encode_base64(text)
 
         if any(k in inp for k in ["decodifica base64", "decodificar base64", "decode base64",
                                    "desde base64", "de base64"]):
             from core.text_transformer import text_transformer
             from core.clipboard_manager import clipboard_manager
-            text = clipboard_manager._get_clipboard()
+            text = _text_payload(user_input) or clipboard_manager._get_clipboard()
             if not text:
-                return "📋 Copiá un texto al portapapeles primero."
+                return "📋 Decime el texto o copiá algo. Ej: «pasá a mayúsculas hola»"
             return text_transformer.decode_base64(text)
 
         if any(k in inp for k in ["hash del texto", "hash texto", "hashear", "hash md5",
                                    "hash sha", "genera hash", "generar hash"]):
             from core.text_transformer import text_transformer
             from core.clipboard_manager import clipboard_manager
-            text = clipboard_manager._get_clipboard()
+            text = _text_payload(user_input) or clipboard_manager._get_clipboard()
             if not text:
-                return "📋 Copiá un texto al portapapeles primero."
+                return "📋 Decime el texto o copiá algo. Ej: «pasá a mayúsculas hola»"
             return text_transformer.hash_text(text)
 
         if any(k in inp for k in ["extrae emails", "extraer emails", "busca emails",
                                    "encuentra emails", "sacar emails"]):
             from core.text_transformer import text_transformer
             from core.clipboard_manager import clipboard_manager
-            text = clipboard_manager._get_clipboard()
+            text = _text_payload(user_input) or clipboard_manager._get_clipboard()
             if not text:
-                return "📋 Copiá un texto al portapapeles primero."
+                return "📋 Decime el texto o copiá algo. Ej: «pasá a mayúsculas hola»"
             return text_transformer.extract_emails(text)
 
         if any(k in inp for k in ["extrae urls", "extraer urls", "busca urls",
                                    "encuentra urls", "sacar urls", "sacar links"]):
             from core.text_transformer import text_transformer
             from core.clipboard_manager import clipboard_manager
-            text = clipboard_manager._get_clipboard()
+            text = _text_payload(user_input) or clipboard_manager._get_clipboard()
             if not text:
-                return "📋 Copiá un texto al portapapeles primero."
+                return "📋 Decime el texto o copiá algo. Ej: «pasá a mayúsculas hola»"
             return text_transformer.extract_urls(text)
 
         if any(k in inp for k in ["extrae numeros", "extraer números", "busca numeros",
                                    "encuentra numeros", "sacar numeros"]):
             from core.text_transformer import text_transformer
             from core.clipboard_manager import clipboard_manager
-            text = clipboard_manager._get_clipboard()
+            text = _text_payload(user_input) or clipboard_manager._get_clipboard()
             if not text:
-                return "📋 Copiá un texto al portapapeles primero."
+                return "📋 Decime el texto o copiá algo. Ej: «pasá a mayúsculas hola»"
             return text_transformer.extract_numbers(text)
 
         if any(k in inp for k in ["formatea json", "formatear json", "prettify json",
                                    "json bonito", "json legible"]):
             from core.text_transformer import text_transformer
             from core.clipboard_manager import clipboard_manager
-            text = clipboard_manager._get_clipboard()
+            text = _text_payload(user_input) or clipboard_manager._get_clipboard()
             if not text:
-                return "📋 Copiá un texto al portapapeles primero."
+                return "📋 Decime el texto o copiá algo. Ej: «pasá a mayúsculas hola»"
             return text_transformer.to_json_pretty(text)
 
         if any(k in inp for k in ["ordena lineas", "ordena líneas", "ordenar lineas",
                                    "ordenar líneas", "sort lines"]):
             from core.text_transformer import text_transformer
             from core.clipboard_manager import clipboard_manager
-            text = clipboard_manager._get_clipboard()
+            text = _text_payload(user_input) or clipboard_manager._get_clipboard()
             if not text:
-                return "📋 Copiá un texto al portapapeles primero."
+                return "📋 Decime el texto o copiá algo. Ej: «pasá a mayúsculas hola»"
             return text_transformer.sort_lines(text)
 
         if any(k in inp for k in ["elimina duplicados", "quitar duplicados",
@@ -3815,18 +3836,18 @@ class GenesisToolsMixin:
                                    "quita duplicados", "sin duplicados"]):
             from core.text_transformer import text_transformer
             from core.clipboard_manager import clipboard_manager
-            text = clipboard_manager._get_clipboard()
+            text = _text_payload(user_input) or clipboard_manager._get_clipboard()
             if not text:
-                return "📋 Copiá un texto al portapapeles primero."
+                return "📋 Decime el texto o copiá algo. Ej: «pasá a mayúsculas hola»"
             return text_transformer.remove_duplicates(text)
 
         if any(k in inp for k in ["invierte texto", "invertir texto", "texto invertido",
                                    "texto al reves", "texto al revés"]):
             from core.text_transformer import text_transformer
             from core.clipboard_manager import clipboard_manager
-            text = clipboard_manager._get_clipboard()
+            text = _text_payload(user_input) or clipboard_manager._get_clipboard()
             if not text:
-                return "📋 Copiá un texto al portapapeles primero."
+                return "📋 Decime el texto o copiá algo. Ej: «pasá a mayúsculas hola»"
             return text_transformer.reverse_text(text)
 
         # --- Unit Converter ---
