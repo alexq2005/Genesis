@@ -1050,7 +1050,18 @@ function pollVoice(){fetch('/api/voice/feed?since='+_vseq).then(function(r){retu
 }).catch(function(){});}
 setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
 // --- Starfield de fondo (estilo nave) ---
-(function(){var sc=$('stars');if(!sc)return;function ss(){sc.width=sc.clientWidth;sc.height=sc.clientHeight;var x=sc.getContext('2d');x.clearRect(0,0,sc.width,sc.height);for(var i=0;i<170;i++){var b=Math.random();x.fillStyle='rgba('+Math.round(120+b*135)+','+Math.round(220+b*35)+',255,'+(0.18+b*0.6).toFixed(2)+')';var r=b>0.86?1.6:0.9;x.beginPath();x.arc(Math.random()*sc.width,Math.random()*sc.height,r,0,6.2832);x.fill();}}setTimeout(ss,80);window.addEventListener('resize',ss);})();
+(function(){var sc=$('stars');if(!sc)return;var x,W,H,stars=[];
+ var SPEED=1.4;            // velocidad de deriva (px/frame) — subila para más rápido
+ function build(){W=sc.width=sc.clientWidth;H=sc.height=sc.clientHeight;x=sc.getContext('2d');
+  var N=Math.round(W*H/1500);if(N<360)N=360;if(N>820)N=820;   // cantidad ~ área (antes 170 fijo)
+  stars=[];for(var i=0;i<N;i++){var b=Math.random();stars.push({x:Math.random()*W,y:Math.random()*H,b:b,r:b>0.86?1.7:0.95,vx:(Math.random()-0.5)*2*SPEED,vy:(Math.random()-0.5)*2*SPEED,tw:Math.random()*6.2832});}}
+ function frame(){if(!x)return;x.clearRect(0,0,W,H);for(var i=0;i<stars.length;i++){var s=stars[i];
+   s.x+=s.vx;s.y+=s.vy;if(s.x<0)s.x+=W;else if(s.x>W)s.x-=W;if(s.y<0)s.y+=H;else if(s.y>H)s.y-=H;
+   s.tw+=0.07;var a=(0.18+s.b*0.55)*(0.6+0.4*Math.sin(s.tw));
+   x.fillStyle='rgba('+Math.round(150+s.b*105)+','+Math.round(225+s.b*30)+',255,'+a.toFixed(2)+')';
+   x.beginPath();x.arc(s.x,s.y,s.r,0,6.2832);x.fill();}
+  requestAnimationFrame(frame);}
+ setTimeout(function(){build();frame();},80);window.addEventListener('resize',build);})();
 // --- Onboarding (primera vez) ---
 function closeTip(){var t=$('tip');if(t)t.style.display='none';try{localStorage.setItem('gx_seen_tip','1');}catch(e){}}
 function openTip(){var t=$('tip');if(t)t.style.display='block';}
