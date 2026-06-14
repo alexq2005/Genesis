@@ -745,11 +745,19 @@ a{color:var(--g);text-decoration:none}
 .mitem:hover{background:rgba(45,255,174,.12);border-color:var(--g)}
 .corner{position:fixed;bottom:14px;z-index:6;font-size:11px;color:#5a7a70;letter-spacing:.12em;cursor:pointer}
 .corner:hover{color:var(--g)}
+/* Accesibilidad: foco visible por teclado (antes no había ninguno) */
+:focus-visible{outline:2px solid var(--g);outline-offset:3px;border-radius:8px}
+/* Onboarding: tarjeta de bienvenida (primera vez) */
+#tip{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:25;max-width:560px;width:92vw;
+ background:rgba(8,20,16,.96);border:1px solid var(--g);border-radius:12px;padding:14px 16px;color:#dff5ea;
+ font-size:13px;line-height:1.55;box-shadow:0 8px 30px rgba(0,0,0,.5),0 0 18px rgba(45,255,174,.15)}
+#tip b{color:var(--g)}
+#tip .x{float:right;cursor:pointer;color:#7fceb3;border:1px solid rgba(45,255,174,.3);border-radius:6px;padding:2px 8px;font-size:12px}
 </style></head><body><div id="core">
 <div class="scan"></div>
 
 <div class="topbar">
- <div class="brand"><span style="width:8px;height:8px;border-radius:50%;background:var(--g);box-shadow:0 0 10px var(--g);animation:blink 2s infinite"></span> JARVIS · MARK 5</div>
+ <div class="brand" onclick="openTip()" title="Cómo usar Genesis" style="cursor:help"><span style="width:8px;height:8px;border-radius:50%;background:var(--g);box-shadow:0 0 10px var(--g);animation:blink 2s infinite"></span> JARVIS · MARK 5</div>
  <div class="toprt">
   <span id="stats">GPU --% · CPU --%</span>
   <span onclick="location.href='/mission'" style="cursor:pointer;border:1px solid rgba(45,255,174,.3);border-radius:6px;padding:5px 9px;color:var(--g)">MISSION CONTROL ►</span>
@@ -800,6 +808,13 @@ a{color:var(--g);text-decoration:none}
 
 <div id="camrow" class="corner" style="left:14px" onclick="toggleCam()"><i class="ti ti-camera-off"></i> CÁMARA · APAGADA</div>
 <div class="corner" style="right:14px" onclick="openVoiceCfg()" title="Configuración de voz"><i class="ti ti-settings" style="font-size:16px"></i></div>
+<div id="tip" role="dialog" aria-label="Cómo usar Genesis" style="display:none">
+ <span class="x" role="button" tabindex="0" onclick="closeTip()" aria-label="Cerrar ayuda">Entendido ✕</span>
+ <div><b>👋 Hola, soy Genesis.</b> Podés interactuar de 3 formas:</div>
+ <div style="margin-top:6px">🎙️ <b>Hablarme</b> (manos libres): decí «<b>genesis</b>» + tu pedido — ej: «<i>genesis, noticias</i>», «<i>genesis, estado del tiempo</i>».</div>
+ <div>🔘 <b>Micrófono</b>: tocá el botón redondo y hablá.</div>
+ <div>⌨️ <b>Escribir</b>: usá el campo de abajo. El <b>⚙️ engranaje</b> configura la voz.</div>
+</div>
 <div id="modal" class="modalbg" onclick="if(event.target===this)closeModal()"></div>
 </div>
 <script>
@@ -956,6 +971,17 @@ function pollVoice(){fetch('/api/voice/feed?since='+_vseq).then(function(r){retu
  if(d.seq>_vseq)_vseq=d.seq;
 }).catch(function(){});}
 setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
+// --- Onboarding (primera vez) ---
+function closeTip(){var t=$('tip');if(t)t.style.display='none';try{localStorage.setItem('gx_seen_tip','1');}catch(e){}}
+function openTip(){var t=$('tip');if(t)t.style.display='block';}
+try{if(!localStorage.getItem('gx_seen_tip'))setTimeout(openTip,1200);}catch(e){}
+// --- Accesibilidad: controles de ícono operables por teclado + etiquetas ARIA ---
+document.querySelectorAll('.dockbtn,.corner,#micbtn,#tip .x').forEach(function(el){
+ if(!el.getAttribute('role'))el.setAttribute('role','button');
+ if(!el.hasAttribute('tabindex'))el.setAttribute('tabindex','0');
+ if(!el.getAttribute('aria-label')){var s=el.querySelector('span');var lbl=(s?s.textContent:(el.getAttribute('title')||el.textContent||'')).trim();if(lbl)el.setAttribute('aria-label',lbl);}
+ el.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();el.click();}});
+});
 </script></body></html>"""
 
 
