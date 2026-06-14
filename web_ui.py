@@ -1050,18 +1050,39 @@ function pollVoice(){fetch('/api/voice/feed?since='+_vseq).then(function(r){retu
 }).catch(function(){});}
 setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
 // --- Starfield de fondo (estilo nave) ---
-(function(){var sc=$('stars');if(!sc)return;var x,W,H,stars=[];
+(function(){var sc=$('stars');if(!sc)return;var x,W,H,cx,cy,maxR,stars=[],flashes=[];
  var SPEED=0.5;            // velocidad de deriva (px/frame) — subila para más rápido
- function build(){W=sc.width=sc.clientWidth;H=sc.height=sc.clientHeight;x=sc.getContext('2d');
-  var N=Math.round(W*H/700);if(N<600)N=600;if(N>1500)N=1500;  // más densas (menos espacio entre ellas)
-  stars=[];for(var i=0;i<N;i++){var b=Math.random();stars.push({x:Math.random()*W,y:Math.random()*H,b:b,r:b>0.86?1.4:0.7,vx:(Math.random()-0.5)*2*SPEED,vy:(Math.random()-0.5)*2*SPEED,tw:Math.random()*6.2832});}}
+ var CONC=2.0;             // concentración: + alto = más apretadas al núcleo
+ var FLASH_RATE=0.14, FLASH_MAX=18;   // frecuencia y máximo de destellos simultáneos
+ function core(){var sr=sc.getBoundingClientRect();var o=document.querySelector('.orbwrap');
+  if(o){var r=o.getBoundingClientRect();cx=r.left+r.width/2-sr.left;cy=r.top+r.height/2-sr.top;}
+  else{cx=W/2;cy=H*0.32;}                     // fallback si el orbe no está listo
+  maxR=Math.min(W,H)*0.55;}                    // radio del halo alrededor del núcleo
+ function place(s){var a=Math.random()*6.2832,rad=maxR*Math.pow(Math.random(),CONC);
+  s.x=cx+Math.cos(a)*rad;s.y=cy+Math.sin(a)*rad;}
+ function spawnFlash(){var a=Math.random()*6.2832,rad=maxR*0.92*Math.pow(Math.random(),1.4);
+  flashes.push({x:cx+Math.cos(a)*rad,y:cy+Math.sin(a)*rad,t:0,dur:34+Math.random()*56,sz:5+Math.random()*11});}
+ function build(){W=sc.width=sc.clientWidth;H=sc.height=sc.clientHeight;x=sc.getContext('2d');core();
+  var N=Math.round(W*H/700);if(N<600)N=600;if(N>1500)N=1500;
+  stars=[];for(var i=0;i<N;i++){var b=Math.random();var s={b:b,r:b>0.86?1.4:0.7,vx:(Math.random()-0.5)*2*SPEED,vy:(Math.random()-0.5)*2*SPEED,tw:Math.random()*6.2832};place(s);stars.push(s);}}
  function frame(){if(!x)return;x.clearRect(0,0,W,H);for(var i=0;i<stars.length;i++){var s=stars[i];
-   s.x+=s.vx;s.y+=s.vy;if(s.x<0)s.x+=W;else if(s.x>W)s.x-=W;if(s.y<0)s.y+=H;else if(s.y>H)s.y-=H;
+   s.x+=s.vx;s.y+=s.vy;var dx=s.x-cx,dy=s.y-cy;if(dx*dx+dy*dy>maxR*maxR)place(s);  // se aleja → vuelve cerca del núcleo
    s.tw+=0.07;var a=(0.18+s.b*0.55)*(0.6+0.4*Math.sin(s.tw));
    x.fillStyle='rgba('+Math.round(150+s.b*105)+','+Math.round(225+s.b*30)+',255,'+a.toFixed(2)+')';
    x.beginPath();x.arc(s.x,s.y,s.r,0,6.2832);x.fill();}
+  // DESTELLOS: nacen al azar alrededor del núcleo, brillan y se apagan
+  if(flashes.length<FLASH_MAX&&Math.random()<FLASH_RATE)spawnFlash();
+  x.globalCompositeOperation='lighter';
+  for(var j=flashes.length-1;j>=0;j--){var f=flashes[j];f.t++;var k=f.t/f.dur;if(k>=1){flashes.splice(j,1);continue;}
+   var br=Math.sin(k*Math.PI),R=f.sz*(0.55+k*0.9);
+   var g=x.createRadialGradient(f.x,f.y,0,f.x,f.y,R);
+   g.addColorStop(0,'rgba(225,255,248,'+(0.95*br).toFixed(2)+')');g.addColorStop(.4,'rgba(120,255,215,'+(0.5*br).toFixed(2)+')');g.addColorStop(1,'rgba(80,255,200,0)');
+   x.fillStyle=g;x.beginPath();x.arc(f.x,f.y,R,0,6.2832);x.fill();
+   x.strokeStyle='rgba(225,255,248,'+(0.7*br).toFixed(2)+')';x.lineWidth=1;x.beginPath();
+   x.moveTo(f.x-R*1.7,f.y);x.lineTo(f.x+R*1.7,f.y);x.moveTo(f.x,f.y-R*1.7);x.lineTo(f.x,f.y+R*1.7);x.stroke();}
+  x.globalCompositeOperation='source-over';
   requestAnimationFrame(frame);}
- setTimeout(function(){build();frame();},80);window.addEventListener('resize',build);})();
+ setTimeout(function(){build();frame();},140);window.addEventListener('resize',build);})();
 // --- Onboarding (primera vez) ---
 function closeTip(){var t=$('tip');if(t)t.style.display='none';try{localStorage.setItem('gx_seen_tip','1');}catch(e){}}
 function openTip(){var t=$('tip');if(t)t.style.display='block';}
