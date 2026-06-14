@@ -115,8 +115,9 @@ def clone_say_hq(text: str, speaker_wav: str, out_path: str, language: str = "es
             max_ref_length=gpt_cond_len)
         out = model.inference(
             text, language, gpt_cond_latent, speaker_embedding,
-            temperature=temperature, repetition_penalty=5.0,
-            length_penalty=1.0, enable_text_splitting=True)
+            temperature=temperature, repetition_penalty=6.0,
+            length_penalty=1.0, top_k=40, top_p=0.80,
+            enable_text_splitting=True)
         wav = torch.tensor(out["wav"]).unsqueeze(0)
         torchaudio.save(str(out_path), wav, 24000)
         _postprocess(str(out_path))  # denoise + normalización de la salida
@@ -231,7 +232,7 @@ def _edge_play(text: str, voice: str, rate: int = 0) -> bool:
         return False
 
 
-def speak_aloud(text: str, voice: str = None, temperature: float = 0.55) -> dict:
+def speak_aloud(text: str, voice: str = None, temperature: float = 0.5) -> dict:
     """Habla por los parlantes (lado servidor) con la voz CONFIGURADA (la misma
     de la cabina: clon XTTS o voz neural edge-tts, con velocidad). Si todo
     falla, cae a pyttsx3. Bloqueante."""

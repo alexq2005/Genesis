@@ -1508,7 +1508,7 @@ def api_tts_speak():
             _ref = _vc.ref_for(_name)
             _out = _os.path.join(_tf.gettempdir(),
                                  f"gx_clon_{_name}_{abs(hash(clean)) % 1000000}.wav")
-            _r = _vc.clone_say_hq(clean, str(_ref), _out, temperature=0.55)
+            _r = _vc.clone_say_hq(clean, str(_ref), _out, temperature=0.5)
             if _r.get("ok") and _os.path.exists(_out):
                 from flask import send_file
                 return send_file(_out, mimetype="audio/wav", download_name="tts.wav")
