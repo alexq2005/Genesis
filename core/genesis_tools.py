@@ -1483,9 +1483,12 @@ class GenesisToolsMixin:
                           r"fren[áa]r?|cort[áa]r?)\b", inp):
                 return _nf.app_playpause()
             # ¿mencionó un título?
+            # OJO: NO borrar el artículo suelto ("el joven sheldon" es el título).
+            # Sólo se descarta un conector "a " o "(la|el|una) película/serie".
             _pl = _re.search(r"(?:repro\w*|pon[ée]r?|mir[áa]r?|ve[ar]?|pas[áa]r?|busc[áa]r?|"
-                             r"dale?\s+play)\s+(?:a\s+|la\s+|el\s+)?"
-                             r"(?:pel[íi]cula\s+|serie\s+)?(.+?)\s+en\s+netflix", inp)
+                             r"dale?\s+play)\s+"
+                             r"(?:a\s+|(?:(?:la|el|las|los|una?)\s+)?(?:pel[íi]cula|serie)\s+)?"
+                             r"(.+?)\s+en\s+netflix", inp)
             # ¿pidió la vía MOUSE? ("con el mouse/ratón/puntero") → app de la Store
             _mouse = bool(_re.search(r"con\s+(?:el\s+)?(?:mouse|rat[oó]n|puntero)", inp))
             _qp = _pl.group(1).strip() if _pl else ""
@@ -4014,6 +4017,20 @@ class GenesisToolsMixin:
                 return "🪟 ¿Qué ventana querés maximizar? Decime el nombre de la app."
             return window_manager.maximize(target)
 
+        # ── CABINA de Genesis: esconder / mostrar por voz ─────────────────────
+        # Reflexivo ("escondete/ocultate/minimizate/desaparecé") → esconder la
+        # cabina moviéndola fuera de pantalla (NO minimizar: WebView2 vuelve en
+        # blanco). Restaurar: "Genesis aparecé / mostrate".
+        if _re.search(r'\b(escond[ée]te|esc[óo]ndete|ocult[áa]te|oc[úu]ltate|'
+                      r'minimiz[áa]te|minimizate|desaparec[ée]|hac[ée]te\s+invisible)\b',
+                      inp):
+            from core import cabin_window
+            return cabin_window.hide()
+        if _re.search(r'\b(mostr[áa]te|most[ée]rate|aparec[ée]te?|aparece|'
+                      r'volv[ée]\s+a\s+aparecer|des-?escond[ée]te|restaur[áa]te)\b', inp):
+            from core import cabin_window
+            return cabin_window.show()
+
         minimize_kw = ["minimiza ", "minimizar ", "minimizá ", "minimizá ", "minimices "]
         if any(k in inp for k in minimize_kw) or _re.search(r'\bminimi\w*\b', inp):
             from core.window_manager import window_manager
@@ -4026,7 +4043,11 @@ class GenesisToolsMixin:
                           "puedes ", "me ", "che "]:
                 target = target.replace(noise, "")
             target = _re.sub(r'\bminimi\w+\s*', '', target).strip()
-            if not target or target in ("todo", "todas", "todas las ventanas", "all"):
+            # "minimiza" a secas (o "minimiza la cabina/genesis") → esconder la cabina
+            if not target or target in ("cabina", "genesis", "vos", "te"):
+                from core import cabin_window
+                return cabin_window.hide()
+            if target in ("todo", "todas", "todas las ventanas", "all"):
                 return window_manager.minimize_all()
             return window_manager.minimize(target)
 
