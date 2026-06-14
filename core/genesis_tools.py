@@ -3950,6 +3950,28 @@ class GenesisToolsMixin:
         # PHASE 21 — JARVIS Intelligence
         # =====================================================================
 
+        # --- Mover ventana/película a otra pantalla (multi-monitor) ---
+        if (_re.search(r"\b(mov[ée]r?|pas[áa]r?|llev[áa]r?|mand[áa]r?|sac[áa]r?|tir[áa]r?)\b", inp)
+                and _re.search(r"\b(?:segunda|otra|secundaria)\s+(?:pantalla|monitor)\b"
+                               r"|\b(?:pantalla|monitor)\s*(?:2|dos|secundari\w*)\b", inp)):
+            from core.window_manager import window_manager
+            _scr = 2
+            _ms = _re.search(r"(?:pantalla|monitor)\s*(\d)", inp)
+            if _ms:
+                _scr = int(_ms.group(1))
+            _wn = _re.search(
+                r"(?:mov[ée]r?|pas[áa]r?|llev[áa]r?|mand[áa]r?|sac[áa]r?|tir[áa]r?)\s+"
+                r"(?:la\s+ventana\s+de\s+|la\s+ventana\s+|la\s+|el\s+|lo\s+)?"
+                r"(.+?)\s+(?:a|en|hacia|para)\s+(?:la\s+)?"
+                r"(?:segunda|otra|secundaria|pantalla|monitor)", inp)
+            _name = _wn.group(1).strip() if _wn else None
+            if _name in (None, "esta", "esto", "eso", "ventana", "esta ventana",
+                         "la pelicula", "la película", "la peli", "el video", "video",
+                         "lo que veo", "lo que estoy viendo", "esta pestaña",
+                         "la pestaña", "pestaña", "todo", "la"):
+                _name = None
+            return window_manager.move_to_screen(_scr, _name)
+
         # --- Window Manager ---
         window_action_kw = ["pon ", "snap ", "mueve la ventana"]
         window_targets = ["izquierda", "derecha", "left", "right", "arriba", "abajo"]

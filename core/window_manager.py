@@ -218,6 +218,49 @@ public class WinAPI {
             return f"🪟 No encontré una ventana con '{window_name}'."
         return f"🪟 **{window_name}** movida a ({x}, {y})"
 
+    def move_to_screen(self, screen: int = 2, window_name: str = None) -> str:
+        """Mueve una ventana a otra pantalla, ocupándola completa. Si no se da
+        `window_name`, mueve la ventana en PRIMER PLANO (lo que estás mirando)."""
+        try:
+            from core.system_control import get_monitors
+            mons = get_monitors()
+        except Exception:
+            mons = []
+        idx = screen - 1
+        if idx < 0 or idx >= len(mons):
+            return f"🪟 No detecto la pantalla {screen} (hay {len(mons)} monitor/es)."
+        x, y, w, h = mons[idx]
+        if window_name:
+            return self.move_window(window_name, x, y, w, h)
+        ps = f'''$sig = @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public class FgW {{
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h,int x,int y,int w,int t,bool r);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int n);
+  [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h,StringBuilder s,int c);
+}}
+"@
+Add-Type $sig
+$h = [FgW]::GetForegroundWindow()
+$b = New-Object System.Text.StringBuilder 256
+[FgW]::GetWindowText($h,$b,256) | Out-Null
+[FgW]::ShowWindow($h,9) | Out-Null
+[FgW]::MoveWindow($h,{x},{y},{w},{h},$true) | Out-Null
+Write-Output $b.ToString()'''
+        try:
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps],
+                capture_output=True, text=True, timeout=12,
+                encoding="utf-8", errors="replace")
+            lines = [ln for ln in (r.stdout or "").strip().splitlines() if ln.strip()]
+            title = lines[-1] if lines else "la ventana"
+            return f"🪟 Moví «{title[:45]}» a la pantalla {screen} (completa)."
+        except Exception as e:
+            return f"🪟 Error moviendo la ventana: {str(e)[:80]}"
+
     def close_window(self, window_name: str) -> str:
         """Cierra una ventana por nombre."""
         safe = window_name.replace("'", "''")
