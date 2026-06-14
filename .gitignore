@@ -29,6 +29,10 @@ models/*.safetensors
 models/.cache/
 # Modelos descargables (Vosk STT ~60MB) — documentar descarga en README
 models/vosk-*/
+# Voces Piper (.onnx, ~60-115MB c/u) — descargables con piper.download_voices
+models/piper/
+models/*.onnx
+models/*.onnx.json
 
 # --- Datos de runtime (se generan al ejecutar) ---
 memory_data/
