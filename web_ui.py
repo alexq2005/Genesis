@@ -751,7 +751,7 @@ a{color:var(--g);text-decoration:none}
 .orbwrap{position:relative;width:350px;height:350px;margin:2px 0}
 .orbwrap canvas,.orbwrap svg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:350px;height:350px}
 .orbwrap canvas{filter:drop-shadow(0 0 24px rgba(200,225,255,.5)) drop-shadow(0 0 62px rgba(160,195,255,.3));animation:orbpulse 5s ease-in-out infinite}
-@keyframes orbpulse{0%,100%{filter:drop-shadow(0 0 14px rgba(45,255,174,.26)) drop-shadow(0 0 34px rgba(45,255,174,.13))}50%{filter:drop-shadow(0 0 22px rgba(45,255,174,.4)) drop-shadow(0 0 52px rgba(45,255,174,.22))}}
+@keyframes orbpulse{0%,100%{filter:drop-shadow(0 0 16px rgba(190,220,255,.3)) drop-shadow(0 0 40px rgba(150,190,255,.16))}50%{filter:drop-shadow(0 0 26px rgba(200,228,255,.46)) drop-shadow(0 0 60px rgba(160,200,255,.26))}}
 .bubble{max-width:540px;border:1px solid rgba(45,255,174,.2);border-radius:12px;background:rgba(7,18,16,.7);backdrop-filter:blur(6px);padding:12px 16px;font-size:14px;line-height:1.5;text-align:left;max-height:230px;overflow-y:auto}
 .dock{display:flex;gap:11px;flex-wrap:wrap;justify-content:center;margin-top:4px}
 .dockbtn{width:80px;height:74px;border:1px solid rgba(45,255,174,.3);border-radius:14px;background:rgba(7,18,16,.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;cursor:pointer;transition:all .18s;color:#9fe9c9}
@@ -929,68 +929,68 @@ function saveSection(btn){
   if(d.ok)showAnswer('<i class="ti ti-check" style="color:var(--g)"></i> Guardado: '+((d.updated||[]).join(', ')||'sin cambios'));
   else showAnswer('No se pudo guardar: '+esc(d.error||'error'));
  }).catch(function(){closeModal();});}
-/* ===== NÚCLEO DE PLASMA: vive siempre, late suave en reposo y erupciona con la voz real de Genesis ===== */
-var pAC=null,pAna=null,pFreq=null,pSpeaking=false,pSmooth=0.12,pRot=0;
-var PCV=$('plasma'),PCTX=PCV?PCV.getContext('2d'):null,PR=2,PW=172,PC=86;
-var POW=document.querySelector('.orbwrap');  // la esfera escala con la voz
-if(PCV){PCV.width=PW*PR;PCV.height=PW*PR;PCTX.scale(PR,PR);}
-var PCOL=['45,255,174','40,230,205','120,255,215','60,255,185','170,255,225','30,225,255'];
-var PBLOBS=[];for(var _i=0;_i<7;_i++){PBLOBS.push({sp:.45+Math.random()*.7,fx:1+Math.random()*1.6,fy:1+Math.random()*1.6,ph:Math.random()*6.28,r:42+Math.random()*26,h:PCOL[_i%PCOL.length]});}
-var PSPARKS=[];for(var _j=0;_j<9;_j++){PSPARKS.push({rad:28+Math.random()*46,sp:(.5+Math.random()*1.3)*(Math.random()<.5?-1:1),ph:Math.random()*6.28,sz:1+Math.random()*1.5});}
-var PFLARES=[];for(var _f=0;_f<6;_f++)PFLARES.push({ang:Math.random()*6.2832,life:Math.random(),dur:.005+Math.random()*.008,sp:Math.random()*6.28});
-// Filamentos de la CORONA de la enana blanca: rayos que irradian de todo el borde
-var PCORONA=[];for(var _c=0;_c<76;_c++)PCORONA.push({a:_c/76*6.2832+(Math.random()-0.5)*0.07,len:0.16+Math.random()*0.36,ph:Math.random()*6.28,sp:0.5+Math.random()*1.6,w:0.6+Math.random()*1.0});
-function _sph(n){var p=[],off=2/n,inc=Math.PI*(3-Math.sqrt(5));for(var i=0;i<n;i++){var y=i*off-1+off/2,r=Math.sqrt(1-y*y),ph=i*inc;p.push([Math.cos(ph)*r,y,Math.sin(ph)*r]);}return p;}
-var PWIRE=_sph(48);var PNEB=_sph(1300);for(var _k=0;_k<PNEB.length;_k++)PNEB[_k][3]=Math.random();
-function _rot(p,a){var s=Math.sin(a),c=Math.cos(a);return [p[0]*c-p[2]*s,p[1],p[0]*s+p[2]*c];}
-function drawPlasma(t,amp){if(!PCTX)return;PCTX.clearRect(0,0,PW,PW);
- var R=46*(0.95+amp*0.16);                        // radio de la ENANA BLANCA (pulsa con la voz)
- PCTX.globalCompositeOperation='lighter';
- // CORONA exterior difusa (resplandor blanco-azulado)
- var cor=PCTX.createRadialGradient(PC,PC,R*0.8,PC,PC,R*2.0);
- cor.addColorStop(0,'rgba(205,228,255,'+(0.26+amp*0.28).toFixed(2)+')');cor.addColorStop(.5,'rgba(175,208,255,'+(0.09+amp*0.12).toFixed(2)+')');cor.addColorStop(1,'rgba(155,195,255,0)');
- PCTX.fillStyle=cor;PCTX.beginPath();PCTX.arc(PC,PC,R*2.0,0,6.2832);PCTX.fill();
- // FILAMENTOS de la CORONA: rayos blancos que irradian de TODO el borde (titilan)
- for(var c=0;c<PCORONA.length;c++){var ry=PCORONA[c];
-  var fl=0.45+0.55*Math.sin(t*ry.sp+ry.ph);
-  var len=R*ry.len*(0.55+0.9*fl)*(1+amp*0.7);
-  var ca=Math.cos(ry.a),sa=Math.sin(ry.a);
-  var ax=PC+ca*R*0.97,ay=PC+sa*R*0.97,tx=PC+ca*(R+len),ty=PC+sa*(R+len);
-  var g=PCTX.createLinearGradient(ax,ay,tx,ty);
-  g.addColorStop(0,'rgba(240,248,255,'+(0.55*(0.35+fl)).toFixed(2)+')');g.addColorStop(1,'rgba(200,225,255,0)');
-  PCTX.strokeStyle=g;PCTX.lineWidth=ry.w;PCTX.beginPath();PCTX.moveTo(ax,ay);PCTX.lineTo(tx,ty);PCTX.stroke();}
- // CUERPO (esfera blanca-azulada)
- PCTX.globalCompositeOperation='source-over';
- var body=PCTX.createRadialGradient(PC-R*0.16,PC-R*0.16,R*0.06,PC,PC,R);
- body.addColorStop(0,'rgba(250,253,255,1)');body.addColorStop(.5,'rgba(214,230,248,1)');body.addColorStop(.85,'rgba(158,190,230,1)');body.addColorStop(1,'rgba(120,160,215,0.96)');
- PCTX.fillStyle=body;PCTX.beginPath();PCTX.arc(PC,PC,R,0,6.2832);PCTX.fill();
- // GRANULACIÓN sutil (puntos blanco-azulados, recortados al disco)
- PCTX.save();PCTX.beginPath();PCTX.arc(PC,PC,R,0,6.2832);PCTX.clip();PCTX.globalCompositeOperation='lighter';
- var rr=t*0.22;
- for(var i=0;i<PNEB.length;i++){var q=PNEB[i];var p=_rot(q,rr);var z=(p[2]+1)/2;if(z<0.5)continue;
-  var px=PC+p[0]*R*0.96,py=PC+p[1]*R*0.96;var g2=0.5+0.5*Math.sin(t*1.8+q[3]*40+q[1]*6);
-  PCTX.fillStyle='rgba('+Math.round(208+g2*47)+','+Math.round(226+g2*29)+',255,'+(0.04+z*0.16*g2).toFixed(3)+')';
-  PCTX.fillRect(px,py,1,1);}
- PCTX.restore();
- // limbo brillante
- PCTX.globalCompositeOperation='lighter';
- PCTX.strokeStyle='rgba(232,244,255,'+(0.32+amp*0.3).toFixed(2)+')';PCTX.lineWidth=1.6;PCTX.beginPath();PCTX.arc(PC,PC,R,0,6.2832);PCTX.stroke();
- PCTX.globalCompositeOperation='source-over';}
+/* ===== NÚCLEO 3D (WebGL): enana blanca por shader — superficie de ruido procedural,
+   corona de filamentos, iluminación de limbo y rotación; reactiva a la voz ===== */
+var pAC=null,pAna=null,pFreq=null,pSpeaking=false,pSmooth=0.12;
+var POW=document.querySelector('.orbwrap');     // la esfera escala con la voz
+var PCV=$('plasma'),GL=null,GPROG=null,GU={};
+(function initGL(){
+ if(!PCV)return;
+ var DPR=Math.min(2,window.devicePixelRatio||1);
+ function size(){var d=PCV.clientWidth||270;PCV.width=Math.round(d*DPR);PCV.height=Math.round(d*DPR);if(GL)GL.viewport(0,0,PCV.width,PCV.height);}
+ try{GL=PCV.getContext('webgl',{alpha:true,premultipliedAlpha:false,antialias:true})||PCV.getContext('experimental-webgl');}catch(e){GL=null;}
+ if(!GL)return;
+ var VS='attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}';
+ var FS=`precision highp float;uniform vec2 uRes;uniform float uTime;uniform float uAmp;
+ float hash(vec3 p){p=fract(p*0.3183099+0.1);p*=17.0;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
+ float noise(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.0-2.0*f);
+  return mix(mix(mix(hash(i+vec3(0.,0.,0.)),hash(i+vec3(1.,0.,0.)),f.x),mix(hash(i+vec3(0.,1.,0.)),hash(i+vec3(1.,1.,0.)),f.x),f.y),
+             mix(mix(hash(i+vec3(0.,0.,1.)),hash(i+vec3(1.,0.,1.)),f.x),mix(hash(i+vec3(0.,1.,1.)),hash(i+vec3(1.,1.,1.)),f.x),f.y),f.z);}
+ float fbm(vec3 p){float s=0.0,a=0.55;for(int i=0;i<6;i++){s+=a*noise(p);p=p*2.03;a*=0.5;}return s;}
+ mat3 rotY(float a){float c=cos(a),s=sin(a);return mat3(c,0.,s,0.,1.,0.,-s,0.,c);}
+ void main(){
+  vec2 uv=(gl_FragCoord.xy-0.5*uRes)/(0.5*uRes.y);
+  float r=length(uv),t=uTime,R=0.6*(0.96+uAmp*0.12);
+  vec3 col=vec3(0.0);float al=0.0;mat3 rot=rotY(t*0.13);
+  if(r<R){
+   float zz=sqrt(max(0.0,R*R-dot(uv,uv)));
+   vec3 n=normalize(vec3(uv,zz));vec3 sp=rot*n;
+   float surf=fbm(sp*3.2+vec3(0.,0.,t*0.16))+0.5*fbm(sp*7.5+vec3(t*0.22,0.,0.));
+   surf=clamp(surf*0.7+0.16,0.0,1.0);
+   float limb=pow(clamp(zz/R,0.0,1.0),0.32);
+   vec3 cool=vec3(0.42,0.6,0.92),mid=vec3(0.72,0.85,1.0),hot=vec3(0.98,0.99,1.0);
+   vec3 sc=mix(cool,mid,smoothstep(0.1,0.55,surf));sc=mix(sc,hot,smoothstep(0.55,0.95,surf));
+   col=sc*(0.72+0.85*surf)*limb+hot*pow(surf,3.0)*0.7;al=1.0;}
+  float edge=smoothstep(R*2.7,R*0.95,r);float ang=atan(uv.y,uv.x);
+  float fil=fbm(vec3(cos(ang)*3.0,sin(ang)*3.0,r*7.0-t*0.55))*0.6+fbm(vec3(ang*5.0,r*4.0,t*0.4))*0.4;
+  float corona=pow(edge,1.4)*(0.5+1.5*fil)*(1.0+uAmp*0.6);
+  if(r>=R){corona*=smoothstep(R*2.7,R,r);}
+  col+=vec3(0.84,0.92,1.0)*corona;al=max(al,clamp(corona*1.3,0.0,1.0));
+  float glow=smoothstep(R*2.3,R*0.5,r)*0.12*(1.0+uAmp);
+  col+=vec3(0.62,0.78,1.0)*glow;al=max(al,glow);
+  col=col/(col+0.45);col=pow(col,vec3(0.82));
+  gl_FragColor=vec4(col,clamp(al,0.0,1.0));}`;
+ function sh(ty,src){var s=GL.createShader(ty);GL.shaderSource(s,src);GL.compileShader(s);if(!GL.getShaderParameter(s,GL.COMPILE_STATUS))console.warn('GL',GL.getShaderInfoLog(s));return s;}
+ GPROG=GL.createProgram();GL.attachShader(GPROG,sh(GL.VERTEX_SHADER,VS));GL.attachShader(GPROG,sh(GL.FRAGMENT_SHADER,FS));GL.linkProgram(GPROG);GL.useProgram(GPROG);
+ var buf=GL.createBuffer();GL.bindBuffer(GL.ARRAY_BUFFER,buf);GL.bufferData(GL.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),GL.STATIC_DRAW);
+ var loc=GL.getAttribLocation(GPROG,'p');GL.enableVertexAttribArray(loc);GL.vertexAttribPointer(loc,2,GL.FLOAT,false,0,0);
+ GU.res=GL.getUniformLocation(GPROG,'uRes');GU.time=GL.getUniformLocation(GPROG,'uTime');GU.amp=GL.getUniformLocation(GPROG,'uAmp');
+ GL.enable(GL.BLEND);GL.blendFunc(GL.SRC_ALPHA,GL.ONE_MINUS_SRC_ALPHA);
+ size();window.addEventListener('resize',size);
+})();
 function plasmaLoop(){var amp;
  if(pSpeaking&&pAna){pAna.getByteFrequencyData(pFreq);var s=0;for(var i=2;i<pFreq.length;i++)s+=pFreq[i];amp=Math.min(1,(s/(pFreq.length-2))/90);}
- else{amp=0.18+0.07*Math.sin(performance.now()/560);}
- pSmooth+=(amp-pSmooth)*0.3;
- drawPlasma(performance.now()/1000,pSmooth);
- pRot=(pRot+0.18+pSmooth*0.9)%360;var cr=$('pcr');if(cr)cr.setAttribute('transform','rotate('+pRot+' 86 86)');
- /* La esfera se AMPLÍA con la intensidad de la voz: reposo sutil, picos dramáticos */
- if(POW){var _sc=1+Math.max(0,pSmooth-0.15)*0.95;POW.style.transform='scale('+_sc.toFixed(3)+')';}
+ else{amp=0.16+0.06*Math.sin(performance.now()/620);}
+ pSmooth+=(amp-pSmooth)*0.25;
+ if(GL&&GPROG){GL.useProgram(GPROG);GL.uniform2f(GU.res,PCV.width,PCV.height);GL.uniform1f(GU.time,performance.now()/1000);GL.uniform1f(GU.amp,pSmooth);GL.clearColor(0,0,0,0);GL.clear(GL.COLOR_BUFFER_BIT);GL.drawArrays(GL.TRIANGLES,0,3);}
+ if(POW){var _sc=1+Math.max(0,pSmooth-0.15)*0.7;POW.style.transform='scale('+_sc.toFixed(3)+')';}
  requestAnimationFrame(plasmaLoop);}
 function plasmaSpeak(audio){try{pAC=pAC||new(window.AudioContext||window.webkitAudioContext)();if(pAC.state==='suspended')pAC.resume();
   var src=pAC.createMediaElementSource(audio);pAna=pAC.createAnalyser();pAna.fftSize=64;pAna.smoothingTimeConstant=0.7;
   src.connect(pAna);pAna.connect(pAC.destination);pFreq=new Uint8Array(pAna.frequencyBinCount);
  }catch(e){pAna=null;}pSpeaking=true;}
 function plasmaCalm(){pSpeaking=false;pAna=null;}
-if(PCTX){plasmaLoop();}
+if(GL){plasmaLoop();}
 function renderCards(q,cards){
  $('boardstatus').textContent=cards.length+' evidencias';
  if(!cards.length){$('board').style.display='flex';$('board').innerHTML='Sin evidencias para «'+esc(q)+'».';return;}
