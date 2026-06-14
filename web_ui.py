@@ -748,8 +748,8 @@ a{color:var(--g);text-decoration:none}
 .hero{position:relative;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;min-height:92vh;text-align:center;gap:8px;padding-top:6px}
 .corecenter{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;width:100%}
 .statuslbl{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(45,255,174,.25);background:rgba(7,18,16,.6);border-radius:20px;padding:5px 16px;color:var(--g);font-size:11px;letter-spacing:.2em}
-.orbwrap{position:relative;width:350px;height:350px;margin:2px 0}
-.orbwrap canvas,.orbwrap svg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:350px;height:350px}
+.orbwrap{position:relative;width:480px;height:480px;margin:2px 0}
+.orbwrap canvas,.orbwrap svg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:480px;height:480px}
 .orbwrap canvas{filter:drop-shadow(0 0 16px rgba(30,120,150,.28)) drop-shadow(0 0 44px rgba(20,90,130,.16));animation:orbpulse 6s ease-in-out infinite}
 @keyframes orbpulse{0%,100%{filter:drop-shadow(0 0 12px rgba(30,120,150,.18)) drop-shadow(0 0 32px rgba(20,90,130,.1))}50%{filter:drop-shadow(0 0 20px rgba(40,140,170,.28)) drop-shadow(0 0 46px rgba(25,100,140,.16))}}
 .bubble{max-width:540px;border:1px solid rgba(45,255,174,.2);border-radius:12px;background:rgba(7,18,16,.7);backdrop-filter:blur(6px);padding:12px 16px;font-size:14px;line-height:1.5;text-align:left;max-height:230px;overflow-y:auto}
@@ -776,8 +776,8 @@ a{color:var(--g);text-decoration:none}
 @media (max-width:640px){
  #core{padding:10px}
  .hero{min-height:83vh;padding-top:4px;gap:6px}
- .orbwrap{width:270px;height:270px}
- .orbwrap canvas,.orbwrap svg{width:270px!important;height:270px!important}
+ .orbwrap{width:420px;height:420px}
+ .orbwrap canvas,.orbwrap svg{width:420px!important;height:420px!important}
  #tablero{position:static!important;top:auto!important;right:auto!important;width:auto!important;max-width:none!important;max-height:24vh;margin:8px 0 0}
  .topbar{flex-wrap:wrap;gap:6px}
  .toprt{gap:6px;flex-wrap:wrap}
@@ -948,7 +948,7 @@ var PCV=$('plasma'),GL=null,GPROG=null,GU={};
   vec2 uv=(gl_FragCoord.xy-0.5*uRes)/(0.5*uRes.y);
   float r=length(uv),t=uTime;
   float nflash=pow(0.5+0.5*sin(t*0.5)*sin(t*0.31+1.3),16.0);   // destello esporádico del núcleo
-  float R=0.6*(0.96+uAmp*0.12+nflash*0.05);
+  float R=0.4*(0.96+uAmp*0.12+nflash*0.05);   // esfera más chica dentro del canvas (deja salir los jets)
   vec3 col=vec3(0.0);float al=0.0;mat3 rot=rotY(t*0.13);
   vec3 bc=vec3(0.16,0.5,0.6);
   if(r<R){
@@ -1095,7 +1095,7 @@ setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
 /* ===== CAMPO DE ESTRELLAS 3D (WebGL GL_POINTS): miles de puntos con glow real,
    profundidad/parallax, rotación diferencial alrededor del núcleo, reactivo a la voz ===== */
 (function(){var sc=$('stars');if(!sc)return;
- var CONC=2.6,N=24000,DPR=Math.min(2,window.devicePixelRatio||1);
+ var CONC=1.3,RMIN=0.32,N=24000,DPR=Math.min(2,window.devicePixelRatio||1);  // RMIN = hueco alrededor del núcleo
  var gl=null,prog=null,U={},W=0,H=0,cx=0,cy=0,maxR=0;
  try{gl=sc.getContext('webgl',{alpha:true,premultipliedAlpha:false,antialias:true})||sc.getContext('experimental-webgl');}catch(e){gl=null;}
  if(!gl)return;
@@ -1120,7 +1120,7 @@ setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
  prog=gl.createProgram();gl.attachShader(prog,sh(gl.VERTEX_SHADER,VS));gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,FS));gl.linkProgram(prog);gl.useProgram(prog);
  var data=new Float32Array(N*6);
  for(var i=0;i<N;i++){var o=i*6;
-  data[o]=Math.random()*6.2832;data[o+1]=Math.pow(Math.random(),CONC);  // ang, radio(concentrado)
+  data[o]=Math.random()*6.2832;data[o+1]=RMIN+(1.0-RMIN)*Math.pow(Math.random(),CONC);  // ang, radio (con hueco)
   data[o+2]=Math.random();data[o+3]=0.2+Math.random()*0.8;              // depth, brillo
   data[o+4]=Math.random()*6.2832;data[o+5]=Math.random()<0.34?1.0:0.0;} // fase, cian
  var buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
@@ -1133,7 +1133,7 @@ setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
  function recompute(){W=sc.clientWidth||300;H=sc.clientHeight||300;sc.width=Math.round(W*DPR);sc.height=Math.round(H*DPR);gl.viewport(0,0,sc.width,sc.height);
   var sr=sc.getBoundingClientRect(),ob=document.querySelector('.orbwrap');
   if(ob){var r=ob.getBoundingClientRect();cx=r.left+r.width/2-sr.left;cy=r.top+r.height/2-sr.top;}else{cx=W/2;cy=H*0.32;}
-  maxR=Math.min(W,H)*1.15;}    // radio del halo (puntos más alejados/repartidos)
+  maxR=Math.min(W,H)*1.3;}     // radio del halo (puntos más alejados del núcleo)
  function frame(){if(!gl)return;
   var va=(typeof pSmooth!=='undefined'&&pSmooth>0.15)?(pSmooth-0.15)*1.5:0;if(va>1)va=1;
   gl.useProgram(prog);
