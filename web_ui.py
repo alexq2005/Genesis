@@ -731,6 +731,8 @@ a{color:var(--g);text-decoration:none}
 .statuslbl{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(45,255,174,.25);background:rgba(7,18,16,.6);border-radius:20px;padding:5px 16px;color:var(--g);font-size:11px;letter-spacing:.2em}
 .orbwrap{position:relative;width:300px;height:300px;margin:2px 0}
 .orbwrap canvas,.orbwrap svg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:300px;height:300px}
+.orbwrap canvas{filter:drop-shadow(0 0 16px rgba(45,255,174,.32)) drop-shadow(0 0 40px rgba(45,255,174,.16));animation:orbpulse 5s ease-in-out infinite}
+@keyframes orbpulse{0%,100%{filter:drop-shadow(0 0 14px rgba(45,255,174,.26)) drop-shadow(0 0 34px rgba(45,255,174,.13))}50%{filter:drop-shadow(0 0 22px rgba(45,255,174,.4)) drop-shadow(0 0 52px rgba(45,255,174,.22))}}
 .bubble{max-width:540px;border:1px solid rgba(45,255,174,.2);border-radius:12px;background:rgba(7,18,16,.7);backdrop-filter:blur(6px);padding:12px 16px;font-size:14px;line-height:1.5;text-align:left;max-height:230px;overflow-y:auto}
 .dock{display:flex;gap:11px;flex-wrap:wrap;justify-content:center;margin-top:4px}
 .dockbtn{width:80px;height:74px;border:1px solid rgba(45,255,174,.3);border-radius:14px;background:rgba(7,18,16,.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;cursor:pointer;transition:all .18s;color:#9fe9c9}
@@ -823,29 +825,32 @@ function speak(text){var v=localStorage.getItem('gx_voice')||'clon:milton';fetch
 /* ===== NÚCLEO DE PLASMA: vive siempre, late suave en reposo y erupciona con la voz real de Genesis ===== */
 var pAC=null,pAna=null,pFreq=null,pSpeaking=false,pSmooth=0.12,pRot=0;
 var PCV=$('plasma'),PCTX=PCV?PCV.getContext('2d'):null,PR=2,PW=172,PC=86;
+var POW=document.querySelector('.orbwrap');  // la esfera escala con la voz
 if(PCV){PCV.width=PW*PR;PCV.height=PW*PR;PCTX.scale(PR,PR);}
 var PCOL=['45,255,174','40,230,205','120,255,215','60,255,185','170,255,225','30,225,255'];
-var PBLOBS=[];for(var _i=0;_i<6;_i++){PBLOBS.push({sp:.45+Math.random()*.7,fx:1+Math.random()*1.6,fy:1+Math.random()*1.6,ph:Math.random()*6.28,r:34+Math.random()*24,h:PCOL[_i]});}
+var PBLOBS=[];for(var _i=0;_i<7;_i++){PBLOBS.push({sp:.45+Math.random()*.7,fx:1+Math.random()*1.6,fy:1+Math.random()*1.6,ph:Math.random()*6.28,r:42+Math.random()*26,h:PCOL[_i%PCOL.length]});}
 function drawPlasma(t,amp){if(!PCTX)return;PCTX.clearRect(0,0,PW,PW);PCTX.globalCompositeOperation='lighter';
  for(var i=0;i<PBLOBS.length;i++){var b=PBLOBS[i];var a=t*b.sp+b.ph;
   var x=PC+Math.cos(a*b.fx)*(20+amp*30),y=PC+Math.sin(a*b.fy)*(20+amp*30);
-  var r=b.r*(0.55+amp*0.95),al=0.22+amp*0.6;
+  var r=b.r*(0.7+amp*0.9),al=0.28+amp*0.45;
   var g=PCTX.createRadialGradient(x,y,0,x,y,r);
-  g.addColorStop(0,'rgba('+b.h+','+al+')');g.addColorStop(.45,'rgba('+b.h+','+(al*0.32).toFixed(3)+')');g.addColorStop(1,'rgba('+b.h+',0)');
+  g.addColorStop(0,'rgba('+b.h+','+al+')');g.addColorStop(.42,'rgba('+b.h+','+(al*0.4).toFixed(3)+')');g.addColorStop(1,'rgba('+b.h+',0)');
   PCTX.fillStyle=g;PCTX.beginPath();PCTX.arc(x,y,r,0,6.2832);PCTX.fill();}
- var cg=PCTX.createRadialGradient(PC,PC,0,PC,PC,20+amp*32);
- cg.addColorStop(0,'rgba(230,255,245,'+(0.25+amp*0.55)+')');cg.addColorStop(1,'rgba(80,255,200,0)');
- PCTX.fillStyle=cg;PCTX.beginPath();PCTX.arc(PC,PC,20+amp*32,0,6.2832);PCTX.fill();
+ var cg=PCTX.createRadialGradient(PC,PC,0,PC,PC,24+amp*36);
+ cg.addColorStop(0,'rgba(235,255,248,'+(0.38+amp*0.45)+')');cg.addColorStop(.5,'rgba(120,255,215,'+(0.2+amp*0.35)+')');cg.addColorStop(1,'rgba(60,240,200,0)');
+ PCTX.fillStyle=cg;PCTX.beginPath();PCTX.arc(PC,PC,24+amp*36,0,6.2832);PCTX.fill();
  PCTX.globalCompositeOperation='destination-in';
  var m=PCTX.createRadialGradient(PC,PC,18,PC,PC,80);
  m.addColorStop(0,'rgba(255,255,255,1)');m.addColorStop(.8,'rgba(255,255,255,1)');m.addColorStop(1,'rgba(255,255,255,0)');
  PCTX.fillStyle=m;PCTX.fillRect(0,0,PW,PW);PCTX.globalCompositeOperation='source-over';}
 function plasmaLoop(){var amp;
  if(pSpeaking&&pAna){pAna.getByteFrequencyData(pFreq);var s=0;for(var i=2;i<pFreq.length;i++)s+=pFreq[i];amp=Math.min(1,(s/(pFreq.length-2))/90);}
- else{amp=0.12+0.05*Math.sin(performance.now()/520);}
+ else{amp=0.18+0.07*Math.sin(performance.now()/560);}
  pSmooth+=(amp-pSmooth)*0.22;
  drawPlasma(performance.now()/1000,pSmooth);
  pRot=(pRot+0.18+pSmooth*0.9)%360;var cr=$('pcr');if(cr)cr.setAttribute('transform','rotate('+pRot+' 86 86)');
+ /* La esfera se AMPLÍA con la intensidad de la voz: reposo sutil, picos dramáticos */
+ if(POW){var _sc=1+Math.max(0,pSmooth-0.20)*0.55;POW.style.transform='scale('+_sc.toFixed(3)+')';}
  requestAnimationFrame(plasmaLoop);}
 function plasmaSpeak(audio){try{pAC=pAC||new(window.AudioContext||window.webkitAudioContext)();if(pAC.state==='suspended')pAC.resume();
   var src=pAC.createMediaElementSource(audio);pAna=pAC.createAnalyser();pAna.fftSize=64;pAna.smoothingTimeConstant=0.7;
@@ -1035,7 +1040,20 @@ function pollHud(){fetch('/api/hud').then(r=>r.json()).then(function(d){
 var flt='ALL';
 function setFlt(f){flt=f;document.querySelectorAll('.flt').forEach(function(e){e.classList.toggle('on',e.dataset.f===f);});drawLog();}
 function drawLog(){var rows=allLog.filter(function(x){return flt==='ALL'||x.cat===flt;});if(!rows.length){$('log').innerHTML='<div style="color:#3f5b6a">sin eventos</div>';return;}var col={CORE:'var(--g)',SYS:'#7fa3b4',ALERTA:'#ff5d5d'};$('log').innerHTML=rows.map(function(x){return '<div style="display:flex;gap:8px;border-left:2px solid '+(col[x.cat]||'#5a7d8c')+';padding:3px 8px;background:rgba(120,160,180,.03)"><span style="color:'+(col[x.cat]||'#5a7d8c')+';font-size:9px;min-width:46px">'+x.cat+'</span><span style="color:#9fb4c4;font-size:10px">'+(x.act+' '+x.det).slice(0,60)+'</span></div>';}).join('');}
-pollSys();pollHud();pollAgents();setInterval(pollSys,4000);setInterval(pollHud,5000);setInterval(pollAgents,6000);
+// --- Feed de voz (manos libres): mostrar en pantalla lo que se pide por voz ---
+var _vseq=0,_vinit=false;
+function pollVoice(){fetch('/api/voice/feed?since='+_vseq).then(function(r){return r.json();}).then(function(d){
+ if(d.seq===undefined)return;
+ if(!_vinit){_vseq=d.seq;_vinit=true;return;} // al cargar, no repetir historial viejo
+ (d.events||[]).forEach(function(e){_vseq=e.seq;
+  var t=(e.response||'').replace(/\[\[[^\]]*\]\]/g,'').trim();
+  setState('proc');
+  showAnswer('<div style="color:#4d8a76;margin-bottom:6px"><i class="ti ti-microphone"></i> '+esc(e.request)+'</div>'+md(t));
+  setTimeout(function(){setState('calm');},600);
+ });
+ if(d.seq>_vseq)_vseq=d.seq;
+}).catch(function(){});}
+pollSys();pollHud();pollAgents();pollVoice();setInterval(pollSys,4000);setInterval(pollHud,5000);setInterval(pollAgents,6000);setInterval(pollVoice,1500);
 </script></body></html>"""
 
 
@@ -1163,6 +1181,21 @@ def api_monitor():
         "total": len(_interactions_buffer),
         "interactions": recientes,
     })
+
+
+@app.route("/api/voice/feed")
+def api_voice_feed():
+    """Interacciones por voz (manos libres) para mostrarlas en la cabina.
+    La UI hace polling con ?since=<seq> y recibe solo lo nuevo."""
+    try:
+        since = int(request.args.get("since", 0))
+    except Exception:
+        since = 0
+    try:
+        from core import handsfree
+        return jsonify(handsfree.get_feed(since))
+    except Exception:
+        return jsonify({"seq": 0, "events": []})
 
 
 @app.route("/api/upload", methods=["POST"])

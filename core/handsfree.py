@@ -16,6 +16,28 @@ import threading
 
 _listener = None  # instancia única
 
+# Feed de interacciones por voz para que la CABINA las muestre en pantalla
+# (el manos-libres corre server-side; sin esto, lo que decís no aparece en la UI).
+_VOICE_FEED = []  # [{seq, request, response, ts}]
+_FEED_SEQ = 0
+
+
+def push_feed(request, response):
+    global _FEED_SEQ
+    try:
+        _FEED_SEQ += 1
+        _VOICE_FEED.append({"seq": _FEED_SEQ, "request": (request or "")[:300],
+                            "response": (response or "")[:1500]})
+        if len(_VOICE_FEED) > 60:
+            del _VOICE_FEED[:-60]
+    except Exception:
+        pass
+
+
+def get_feed(since=0):
+    """Eventos con seq > since (para polling incremental de la cabina)."""
+    return {"seq": _FEED_SEQ, "events": [e for e in _VOICE_FEED if e["seq"] > since]}
+
 
 def _find_vosk_model():
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -177,6 +199,7 @@ class HandsFree:
             resp = self.genesis.process_input(cmd)
         except Exception as e:
             resp = f"Hubo un error: {e}"
+        push_feed(cmd, resp)  # mostrarlo en la cabina
         self._speak(resp)
         self._speaking = False
         self._last = cmd
