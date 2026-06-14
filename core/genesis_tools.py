@@ -1489,7 +1489,9 @@ class GenesisToolsMixin:
             _qp = _pl.group(1).strip() if _pl else ""
             _qp = "" if _qp in ("algo", "una", "una pelicula", "una película",
                                 "una serie", "peliculas", "películas") else _qp
-            _r = _nf.launch_app()
+            _pm = _re.search(r"perfil\s+(?:de\s+|del\s+)?([a-záéíóúñ0-9]+)", inp)
+            _prof = _pm.group(1).strip() if _pm else None
+            _r = _nf.launch_app(profile=_prof)
             if _qp:
                 _r += (f"\nℹ️ Buscá **{_qp}** en la app y dale play (dentro de la app no "
                        f"puedo buscar por código). ¿Querés que la castee a la TV?")

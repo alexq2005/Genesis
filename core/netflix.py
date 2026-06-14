@@ -219,13 +219,33 @@ def app_installed() -> bool:
         return False
 
 
-def launch_app() -> str:
-    """Abre la app de Netflix (la que ya está logueada como Alex)."""
+def launch_app(profile: str = None) -> str:
+    """Abre la app de Netflix. Si se indica `profile`, intenta entrar al primer
+    perfil por teclado (la app WebView2 NO expone los tiles a la automatización,
+    así que no se puede apuntar a uno por nombre — solo el primero/enfocado)."""
     try:
         subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{_APP_ID}"])
-        return "🎬 Abriendo la app de Netflix."
     except Exception as e:
         return f"[ERROR] No pude abrir la app de Netflix: {str(e)[:120]}"
+    if not profile:
+        return "🎬 Abriendo la app de Netflix."
+    # Best-effort: esperar la carga y seleccionar el primer perfil con teclado.
+    try:
+        import uiautomation as auto
+        time.sleep(7)
+        nf = _find_window()
+        if nf:
+            nf.SetActive()
+            time.sleep(0.8)
+            auto.SendKeys("{Tab}")
+            time.sleep(0.3)
+            auto.SendKeys("{Enter}")
+            return (f"🎬 Abrí Netflix y entré al primer perfil. Si «{profile}» no es "
+                    f"el de la izquierda, elegilo vos — la app oculta los perfiles a "
+                    f"la automatización y no puedo apuntar a uno por nombre.")
+    except Exception:
+        pass
+    return f"🎬 Abrí Netflix. Elegí el perfil «{profile}» (no pude seleccionarlo solo)."
 
 
 def _find_window():
