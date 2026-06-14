@@ -1051,10 +1051,10 @@ function pollVoice(){fetch('/api/voice/feed?since='+_vseq).then(function(r){retu
 setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
 // --- Starfield de fondo (estilo nave) ---
 (function(){var sc=$('stars');if(!sc)return;var x,W,H,stars=[];
- var SPEED=1.4;            // velocidad de deriva (px/frame) — subila para más rápido
+ var SPEED=0.5;            // velocidad de deriva (px/frame) — subila para más rápido
  function build(){W=sc.width=sc.clientWidth;H=sc.height=sc.clientHeight;x=sc.getContext('2d');
-  var N=Math.round(W*H/1500);if(N<360)N=360;if(N>820)N=820;   // cantidad ~ área (antes 170 fijo)
-  stars=[];for(var i=0;i<N;i++){var b=Math.random();stars.push({x:Math.random()*W,y:Math.random()*H,b:b,r:b>0.86?1.7:0.95,vx:(Math.random()-0.5)*2*SPEED,vy:(Math.random()-0.5)*2*SPEED,tw:Math.random()*6.2832});}}
+  var N=Math.round(W*H/700);if(N<600)N=600;if(N>1500)N=1500;  // más densas (menos espacio entre ellas)
+  stars=[];for(var i=0;i<N;i++){var b=Math.random();stars.push({x:Math.random()*W,y:Math.random()*H,b:b,r:b>0.86?1.4:0.7,vx:(Math.random()-0.5)*2*SPEED,vy:(Math.random()-0.5)*2*SPEED,tw:Math.random()*6.2832});}}
  function frame(){if(!x)return;x.clearRect(0,0,W,H);for(var i=0;i<stars.length;i++){var s=stars[i];
    s.x+=s.vx;s.y+=s.vy;if(s.x<0)s.x+=W;else if(s.x>W)s.x-=W;if(s.y<0)s.y+=H;else if(s.y>H)s.y-=H;
    s.tw+=0.07;var a=(0.18+s.b*0.55)*(0.6+0.4*Math.sin(s.tw));
