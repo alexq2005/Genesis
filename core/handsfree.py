@@ -167,7 +167,15 @@ class HandsFree:
             acc = self._whisper_cmd(audio)
             if acc:
                 cmd = acc
-        if not cmd:
+        # Solo saludo o wake-word sin comando → acusar recibo (que sepas que oye)
+        if not cmd or re.fullmatch(
+                r"(hola|buenas|buen[oa]s?\s*(d[íi]as|tardes|noches)?|ey+|hey|"
+                r"holis|qu[ée]\s+tal|c[óo]mo\s+est[áa]s?|che)\.?", cmd):
+            saludo = "Hola. Te escucho, decime."
+            self._speaking = True
+            self._speak(saludo)
+            self._speaking = False
+            push_feed(cmd or "hola", saludo)
             return
         # --- VERIFICACIÓN DEL HABLANTE (solo tu voz) ---
         # Si hay huella entrenada y el modo "solo dueño" está activo, comparo el
@@ -219,16 +227,13 @@ class HandsFree:
             except Exception:
                 pass
             low = txt.lower().strip()
-            wp = -1
+            # quitar el wake-word esté donde esté (al inicio, medio o final:
+            # "hola genesis" → "hola", "genesis salida flip" → "salida flip")
             for w in self.WAKE:
-                i = low.find(w)
-                if i >= 0:
-                    wp = i + len(w)
-                    break
-            cmd = low[wp:] if wp >= 0 else low
+                low = low.replace(w, " ")
             # Whisper agrega puntuación ("salida, flip") que rompe los regex de
             # los handlers → la normalizo a espacios.
-            cmd = re.sub(r"[,.;:¿?¡!]+", " ", cmd)
+            cmd = re.sub(r"[,.;:¿?¡!]+", " ", low)
             return re.sub(r"\s+", " ", cmd).strip()
         except Exception:
             return ""
