@@ -3348,27 +3348,27 @@ class GenesisToolsMixin:
         # --- Mover ventana/película a otra pantalla (multi-monitor) ---
         # ALTA PRIORIDAD: antes de file-ops ("mové X a Y") y del abrir-en-pantalla.
         # Específico: solo dispara con verbo de mover + contexto de pantalla/monitor.
-        if (_re.search(r"\b(mov[ée]r?|move|pas[áa]r?|llev[áa]r?|mand[áa]r?|sac[áa]r?|"
-                       r"tir[áa]r?)\b", inp)
-                and _re.search(r"\b(?:segunda|otra|secundaria)\s+(?:pantalla|monitor)\b"
-                               r"|\b(?:pantalla|monitor)\s*(?:2|dos|secundari\w*|3|tres)\b",
+        # Tolerante a typos de STT: verbo mov\w* (movei/mové/move), panta\w*
+        # (pantala/pantalla), conector "de" incluido.
+        _VERB = r"(?:mov[ée]\w*|move\w*|pas[áa]\w*|llev[áa]\w*|mand[áa]\w*|sac[áa]\w*|tir[áa]\w*)"
+        if (_re.search(r"\b" + _VERB + r"\b", inp)
+                and _re.search(r"\b(?:segunda|2da|otra|secundaria|dos)\s+(?:panta\w*|monitor)\b"
+                               r"|\b(?:panta\w*|monitor)\s*(?:2|dos|secundari\w*|3|tres)\b",
                                inp)):
             from core.window_manager import window_manager
             _scr = 2
-            _ms = _re.search(r"(?:pantalla|monitor)\s*(\d)", inp)
+            _ms = _re.search(r"(?:panta\w*|monitor)\s*(\d)", inp)
             if _ms:
                 _scr = int(_ms.group(1))
             _wn = _re.search(
-                r"(?:mov[ée]r?|move|pas[áa]r?|llev[áa]r?|mand[áa]r?|sac[áa]r?|tir[áa]r?)\s+"
-                r"(?:la\s+ventana\s+de\s+|la\s+ventana\s+|la\s+|el\s+|lo\s+)?"
-                r"(.+?)\s+(?:a|en|hacia|para)\s+(?:la\s+)?"
-                r"(?:segunda|otra|secundaria|pantalla|monitor)", inp)
+                _VERB + r"\s+(?:la\s+ventana\s+de\s+|la\s+ventana\s+|la\s+|el\s+|lo\s+)?"
+                r"(.+?)\s+(?:a|en|de|hacia|para)\s+(?:la\s+)?"
+                r"(?:segunda|2da|otra|secundaria|dos|panta\w*|monitor)", inp)
             _name = _wn.group(1).strip() if _wn else None
-            if _name in (None, "esta", "esto", "eso", "ventana", "esta ventana",
-                         "la pelicula", "la película", "la peli", "pelicula",
-                         "película", "peli", "el video", "video", "la serie", "serie",
-                         "lo que veo", "lo que estoy viendo", "esta pestaña",
-                         "la pestaña", "pestaña", "todo", "la", "el", "lo"):
+            # Cualquier forma de "la película/esto/la ventana/etc" → primer plano
+            if not _name or _re.match(
+                    r"^(esta?|esto|eso|ventana|pelicul\w*|peli|seri\w*|video|pel[íi]\w*|"
+                    r"pestañ\w*|lo\s+que|todo|el|la|lo)\b", _name):
                 _name = None
             return window_manager.move_to_screen(_scr, _name)
 
