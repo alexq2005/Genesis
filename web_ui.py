@@ -966,17 +966,17 @@ var PCV=$('plasma'),GL=null,GPROG=null,GU={};
   float corona=pow(edge,1.7)*(0.22+0.7*fil)*(1.0+uAmp*0.5);
   if(r>=R){corona*=smoothstep(R*2.6,R,r);}
   col+=vec3(0.12,0.42,0.52)*corona;al=max(al,clamp(corona*1.1,0.0,0.85));
-  // EXPLOSIONES SOLARES: jets que erupcionan esporádicamente del borde
+  // EXPLOSIONES SOLARES: llamaradas brillantes que erupcionan del borde
   for(int k=0;k<4;k++){float fk=float(k);
-   float ph=fract(t*0.06+fk*0.31);
-   float life=smoothstep(0.0,0.1,ph)*smoothstep(0.5,0.16,ph);
-   float fang=fk*1.9+t*0.04+sin(fk*3.0)*2.0;
+   float ph=fract(t*0.09+fk*0.27);
+   float life=smoothstep(0.0,0.07,ph)*smoothstep(0.65,0.22,ph);   // ventana ancha
+   float fang=fk*1.7+t*0.07+sin(fk*4.0)*2.0;
    float adiff=abs(mod(ang-fang+3.14159,6.2832)-3.14159);
-   float beam=smoothstep(0.5,0.0,adiff);
-   float ext=R*(1.0+life*1.3);
-   float along=smoothstep(ext,R*0.92,r)*step(R*0.85,r);
-   float flare=life*beam*along;
-   col+=vec3(0.5,0.9,1.0)*flare*0.8;al=max(al,clamp(flare*0.85,0.0,0.9));}
+   float beam=smoothstep(0.45,0.0,adiff);beam*=beam;            // haz angosto y brillante
+   float ext=R*(1.05+life*1.7);
+   float prof=smoothstep(ext,R*0.88,r)*step(R*0.9,r);
+   float flare=life*beam*prof;
+   col+=vec3(0.75,0.95,1.0)*flare*3.0;al=max(al,clamp(flare*1.3,0.0,0.96));}
   // BLOOM atmosférico (capas de glow renderizadas, no CSS) — destella con nflash
   float b1=smoothstep(R*1.5,R*0.2,r),b2=smoothstep(R*3.4,R*0.4,r);
   float bloom=(b1*b1*0.2+b2*b2*0.13)*(1.0+uAmp*0.9+nflash*1.6);
@@ -1127,7 +1127,7 @@ setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
  function recompute(){W=sc.clientWidth||300;H=sc.clientHeight||300;sc.width=Math.round(W*DPR);sc.height=Math.round(H*DPR);gl.viewport(0,0,sc.width,sc.height);
   var sr=sc.getBoundingClientRect(),ob=document.querySelector('.orbwrap');
   if(ob){var r=ob.getBoundingClientRect();cx=r.left+r.width/2-sr.left;cy=r.top+r.height/2-sr.top;}else{cx=W/2;cy=H*0.32;}
-  maxR=Math.min(W,H)*0.62;}    // puntos un poco más cercanos al núcleo
+  maxR=Math.min(W,H)*0.95;}    // radio del halo (más repartido)
  function frame(){if(!gl)return;
   var va=(typeof pSmooth!=='undefined'&&pSmooth>0.15)?(pSmooth-0.15)*1.5:0;if(va>1)va=1;
   gl.useProgram(prog);
