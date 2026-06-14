@@ -58,6 +58,15 @@ def _find_vosk_model():
 class HandsFree:
     # Incluye variantes que vosk-es suele confundir (genesis→gemini/génesis/yénesis).
     WAKE = ("genesis", "génesis", "jarvis", "gemini", "yénesis", "génisis", "jénesis")
+
+    def _wake(self):
+        """Palabras de activación ACTUALES (el usuario puede renombrar el asistente
+        en caliente). Cae a la constante WAKE si el módulo de identidad falla."""
+        try:
+            from core.assistant_identity import wake_words
+            return wake_words() or self.WAKE
+        except Exception:
+            return self.WAKE
     # Similitud mínima de huella para aceptar el comando como "del dueño".
     # Más laxo que el verify formal (0.72) porque el mic en uso real es ruidoso.
     OWNER_MIN = 0.66
@@ -150,9 +159,9 @@ class HandsFree:
             self.genesis.log.debug(f"[handsfree] oído: {low!r}")
         except Exception:
             pass
-        # ¿está la palabra de activación?
+        # ¿está la palabra de activación? (dinámica: el usuario puede renombrar)
         wpos = -1
-        for w in self.WAKE:
+        for w in self._wake():
             i = low.find(w)
             if i >= 0:
                 wpos = i + len(w)
@@ -229,7 +238,7 @@ class HandsFree:
             low = txt.lower().strip()
             # quitar el wake-word esté donde esté (al inicio, medio o final:
             # "hola genesis" → "hola", "genesis salida flip" → "salida flip")
-            for w in self.WAKE:
+            for w in self._wake():
                 low = low.replace(w, " ")
             # Whisper agrega puntuación ("salida, flip") que rompe los regex de
             # los handlers → la normalizo a espacios.

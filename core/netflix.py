@@ -526,47 +526,9 @@ def _search_results_visible(L, T, W, H):
         return None
 
 
-def _cabin_hwnd():
-    """HWND de la ventana de la cabina de Genesis. Está docked a la derecha y
-    always-on-top → TAPA la lupa de Netflix (arriba-derecha). Hay que minimizarla
-    durante el flujo por mouse y restaurarla después. None si no se encuentra."""
-    try:
-        import uiautomation as auto
-        for w in auto.GetRootControl().GetChildren():
-            try:
-                nm = (w.Name or "").lower()
-                if w.ControlTypeName == "WindowControl" and \
-                        ("genesis" in nm or "jarvis" in nm):
-                    return w.NativeWindowHandle
-            except Exception:
-                continue
-    except Exception:
-        pass
-    return None
-
-
-def _win_origin(hwnd):
-    """(left, top) de una ventana por HWND, o None."""
-    try:
-        import ctypes
-        from ctypes import wintypes
-        r = wintypes.RECT()
-        ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(r))
-        return r.left, r.top
-    except Exception:
-        return None
-
-
-def _move_window(hwnd, x, y):
-    """Mueve una ventana a (x, y) sin cambiar tamaño / z-order / foco.
-    Se usa para 'aparcar' la cabina fuera de pantalla durante el flujo por mouse
-    (mejor que minimizar: WebView2 se queda en blanco al restaurar desde minimizado)."""
-    try:
-        import ctypes
-        # SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE = 0x0001|0x0004|0x0010
-        ctypes.windll.user32.SetWindowPos(hwnd, 0, int(x), int(y), 0, 0, 0x0015)
-    except Exception:
-        pass
+# Control de la ventana de la cabina (aparcar/devolver durante el flujo por mouse).
+# Canónico en core/cabin_window.py (un solo lugar para mantener).
+from core.cabin_window import _cabin_hwnd, _win_origin, _move_window
 
 
 def play_store_mouse(query: str, profile: str = None) -> str:

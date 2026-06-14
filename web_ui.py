@@ -693,10 +693,30 @@ def api_hud():
     return jsonify(d)
 
 
+def _brand(html):
+    """Reemplaza las marcas visibles GENESIS/JARVIS por el nombre configurado por
+    el usuario. Solo toca MAYÚSCULAS (texto display) y la palabra capitalizada
+    «Genesis» (tooltips); NO toca rutas/ids en minúscula (/jarvis, /core), que no
+    aparecen en mayúscula. Si el nombre es el default 'Genesis', no cambia nada."""
+    try:
+        from core.assistant_identity import get_name
+        name = get_name()
+    except Exception:
+        name = "Genesis"
+    if name.strip().lower() == "genesis":
+        return html
+    import re
+    up = name.upper()
+    html = html.replace("GENESIS // JARVIS", up)
+    html = html.replace("GENESIS", up).replace("JARVIS", up)
+    html = re.sub(r"\bGenesis\b", lambda m: name, html)
+    return html
+
+
 @app.route("/jarvis")
 def jarvis_hud():
     """Interfaz HUD tipo JARVIS, cableada a datos reales de Genesis."""
-    return _JARVIS_HTML
+    return _brand(_JARVIS_HTML)
 
 
 _CORE_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -1009,7 +1029,7 @@ document.querySelectorAll('.dockbtn,.corner,#micbtn,#tip .x').forEach(function(e
 @app.route("/core")
 def core_ui():
     """Interfaz JARVIS CORE — Tablero de Evidencias (recreación)."""
-    return _CORE_HTML
+    return _brand(_CORE_HTML)
 
 
 _PLASMALAB_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -1071,7 +1091,7 @@ requestAnimationFrame(loop);
 @app.route("/plasma-lab")
 def plasma_lab():
     """Laboratorio de diseños del núcleo de plasma (preview para elegir)."""
-    return _PLASMALAB_HTML
+    return _brand(_PLASMALAB_HTML)
 
 
 _MISSION_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -1216,7 +1236,7 @@ def api_agents_toggle():
 @app.route("/mission")
 def mission_ui():
     """JARVIS Mission Control — Vista Táctica (recreación, datos reales)."""
-    return _MISSION_HTML
+    return _brand(_MISSION_HTML)
 
 
 _audio_url_cache = {}  # vid -> (stream_url, ts) — googlevideo URLs duran horas

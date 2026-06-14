@@ -12,14 +12,20 @@ import ctypes
 
 
 def _cabin_hwnd():
-    """HWND de la ventana de la cabina de Genesis, o None."""
+    """HWND de la ventana de la cabina, o None. Matchea «genesis»/«jarvis» y el
+    nombre configurado (el usuario puede renombrar el asistente → cambia el título)."""
+    names = {"genesis", "jarvis"}
+    try:
+        from core.assistant_identity import get_name
+        names.add(get_name().lower())
+    except Exception:
+        pass
     try:
         import uiautomation as auto
         for w in auto.GetRootControl().GetChildren():
             try:
                 nm = (w.Name or "").lower()
-                if w.ControlTypeName == "WindowControl" and \
-                        ("genesis" in nm or "jarvis" in nm):
+                if w.ControlTypeName == "WindowControl" and any(t in nm for t in names):
                     return w.NativeWindowHandle
             except Exception:
                 continue

@@ -115,8 +115,13 @@ class GenesisProcessingMixin:
         if ("**" in result) or ("\n" in result) or ("•" in result) or ("▸" in result):
             return result
         try:
+            try:
+                from core.assistant_identity import get_name as _gn
+                _nm = _gn()
+            except Exception:
+                _nm = "Genesis"
             sys_p = (
-                "Sos Genesis hablando en argentino informal (vos), relajado y "
+                f"Sos {_nm} hablando en argentino informal (vos), relajado y "
                 "espontáneo, como un amigo. Te paso un DATO REAL ya obtenido. "
                 "Reformulalo en 1-2 frases naturales y frescas, distinto a un "
                 "template. REGLA: no cambies ni inventes números, nombres ni "

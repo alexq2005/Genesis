@@ -827,9 +827,14 @@ class GenesisToolsMixin:
             if self.show_thinking:
                 print(f"  [QualityGuard: {has_generic} frases genéricas detectadas — regenerando]")
             self.memory.short_term.add("assistant", response)
+            try:
+                from core.assistant_identity import get_name as _gn
+                _nm = _gn()
+            except Exception:
+                _nm = "Genesis"
             self.memory.short_term.add("user",
                 f"[SISTEMA: Tu respuesta usa frases genéricas de chatbot. "
-                f"Eres Genesis, no un asistente corporativo. "
+                f"Eres {_nm}, no un asistente corporativo. "
                 f"Responde de forma directa, específica y con personalidad. "
                 f"NO uses frases como 'estoy aqui para ayudarte' ni '¿como puedo ayudarte?'. "
                 f"Responde la pregunta original: '{user_input[:200]}']"
@@ -2033,7 +2038,12 @@ class GenesisToolsMixin:
                 "anthropic": "Anthropic API",
             }
             provider_display = provider_names.get(LLM_PROVIDER, LLM_PROVIDER)
-            return (f"🧬 Soy **Genesis v{GENESIS_VERSION}** — IA autónoma de escritorio.\n\n"
+            try:
+                from core.assistant_identity import get_name as _gn
+                _nm = _gn()
+            except Exception:
+                _nm = "Genesis"
+            return (f"🧬 Soy **{_nm} v{GENESIS_VERSION}** — IA autónoma de escritorio.\n\n"
                     f"▸ Motor actual: **{model}** via {provider_display}\n"
                     f"▸ Corro 100% en tu máquina (Windows 11 Pro)\n"
                     f"▸ Tengo acceso real a tu sistema: archivos, apps, hardware, internet\n"
@@ -4016,6 +4026,23 @@ class GenesisToolsMixin:
             if not target:
                 return "🪟 ¿Qué ventana querés maximizar? Decime el nombre de la app."
             return window_manager.maximize(target)
+
+        # ── RENOMBRAR el asistente ("llamate X", "cambiate el nombre a X") ────
+        _rn = _re.search(
+            r"(?:llam[áa]te|llamate|te\s+vas\s+a\s+llamar|"
+            r"cambi[áa]te\s+(?:el\s+)?nombre\s+(?:a|por)|"
+            r"cambi[áa]\s+tu\s+nombre\s+(?:a|por)|"
+            r"tu\s+(?:nuevo\s+)?nombre\s+(?:ahora\s+)?(?:es|ser[áa])|"
+            r"ren[óo]mbrate\s+(?:a|como)|pon[ée]te\s+(?:el\s+)?nombre|"
+            r"de\s+ahora\s+en\s+m[áa]s\s+(?:te\s+llam[áa]s|sos))\s+(.+)", inp)
+        if _rn:
+            from core import assistant_identity
+            ok, res = assistant_identity.set_name(_rn.group(1))
+            if ok:
+                return (f"🔤 Listo, desde ahora me llamo **{res}**. Llamame «{res}, …» "
+                        f"por voz. Ojo: «Genesis» ya NO es la palabra de activación. Si "
+                        f"la voz no me reconoce, escribí «llamate Genesis» para volver.")
+            return f"🔤 No pude cambiar el nombre: {res}."
 
         # ── CABINA de Genesis: esconder / mostrar por voz ─────────────────────
         # Reflexivo ("escondete/ocultate/minimizate/desaparecé") → esconder la

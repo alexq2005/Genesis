@@ -61,7 +61,11 @@ _patch_webview2_permissions()
 # ============================================================
 # CONFIGURACION
 # ============================================================
-APP_TITLE = "Genesis AI"
+try:
+    from core.assistant_identity import get_name as _get_name
+    APP_TITLE = f"{_get_name()} AI"      # refleja el nombre configurado (al reiniciar)
+except Exception:
+    APP_TITLE = "Genesis AI"
 FLASK_HOST = "127.0.0.1"
 FLASK_PORT = 5100
 SIDEBAR_WIDTH = 580
@@ -657,7 +661,7 @@ def _on_loaded(window):
     """Se ejecuta cuando la pagina termina de cargar — inyecta la UI custom."""
     time.sleep(0.5)
     try:
-        window.evaluate_js(INJECTED_JS)
+        window.evaluate_js(INJECTED_JS.replace("Genesis AI", APP_TITLE))
     except Exception:
         pass
 
@@ -703,7 +707,7 @@ def main():
 
     _webview_window = webview.create_window(
         APP_TITLE,
-        html=SPLASH_HTML,
+        html=SPLASH_HTML.replace("Genesis AI", APP_TITLE),
         width=w, height=h, x=x, y=y,
         resizable=True,
         frameless=frameless,
