@@ -1365,10 +1365,9 @@ class GenesisToolsMixin:
         # === SALIDA DE AUDIO (dispositivo de reproducción por defecto) ===
         if (_re.search(r"\b(salida\s+de\s+(audio|sonido)|dispositivos?\s+de\s+salida|"
                        r"salidas?\s+de\s+audio)\b", inp)
-                or (_re.search(r"\bsalida\b", inp)
-                    and _re.search(r"\b(conect\w*|cambi\w*|pon[ée]\w*|pas[áa]\w*|"
-                                   r"audio|sonido|jbl|logitech|parlante|altavoz)\b", inp))
-                or _re.search(r"\b(audio|sonido)\s+(en|a|al|por)\b", inp)):
+                or _re.search(r"\bsalida\s+[a-záéíóúñ0-9]+", inp)
+                or _re.search(r"\b(audio|sonido)\s+(en|a|al|por)\b", inp)
+                or _re.search(r"\b(jbl|logitech)\b", inp)):
             from core import audio_output as _ao
             _devkey = _re.search(r"\b(jbl|logitech|philips|flip|tune|realtek|nvidia|"
                                  r"parlante|altavoz|altavoces|auricular\w*|monitor|"
