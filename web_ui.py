@@ -1066,34 +1066,55 @@ function pollVoice(){fetch('/api/voice/feed?since='+_vseq).then(function(r){retu
 }).catch(function(){});}
 setInterval(pollStats,3000);pollStats();pollVoice();setInterval(pollVoice,1500);
 // --- Starfield de fondo (estilo nave) ---
-(function(){var sc=$('stars');if(!sc)return;var x,W,H,cx,cy,maxR,stars=[],flashes=[];
- var SPEED=0.2;            // velocidad de deriva (px/frame) — subila para más rápido
- var CONC=3.0;             // concentración: + alto = más apretadas al núcleo (densas al centro, ralas lejos)
- var FLASH_RATE=0.05, FLASH_MAX=8;    // frecuencia y máximo de destellos simultáneos
- function core(){var sr=sc.getBoundingClientRect();var o=document.querySelector('.orbwrap');
-  if(o){var r=o.getBoundingClientRect();cx=r.left+r.width/2-sr.left;cy=r.top+r.height/2-sr.top;}
-  else{cx=W/2;cy=H*0.32;}                     // fallback si el orbe no está listo
-  maxR=Math.min(W,H)*0.72;}                    // radio del halo alrededor del núcleo (expandido)
- function place(s){var a=Math.random()*6.2832,rad=maxR*Math.pow(Math.random(),CONC);
-  s.x=cx+Math.cos(a)*rad;s.y=cy+Math.sin(a)*rad;}
- function spawnFlash(){var a=Math.random()*6.2832,rad=maxR*0.92*Math.pow(Math.random(),1.4);
-  flashes.push({x:cx+Math.cos(a)*rad,y:cy+Math.sin(a)*rad,t:0,dur:90+Math.random()*110,sz:4+Math.random()*9});}
- function build(){W=sc.width=sc.clientWidth;H=sc.height=sc.clientHeight;x=sc.getContext('2d');core();
-  var N=Math.round(W*H/170);if(N<3000)N=3000;if(N>6800)N=6800;   // más puntos (cian + blanco)
-  stars=[];for(var i=0;i<N;i++){var b=Math.random();var s={b:b,r:b>0.86?1.4:0.7,c:Math.random()<0.34?1:0,vx:(Math.random()-0.5)*2*SPEED,vy:(Math.random()-0.5)*2*SPEED,tw:Math.random()*6.2832};place(s);stars.push(s);}}
- function frame(){if(!x)return;x.clearRect(0,0,W,H);
-  // reacción a la VOZ: lee pSmooth (amplitud del shader); >0.15 = baseline en reposo
+/* ===== CAMPO DE ESTRELLAS 3D (WebGL GL_POINTS): miles de puntos con glow real,
+   profundidad/parallax, rotación diferencial alrededor del núcleo, reactivo a la voz ===== */
+(function(){var sc=$('stars');if(!sc)return;
+ var CONC=2.6,N=24000,DPR=Math.min(2,window.devicePixelRatio||1);
+ var gl=null,prog=null,U={},W=0,H=0,cx=0,cy=0,maxR=0;
+ try{gl=sc.getContext('webgl',{alpha:true,premultipliedAlpha:false,antialias:true})||sc.getContext('experimental-webgl');}catch(e){gl=null;}
+ if(!gl)return;
+ var VS='attribute vec2 aPolar;attribute vec3 aData;attribute float aCyan;'
+  +'uniform vec2 uCenter;uniform vec2 uScale;uniform float uTime;uniform float uAmp;uniform float uMaxR;uniform float uPS;'
+  +'varying float vB;varying float vC;'
+  +'void main(){float depth=aData.x;'
+  +'float ang=aPolar.x+uTime*(0.015+depth*0.045);'
+  +'float rad=aPolar.y*uMaxR*(1.0+uAmp*0.18*(0.4+depth));'
+  +'vec2 off=vec2(cos(ang)*uScale.x,sin(ang)*uScale.y)*rad;'
+  +'gl_Position=vec4(uCenter+off,0.0,1.0);'
+  +'float tw=0.6+0.4*sin(uTime*1.4+aData.z);'
+  +'vB=aData.y*tw*(0.55+0.45*depth)*(1.0+uAmp*1.7);vC=aCyan;'
+  +'gl_PointSize=(1.4+depth*3.4)*uPS*(1.0+uAmp*0.9);}';
+ var FS='precision mediump float;varying float vB;varying float vC;'
+  +'void main(){vec2 d=gl_PointCoord-0.5;float r=length(d);'
+  +'float c=smoothstep(0.5,0.0,r);float a=(0.35*c+0.65*c*c)*vB*1.5;'
+  +'vec3 col=mix(vec3(0.85,0.91,1.0),vec3(0.18,0.82,1.0),vC);'
+  +'gl_FragColor=vec4(col,clamp(a,0.0,1.0));}';
+ function sh(ty,s){var o=gl.createShader(ty);gl.shaderSource(o,s);gl.compileShader(o);if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))console.warn('stars',gl.getShaderInfoLog(o));return o;}
+ prog=gl.createProgram();gl.attachShader(prog,sh(gl.VERTEX_SHADER,VS));gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,FS));gl.linkProgram(prog);gl.useProgram(prog);
+ var data=new Float32Array(N*6);
+ for(var i=0;i<N;i++){var o=i*6;
+  data[o]=Math.random()*6.2832;data[o+1]=Math.pow(Math.random(),CONC);  // ang, radio(concentrado)
+  data[o+2]=Math.random();data[o+3]=0.2+Math.random()*0.8;              // depth, brillo
+  data[o+4]=Math.random()*6.2832;data[o+5]=Math.random()<0.34?1.0:0.0;} // fase, cian
+ var buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
+ var FB=4,ST=6*FB,aP=gl.getAttribLocation(prog,'aPolar'),aD=gl.getAttribLocation(prog,'aData'),aC=gl.getAttribLocation(prog,'aCyan');
+ gl.enableVertexAttribArray(aP);gl.vertexAttribPointer(aP,2,gl.FLOAT,false,ST,0);
+ gl.enableVertexAttribArray(aD);gl.vertexAttribPointer(aD,3,gl.FLOAT,false,ST,2*FB);
+ gl.enableVertexAttribArray(aC);gl.vertexAttribPointer(aC,1,gl.FLOAT,false,ST,5*FB);
+ U.center=gl.getUniformLocation(prog,'uCenter');U.scale=gl.getUniformLocation(prog,'uScale');U.time=gl.getUniformLocation(prog,'uTime');U.amp=gl.getUniformLocation(prog,'uAmp');U.maxr=gl.getUniformLocation(prog,'uMaxR');U.ps=gl.getUniformLocation(prog,'uPS');
+ gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);   // aditivo = glow
+ function recompute(){W=sc.clientWidth||300;H=sc.clientHeight||300;sc.width=Math.round(W*DPR);sc.height=Math.round(H*DPR);gl.viewport(0,0,sc.width,sc.height);
+  var sr=sc.getBoundingClientRect(),ob=document.querySelector('.orbwrap');
+  if(ob){var r=ob.getBoundingClientRect();cx=r.left+r.width/2-sr.left;cy=r.top+r.height/2-sr.top;}else{cx=W/2;cy=H*0.32;}
+  maxR=Math.min(W,H)*0.72;}
+ function frame(){if(!gl)return;
   var va=(typeof pSmooth!=='undefined'&&pSmooth>0.15)?(pSmooth-0.15)*1.5:0;if(va>1)va=1;
-  var push=1+va*0.16,asz=1+va*0.8,abr=1+va*1.9;   // empuje hacia afuera, tamaño, brillo
-  for(var i=0;i<stars.length;i++){var s=stars[i];
-   s.x+=s.vx;s.y+=s.vy;var dx=s.x-cx,dy=s.y-cy;if(dx*dx+dy*dy>maxR*maxR)place(s);  // se aleja → vuelve cerca del núcleo
-   s.tw+=0.07+va*0.22;var a=(0.18+s.b*0.55)*(0.6+0.4*Math.sin(s.tw))*abr;if(a>1)a=1;
-   var px=cx+dx*push,py=cy+dy*push;     // empuje radial con la voz (no altera la posición real)
-   if(s.c)x.fillStyle='rgba('+Math.round(40+s.b*70)+','+Math.round(205+s.b*50)+',255,'+a.toFixed(2)+')';   // cian
-   else x.fillStyle='rgba('+Math.round(222+s.b*33)+','+Math.round(234+s.b*21)+',255,'+a.toFixed(2)+')';   // blanco
-   x.beginPath();x.arc(px,py,s.r*asz,0,6.2832);x.fill();}
+  gl.useProgram(prog);
+  gl.uniform2f(U.center,cx/W*2.0-1.0,1.0-cy/H*2.0);gl.uniform2f(U.scale,H/W,1.0);
+  gl.uniform1f(U.time,performance.now()/1000);gl.uniform1f(U.amp,va);gl.uniform1f(U.maxr,maxR*2.0/H);gl.uniform1f(U.ps,DPR);
+  gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.drawArrays(gl.POINTS,0,N);
   requestAnimationFrame(frame);}
- setTimeout(function(){build();frame();},140);window.addEventListener('resize',build);})();
+ setTimeout(function(){recompute();frame();},120);window.addEventListener('resize',recompute);})();
 // --- Onboarding (primera vez) ---
 function closeTip(){var t=$('tip');if(t)t.style.display='none';try{localStorage.setItem('gx_seen_tip','1');}catch(e){}}
 function openTip(){var t=$('tip');if(t)t.style.display='block';}
