@@ -840,7 +840,7 @@ a{color:var(--g);text-decoration:none}
 </div>
 
 <div id="camrow" class="corner" style="left:14px" onclick="toggleCam()"><i class="ti ti-camera-off"></i> CÁMARA · APAGADA</div>
-<div class="corner" style="right:14px" onclick="openVoiceCfg()" title="Configuración de voz"><i class="ti ti-settings" style="font-size:16px"></i></div>
+<div class="corner" style="right:14px" onclick="openSettings()" title="Configuración (voz, correos, claves)"><i class="ti ti-settings" style="font-size:16px"></i></div>
 <div id="tip" role="dialog" aria-label="Cómo usar Genesis" style="display:none">
  <span class="x" role="button" tabindex="0" onclick="closeTip()" aria-label="Cerrar ayuda">Entendido ✕</span>
  <div><b>👋 Hola, soy Genesis.</b> Podés interactuar de 3 formas:</div>
@@ -892,6 +892,43 @@ function openVoiceCfg(){
 function testVoiceCfg(){var v=$('vcsel').value;var rn=parseInt($('vcrate').value,10)||0;localStorage.setItem('gx_voice',v);localStorage.setItem('gx_rate',rn);speak('Hola, señor. Así sueno con esta voz. Sistemas en línea.');}
 function saveVoiceCfg(){var v=$('vcsel').value;var rn=parseInt($('vcrate').value,10)||0;localStorage.setItem('gx_voice',v);localStorage.setItem('gx_rate',rn);
  fetch('/api/voice/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({voice:v,rate:rn})}).then(function(){closeModal();showAnswer('<i class="ti ti-check" style="color:var(--g)"></i> Voz guardada: '+esc($('vcsel').options[$('vcsel').selectedIndex].text));}).catch(function(){closeModal();});}
+/* ===== HUB de configuración (engranaje): Voz + Correos + Claves + futuros ===== */
+function openSettings(){
+ fetch('/api/settings/integrations').then(function(r){return r.json();}).then(function(d){
+  var h='<div class="panel" style="width:470px;max-width:94vw;max-height:88vh;overflow-y:auto;padding:20px" onclick="event.stopPropagation()">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="color:var(--g);font-size:13px;letter-spacing:.12em"><i class="ti ti-settings"></i> CONFIGURACIÓN</span><span onclick="closeModal()" style="cursor:pointer;color:#7fceb3"><i class="ti ti-x"></i></span></div>';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(45,255,174,.12)"><span style="color:#cfeee0;font-size:13px"><i class="ti ti-microphone-2"></i> Voz</span><button class="btn" onclick="openVoiceCfg()">Configurar</button></div>';
+  (d.sections||[]).forEach(function(s){h+=renderSection(s);});
+  h+='<div style="font-size:10px;color:#4d8a76;margin-top:14px;border-top:1px solid rgba(45,255,174,.12);padding-top:8px">🔒 Las claves se guardan en <b>.env</b> (local, nunca se suben a internet ni al repo). Se muestran enmascaradas; dejá un campo vacío para no cambiarlo.</div>';
+  h+='</div>';
+  $('modal').innerHTML=h;$('modal').style.display='flex';
+ }).catch(function(){});
+}
+function renderSection(s){
+ var soon=s.status==='soon';
+ var h='<div style="margin-top:14px;opacity:'+(soon?'.55':'1')+'">';
+ h+='<div style="color:var(--g);font-size:12px;letter-spacing:.08em;margin-bottom:3px"><i class="ti '+(s.icon||'')+'"></i> '+esc(s.title)+(soon?' <span style="color:#ffd24d;font-size:10px">· PRÓXIMAMENTE</span>':'')+'</div>';
+ if(s.help)h+='<div style="font-size:10px;color:#4d8a76;margin-bottom:6px">'+esc(s.help)+'</div>';
+ s.fields.forEach(function(f){
+  h+='<div style="font-size:11px;color:#7fceb3;margin:7px 0 2px">'+esc(f.label)+(f.set?' <span style="color:var(--g)">✓</span>':'')+'</div>';
+  var isSec=f.type==='secret';
+  var val=isSec?'':esc(f.value||'');
+  var ph=isSec?(f.set?esc(f.value):esc(f.ph||'')):esc(f.ph||'');
+  h+='<input data-env="'+f.env+'" type="'+(isSec?'password':'text')+'"'+(soon?' disabled':'')+' value="'+val+'" placeholder="'+ph+'" style="width:100%;padding:8px;background:#06120e;color:#cfeee0;border:1px solid rgba(45,255,174,.25);border-radius:6px;font-size:12px;box-sizing:border-box">';
+ });
+ if(!soon)h+='<button class="btn" style="margin-top:9px" onclick="saveSection(this)"><i class="ti ti-device-floppy"></i> GUARDAR</button>';
+ h+='</div>';
+ return h;
+}
+function saveSection(btn){
+ var box=btn.parentNode;var ins=box.querySelectorAll('input[data-env]');var p={};
+ for(var i=0;i<ins.length;i++){var v=(ins[i].value||'').trim();if(v&&v.indexOf('•')<0)p[ins[i].getAttribute('data-env')]=v;}
+ if(!Object.keys(p).length){showAnswer('Nada que guardar (los campos vacíos no cambian nada).');closeModal();return;}
+ fetch('/api/settings/integrations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}).then(function(r){return r.json();}).then(function(d){
+  closeModal();
+  if(d.ok)showAnswer('<i class="ti ti-check" style="color:var(--g)"></i> Guardado: '+((d.updated||[]).join(', ')||'sin cambios'));
+  else showAnswer('No se pudo guardar: '+esc(d.error||'error'));
+ }).catch(function(){closeModal();});}
 /* ===== NÚCLEO DE PLASMA: vive siempre, late suave en reposo y erupciona con la voz real de Genesis ===== */
 var pAC=null,pAna=null,pFreq=null,pSpeaking=false,pSmooth=0.12,pRot=0;
 var PCV=$('plasma'),PCTX=PCV?PCV.getContext('2d'):null,PR=2,PW=172,PC=86;
@@ -1347,6 +1384,16 @@ def api_voice_feed():
         return jsonify(handsfree.get_feed(since))
     except Exception:
         return jsonify({"seq": 0, "events": []})
+
+
+@app.route("/api/settings/integrations", methods=["GET", "POST"])
+def api_settings_integrations():
+    """Configuración de integraciones (correos, claves API, futuros canales).
+    GET → estado enmascarado + schema; POST → guarda en .env (sin loguear)."""
+    from core import integrations_config as ic
+    if request.method == "POST":
+        return jsonify(ic.set_config(request.get_json(silent=True) or {}))
+    return jsonify(ic.get_config())
 
 
 @app.route("/api/voice/config", methods=["GET", "POST"])
