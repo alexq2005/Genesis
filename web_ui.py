@@ -747,7 +747,8 @@ a{color:var(--g);text-decoration:none}
 .topbar{position:relative;z-index:6;display:flex;justify-content:space-between;align-items:center;padding:2px 4px}
 .brand{display:flex;align-items:center;gap:9px;color:var(--g);letter-spacing:.2em;font-size:13px;font-weight:600;animation:glow 3s infinite}
 .toprt{display:flex;align-items:center;gap:14px;font-size:10px;color:#4d8a76;letter-spacing:.14em}
-.hero{position:relative;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:88vh;text-align:center;gap:10px;padding-top:4px}
+.hero{position:relative;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;min-height:92vh;text-align:center;gap:8px;padding-top:6px}
+.corecenter{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;width:100%}
 .statuslbl{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(45,255,174,.25);background:rgba(7,18,16,.6);border-radius:20px;padding:5px 16px;color:var(--g);font-size:11px;letter-spacing:.2em}
 .orbwrap{position:relative;width:350px;height:350px;margin:2px 0}
 .orbwrap canvas,.orbwrap svg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:350px;height:350px}
@@ -776,9 +777,9 @@ a{color:var(--g);text-decoration:none}
 /* Responsive: usable en pantallas chicas / celular */
 @media (max-width:640px){
  #core{padding:10px}
- .hero{min-height:auto;padding-top:6px}
- .orbwrap{width:210px;height:210px}
- .orbwrap canvas,.orbwrap svg{width:210px!important;height:210px!important}
+ .hero{min-height:83vh;padding-top:4px;gap:6px}
+ .orbwrap{width:270px;height:270px}
+ .orbwrap canvas,.orbwrap svg{width:270px!important;height:270px!important}
  #tablero{position:static!important;top:auto!important;right:auto!important;width:auto!important;max-width:none!important;max-height:24vh;margin:8px 0 0}
  .topbar{flex-wrap:wrap;gap:6px}
  .toprt{gap:6px;flex-wrap:wrap}
@@ -808,6 +809,7 @@ a{color:var(--g);text-decoration:none}
 </div>
 
 <div class="hero">
+ <div class="corecenter">
  <div id="state" class="statuslbl"><span id="statedot" style="width:9px;height:9px;border-radius:50%;background:var(--g);box-shadow:0 0 8px var(--g)"></span><span id="statetxt">JARVIS · CALMADO</span></div>
  <div class="orbwrap">
   <canvas id="plasma" width="172" height="172" style="border-radius:50%"></canvas>
@@ -821,6 +823,7 @@ a{color:var(--g);text-decoration:none}
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span id="cnow" style="color:var(--g);font-size:11px"><i class="ti ti-music"></i> reproduciendo</span><span onclick="cstop()" style="cursor:pointer;color:#7fceb3"><i class="ti ti-x"></i></span></div>
   <audio id="cap" style="width:100%" controls autoplay></audio>
  </div>
+ </div><!-- /corecenter -->
  <div class="dock">
   <div class="dockbtn" onclick="openDock('buscar')"><i class="ti ti-search"></i><span>BUSCAR</span></div>
   <div class="dockbtn" onclick="openDock('webs')"><i class="ti ti-world"></i><span>WEBS</span></div>
