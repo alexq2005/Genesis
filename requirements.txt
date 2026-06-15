@@ -61,6 +61,10 @@ uiautomation==2.0.29             # UI Automation de Windows (control semántico)
 pyautogui==0.9.54                # Input (teclado/mouse) + fallback por coordenadas
 pygetwindow==0.0.9               # Gestión de ventanas
 
+# --- Cámara del celular (el cel transmite su cámara por la red local) ---
+qrcode[pil]==8.2                 # QR de emparejamiento (escaneás con el cel)
+cryptography==48.0.1             # Cert autofirmado para el server HTTPS (getUserMedia exige contexto seguro)
+
 # --- Desktop App ---
 pywebview==6.1                   # Desktop UI (WebView2)
 pystray==0.19.5                  # System tray icon
