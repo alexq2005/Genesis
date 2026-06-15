@@ -1144,6 +1144,45 @@ clonada** — 100% local. Próximo foco: orquestador de VRAM y capa de tools (N4
 
 ---
 
+### v6.1.1 — más sentidos + cabina + fixes (2026-06-14/15)
+
+**Tema: GENESIS suma un sentido nuevo (la cámara del celular), pule la cabina y la voz,
+y se le arreglan bugs reales de Netflix y de mover ventanas.**
+
+**Cámara del celular (nuevo sentido, `core/mobile_cam.py`)**: el celular transmite su
+cámara a GENESIS por la **red local**, sin instalar app. Server HTTPS propio (puerto 5443,
+cert autofirmado generado con `cryptography`), página `/movil` (getUserMedia) que sube
+frames JPEG; emparejamiento por **QR** desde la cabina. Comandos: «conectá la cámara del
+celular», «qué ve la cámara del celular» (llava), sacar foto, y **modo monitoreo**
+(auto-análisis periódico). HTTPS es obligatorio porque getUserMedia solo va en contexto seguro.
+
+**Visión de pantalla afinada (`core/image_analyzer.py`)**: llava:latest se **negaba** a
+describir capturas con un `system` prompt largo → se quita el system (idioma va en el prompt) +
+temp 0.2; la respuesta combina la descripción de llava con los **títulos reales de ventana**.
+
+**Cabina (`web_ui.py`)**: núcleo de plasma **seleccionable** (Superficie/Combo/Onda/Anillo3D/
+Aurora) con selector en vivo + **color de usuario** (degradado centro→borde); **estaciones de
+agentes** tipo oficina en Mission Control; TTS que ya no pronuncia emojis.
+
+**Voz**: manos-libres con **match difuso** de wake-word (nombres que vosk transcribe mal:
+lexus→lexis/nexus); **voiceprint** enroll de 60s + texto fonético; **comandos personalizados**
+(`core/user_commands.py`: «cuando diga X → hacé Y»).
+
+**Netflix (fixes reales, `core/netflix.py`)**: (1) reproducía el título **equivocado** —
+`_FIND_PLAY` agarraba el botón del **billboard** (hero promocionado) → ahora lo excluye y usa
+el `detailsPagePlayButton` del título correcto; (2) declaraba falso «reproduciendo» → ahora
+**verifica el `<video>` runtime**; (3) «movela a la otra pantalla» **reabría** en vez de mover →
+fix de regex (stems) + mover la ventana existente por CDP.
+
+**Mover ventanas instantáneo (`core/window_manager.py`)**: `move_to_screen` lanzaba
+PowerShell+`Add-Type` (recompila C# ~2-4s) → parecía que «no se movía». Reescrito a **`ctypes`
+in-process** → instantáneo.
+
+**Commits**: 9 temáticos (`git log`): netflix x2, window-manager, cabina, voz, agentes,
+mobile-cam, tools, vision. Bugs detallados en `ERRORS_AND_SOLUTIONS.md` (ERR-2026-06-15a/b/c).
+
+---
+
 ### v7.0.0 — Unbound (Mente Orquestada) 🔜 EN DESARROLLO
 
 **Tema: GENESIS rompe sus límites — usa todos sus recursos sin pelear por ellos, suma

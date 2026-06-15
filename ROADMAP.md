@@ -1,7 +1,7 @@
 # GENESIS — Roadmap
 
 > **Documento vivo.** GENESIS sigue escalando: este roadmap se actualiza con cada hito.
-> Última actualización: **2026-06-13**.
+> Última actualización: **2026-06-15**.
 
 GENESIS es un asistente de IA **100% local** (corre sobre Ollama, ~140 módulos en Python)
 con cabina de escritorio (PyWebView, puerto 5100). Privacidad total, sin nube obligatoria,
@@ -28,8 +28,10 @@ auto-mejora segura — todo offline y bajo control del usuario.
 - **Voz**: TTS edge-tts (22 voces) + **voz clonada local (XTTS-v2)** — voz JARVIS/Milton.
 - **Imágenes**: generación local con **Stable Diffusion (sd-turbo) en GPU** (offline, ~0.6s warm).
 - **Música**: reproducción en YouTube Music (CDP, reuso de ventana).
-- **Netflix**: app de la Store (abrir/reproducir/castear vía menú) — unificado en una sola app.
+- **Netflix**: **busca y reproduce** el título por CDP (auto-play en ventana dedicada, verifica que el video arrancó); «movela a la otra pantalla» mueve la ventana sin reabrir; abrir/castear vía app de la Store.
 - **Cast/TV**: Chromecast (YouTube) + cast de Netflix vía navegador.
+- **Visión**: describe el monitor (llava + títulos reales de ventana) y la **cámara del celular** (el cel transmite por red local vía QR/HTTPS, sin app): ver/foto/monitoreo.
+- **Ventanas**: mover entre monitores **instantáneo** (ctypes), por nombre o la del primer plano.
 - **Archivos**: gestión y desarrollo conversacional, papelera segura, búsqueda global.
 - **Sistema**: volumen, brillo, energía, impresión, multi-monitor.
 - **Conexiones**: WiFi, Bluetooth, USB.
@@ -61,6 +63,8 @@ auto-mejora segura — todo offline y bajo control del usuario.
 
 ### 👁️ Track 2 — Sentidos en tiempo real
 - Visión continua (cámara/pantalla en streaming → describe y reacciona).
+  *(Base entregada 2026-06-15: la **cámara del celular** ya transmite frames a GENESIS por
+  red local y el «modo monitoreo» auto-analiza con llava — falta la reacción en tiempo real.)*
 - Mostrar la imagen generada **inline en el hub** (hoy devuelve ruta).
 - Más integraciones de apps + automatización de UI más profunda.
 

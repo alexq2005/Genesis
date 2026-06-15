@@ -24,7 +24,8 @@ Sistema de IA autónomo que evoluciona, aprende e investiga. Desktop app tipo Co
 - **Noticias** — «noticias» / «noticias de \<tema\>» → titulares actuales (Google News RSS, sin API key)
 - **Seguridad del sistema** — «revisá la seguridad» → estado real de Defender, Firewall, UAC y updates pendientes (PowerShell, solo lectura)
 - **Salida de audio** — «salida flip/jbl/logitech» → cambia el dispositivo de reproducción por defecto (IPolicyConfig de Windows)
-- **Multimedia** — música (app YouTube Music vía CDP), Netflix (app de la Store + cast), Chromecast (YouTube), **generación de imágenes local** (Stable Diffusion sd-turbo en GPU)
+- **Multimedia** — música (app YouTube Music vía CDP), Netflix (**busca y reproduce** el título por CDP en ventana dedicada con auto-play; «movela a la otra pantalla» mueve la ventana sin reabrir; abrir/cast vía app de la Store), Chromecast (YouTube), **generación de imágenes local** (Stable Diffusion sd-turbo en GPU)
+- **Visión** — «¿qué ves en mi pantalla?» describe el monitor (llava local + títulos reales de ventana). **Cámara del celular**: «conectá la cámara del celular» muestra un QR; lo escaneás y el cel transmite su cámara a Genesis por la **red local** (HTTPS con cert propio, sin instalar app); después «¿qué ve la cámara del celular?», sacar foto, o modo monitoreo (auto-análisis con llava)
 - **Lanzador de juegos** — «jugá \<X\>» abre juegos de Steam/Epic por nombre (match difuso)
 - **Conexiones** — WiFi, Bluetooth, USB, multi-monitor
 - **Documentos** — PDF, DOCX, PPTX, XLSX, imágenes (OCR), audio, video. Resúmenes Map-Reduce con nivel estudio
@@ -96,6 +97,7 @@ genesis.py (~1,800 líneas, split mixin)  — Motor principal, orquestador de 13
 ├── core/voice_clone.py · voice_config.py · piper_tts.py — Voz: XTTS clon, config (tipo/velocidad), Piper local
 ├── core/news.py · security_check.py · audio_output.py   — Noticias, chequeo de seguridad, salida de audio
 ├── core/game_launcher.py · casting.py · netflix.py      — Juegos Steam/Epic, Chromecast, Netflix
+├── core/mobile_cam.py · window_manager.py · image_analyzer.py — Cámara del celular (HTTPS/QR), mover/snap ventanas (ctypes), visión (llava)
 ├── core/media_generator.py              — Imágenes locales (Stable Diffusion sd-turbo, GPU)
 ├── core/document_processor.py           — Procesamiento de documentos (PDF, DOCX, etc.)
 ├── core/device_tools.py                 — 11 herramientas de control del sistema
@@ -183,6 +185,10 @@ genesis, revisá la seguridad       — Defender / Firewall / UAC / updates
 genesis, subí el volumen           — control de sistema
 genesis, jugá <juego>              — lanza un juego de Steam/Epic
 genesis, reproducí <tema>          — música en YouTube Music
+genesis, reproducí <serie> en netflix — busca y reproduce (auto-play)
+genesis, mové netflix a la otra pantalla — mueve la ventana entre monitores
+genesis, conectá la cámara del celular — QR para transmitir la cámara del cel
+genesis, qué ves en mi pantalla    — describe el monitor (visión llava)
 genesis, dejá de escuchar          — apaga la escucha manos libres
 ```
 

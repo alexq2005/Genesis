@@ -732,6 +732,27 @@
 - **Solución:** `tool_router._ollama_json()` llama a Ollama `/api/chat` con `"format":"json"` (constrained decoding) → JSON SIEMPRE válido. El mismo 8B pasó a 100% consistente (6/6 en 2 pasadas). Cero descarga, cero VRAM extra.
 - **Prevención:** Antes de cambiar/escalar el modelo, aislar si el cuello es comprensión o formato. Para salida estructurada usar `format=json` de Ollama.
 
+## ERR-2026-06-15a: Netflix reproduce el título EQUIVOCADO + falso "reproduciendo"
+- **Fecha:** 2026-06-15
+- **Contexto:** «reproducí el joven sheldon en netflix» reproducía «La ley de los audaces» (título no relacionado) y la respuesta decía «Reproduciendo El joven Sheldon».
+- **Análisis:** Diagnóstico con scripts instrumentados (volcar `_FIND_RESULTS`/`_choose_result`/`_FIND_PLAY` por CDP): la búsqueda y la elección por nombre estaban BIEN (El Joven Sheldon = `Video:80192612`, navegaba a `/title/80192612`). El bug estaba en **`_FIND_PLAY`**: `document.querySelector('a[data-uia*="play"][href*="/watch/"]')` devuelve el PRIMER botón de play del DOM = el del **BILLBOARD** (hero promocionado arriba de la página, que es OTRO título → `tctx Video:70195800` = La ley de los audaces, `billboardPlayButton`). Y se declaraba éxito sin verificar que el video arrancó.
+- **Solución** (`core/netflix.py`): (1) `_FIND_PLAY` excluye el billboard (`data-uia` con 'billboard' o `closest('.billboard…')`) y prefiere el play cuyo `tctx` apunta al MISMO id de `/title/<id>` → queda `detailsPagePlayButton`. (2) `_VERIFY_PLAYING`: confirmar `document.querySelector('video')` reproduciendo Y que el título que suena coincide con lo pedido ANTES de declarar éxito. Verificado: reproduce El Joven Sheldon de verdad. Commit `9d5facf`.
+- **Prevención:** `querySelector` del PRIMER match es frágil en páginas con hero/billboard promocionado — filtrar por contexto (excluir billboard, exigir que el `tctx`/id coincida con la página). Y NUNCA declarar "reproduciendo/OK" sin verificar el estado runtime (el `<video>` corriendo), no solo que la navegación se disparó.
+
+## ERR-2026-06-15b: «movela a la primera pantalla» REABRÍA Netflix en vez de moverlo
+- **Fecha:** 2026-06-15
+- **Contexto:** Con Netflix abierto en la 2ª pantalla, «movela a la primera pantalla» abría OTRA ventana en vez de mover la existente.
+- **Análisis:** DOS causas en `genesis_tools.py`: (1) el **guard** del handler "abrir-en-pantalla" usaba regex de forma EXACTA `mov[ée]r?` que NO caza "movela" (voseo + clítico "la": el `\b` tras `mov[ée]r?` falla seguido de "la") → no bloqueaba el abrir → como "primera pantalla" sí matchea, reabría. (2) el handler de "mover" solo contemplaba 2da/3ra pantalla, no "primera/1". (3) Bug propio del primer fix: `if "netflix" in inp or _name is None` hacía que cualquier «movela» genérico se fuera a mover Netflix aunque quisieras otra ventana.
+- **Solución:** guard con STEMS `(?:mov[ée]\w*|move\w*|mu[ée]v\w*|pas[áa]\w*|…)`; handler de mover acepta "primera/1" (parsing primera→1, tercera→3); Netflix se mueve por CDP (`netflix.move_to_screen_existing`, no reabre) solo si nombran "netflix"; genérico → foreground; nombrada → `window_manager` por título. Commits `df2cfa6`, `c65962b`.
+- **Prevención:** Mismo patrón recurrente — usar **stems cortos** (`mov\w*`) en regex, no formas exactas; y mantener CONSISTENTES los regex que cooperan (el guard de un handler y el verbo del otro). El voseo + clíticos ("movela/muévela/movelo") rompe `\bverbo\b`.
+
+## ERR-2026-06-15c: «no se movió la ventana» — en realidad SÍ se movía, con latencia
+- **Fecha:** 2026-06-15
+- **Contexto:** «mové grass/youtube a la pantalla 1» → el usuario decía que no se movía. Verificado con rect antes/después: grass SÍ se movía, pero recién ~4s después.
+- **Análisis:** `window_manager.move_to_screen` movía ventanas no-Netflix lanzando **PowerShell + `Add-Type`** (recompila C# en CADA llamada, ~2-4s). La ventana se movía pero con tanto retraso que parecía que no. (Netflix se movía instantáneo porque usa `ctypes` in-process.)
+- **Solución** (`core/window_manager.py`): reescrito `move_to_screen` a **`ctypes` IN-PROCESS** (`EnumWindows`/`MoveWindow`/`ShowWindow` SW_RESTORE, `SetProcessDPIAware` para coords físicas consistentes con `get_monitors`) → instantáneo. Verificado: grass monitor2→monitor1 en <1.5s. Commit `5906cb4`.
+- **Prevención:** No spawnear PowerShell+`Add-Type` para operaciones repetidas/interactivas (compila C# cada vez). Usar `ctypes` in-process. Y ante "no funciona", VERIFICAR con datos reales (rect, timing) antes de re-tocar: muchas veces el síntoma (no se movió) ≠ la causa (latencia).
+
 ---
 
 ```markdown
