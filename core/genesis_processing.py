@@ -187,6 +187,16 @@ class GenesisProcessingMixin:
                              a medida que el LLM los genera.
         """
         _start_time = time.time()
+        # Alias del usuario: reescribir la entrada si matchea un comando personalizado
+        # («cuando diga X → hacé Y»). Va ANTES del ruteo para que funcione con tools y LLM.
+        try:
+            from core import user_commands as _uc
+            _exp = _uc.expand(user_input)
+            if _exp:
+                self.log.debug(f"[alias] {user_input!r} -> {_exp!r}")
+                user_input = _exp
+        except Exception:
+            pass
         self._current_input = user_input  # Para Knowledge Graph context en build_system_prompt
         # Flag de seguridad: se activa si esta interacción inyecta contenido
         # externo no confiable (web/documento) al prompt. Bloquea tools de

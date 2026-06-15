@@ -1519,8 +1519,8 @@ class GenesisToolsMixin:
         # maneja move_to_screen más abajo.
         if (_re.search(r"\b(segunda|2da|otra|secundaria|primera|1ra|tercera|3ra)\s+pantalla\b", inp)
                 or _re.search(r"\b(pantalla|monitor)\s*([123])\b", inp)) \
-                and not _re.search(r"\b(mov[ée]r?|move|pas[áa]r?|llev[áa]r?|mand[áa]r?|"
-                                   r"sac[áa]r?|tir[áa]r?)\b", inp):
+                and not _re.search(r"\b(?:mov[ée]\w*|move\w*|mu[ée]v\w*|pas[áa]\w*|"
+                                   r"llev[áa]\w*|mand[áa]\w*|sac[áa]\w*|tir[áa]\w*)\b", inp):
             scr = 2
             _mn = _re.search(r"\b(?:pantalla|monitor)\s*([123])\b", inp)
             if _mn:
@@ -3335,6 +3335,34 @@ class GenesisToolsMixin:
             from core import handsfree as _hf
             return _hf.get(self).status()
 
+        # --- COMANDOS PERSONALIZADOS DEL USUARIO (alias propios) ---
+        # Crear: «cuando diga X hacé Y» / «creá un comando: cuando diga X → Y»
+        _mk = _re.search(r"cuando\s+(?:diga|digo|le\s+diga)\s+(.+?)\s+"
+                         r"(?:hac[ée]|haz|que\s+hagas?|ejecut[áa]r?|->|→|:)\s+(.+)$",
+                         inp)
+        if _mk:
+            from core import user_commands as _uc
+            ok, msg = _uc.add(_mk.group(1), _mk.group(2))
+            return ("✅ " + msg + "\nProbá decirlo cuando quieras.") if ok else "⚠️ " + msg
+        # Listar
+        if (_re.search(r"\b(list[áa]r?|ve[ré]r?|mostr[áa]r?|cu[áa]les\s+son)\s+"
+                       r"(mis\s+)?(comandos|alias|atajos)(\s+propios|\s+personalizados)?\b", inp)
+                or _re.fullmatch(r"\s*mis\s+(comandos|alias|atajos)\.?\s*", inp)):
+            from core import user_commands as _uc
+            items = _uc.list_all()
+            if not items:
+                return ("📋 No tenés comandos personalizados todavía. Creá uno diciendo "
+                        "«cuando diga <frase> hacé <acción>», o desde el botón COMANDOS.")
+            return "📋 **Tus comandos personalizados:**\n" + "\n".join(
+                f"▸ «{i.get('trigger','')}» → {i.get('action','')}" for i in items)
+        # Borrar
+        _rm = _re.search(r"\b(?:borr[áa]r?|elimin[áa]r?|quit[áa]r?|olvid[áa]r?)\s+"
+                         r"(?:el\s+|mi\s+)?(?:comando|alias|atajo)\s+(.+)$", inp)
+        if _rm:
+            from core import user_commands as _uc
+            t = _rm.group(1)
+            return "🗑️ Borré el comando." if _uc.remove(t) else f"No encontré el comando «{t.strip()}»."
+
         # --- HUELLA DE VOZ (reconocimiento del hablante) ---
         if _re.search(r"\b(entren[áa]r?|registr[áa]r?|aprend[ée]r?|guard[áa]r?)\s+"
                       r"(mi\s+|la\s+|tu\s+)?voz\b", inp) or \
@@ -3345,27 +3373,148 @@ class GenesisToolsMixin:
                       r"sabes\s+qui[ée]n\s+soy|esta?\s+es\s+mi\s+voz)\b", inp):
             from core import voiceprint as _vp
             return _vp.start_verify(self)
+        # Olvidar/resetear la huella de voz (verbos NO-archivo para no chocar con file-ops)
+        if _re.search(r"\b(olvid[áa]r?|reset[ea]?[áa]?r?)\s+(mi\s+|la\s+|tu\s+)?(voz|huella)\b"
+                      r"|\bdej[áa]\s+de\s+reconocerme\b", inp):
+            from core import voiceprint as _vp
+            had = _vp.forget()
+            return ("🗣️ Borré tu huella de voz. Ya obedezco a cualquier voz. Para volver a "
+                    "«solo tu voz», decí «entrená mi voz»." if had
+                    else "🗣️ No había ninguna huella entrenada; ya obedezco a cualquier voz.")
+        # Alternar modo de verificación de hablante
+        if _re.search(r"\b(modo\s+abierto|obedec[ée]\s+a\s+(todos|cualquiera)|"
+                      r"escuch[áa]\s+a\s+(todos|cualquiera)|sin\s+reconocimiento\s+de\s+voz)\b", inp):
+            from core import handsfree as _hf
+            return _hf.get(self).set_owner_only(False)
+        if _re.search(r"\b(solo\s+mi\s+voz|obedec[ée]me\s+solo\s+a\s+m[íi]|modo\s+seguro\s+de\s+voz)\b", inp):
+            from core import handsfree as _hf
+            return _hf.get(self).set_owner_only(True)
+
+        # --- CÁMARA DEL CELULAR (server HTTPS local + frames del cel) ---
+        _movil_re = r"c[áa]mara\s+(?:del?\s+|de\s+mi\s+|de\s+)?(?:celular|tel[ée]fono|m[óo]vil|cel)\b"
+        if _re.search(r"\b(qu[ée]\s+(?:ves?|hay|tengo)|mir[áa]|analiz[áa]r?|describ[íie]r?)\b.{0,24}" + _movil_re, inp):
+            try:
+                from core import mobile_cam as _mc
+                import time as _t2, os as _os3, tempfile as _tf3
+                _j, _ts = _mc.get_frame()
+                if not _j or (_t2.time() - _ts) > 8:
+                    return ("📱 El celular no está enviando imagen ahora. Decí «conectá la "
+                            "cámara del celular» y escaneá el QR.")
+                from core.image_analyzer import ImageAnalyzer
+                _mp = _os3.path.join(_tf3.gettempdir(), "gx_movil.jpg")
+                with open(_mp, "wb") as _mf:
+                    _mf.write(_j)
+                _mr = ImageAnalyzer().analyze(_mp, prompt=(
+                    "Esta es la cámara del celular del usuario. Describí en 1-2 frases qué "
+                    "se ve, concreto y sin inventar."))
+                _md = _mr.get("description") if isinstance(_mr, dict) else str(_mr)
+                return "📱👁️ Por la cámara del celular veo:\n" + (_md or "(no pude analizar)")
+            except Exception as _e:
+                return "📱 No pude analizar la cámara del celular: " + str(_e)[:100]
+        # Sacar foto con el celular (guardar el frame actual)
+        _movil_tok = r"(?:celular|tel[ée]fono|m[óo]vil|\bcel\b)"
+        if _re.search(r"\b(sac[áa]|tom[áa]|captur[áa]|fotografi[áa]|hac[ée])\w*\b.{0,30}\b(foto|fotograf[íi]a|captura|imagen)\b", inp) \
+                and _re.search(_movil_tok, inp):
+            from core import mobile_cam as _mc
+            _fp = _mc.save_photo()
+            if _fp:
+                return "📸 Foto del celular guardada en:\n" + _fp
+            return ("📱 No hay señal del celular ahora. Conectá la cámara primero "
+                    "(decí «conectá la cámara del celular»).")
+        # Dejar de monitorear (DEBE ir antes que el arranque)
+        if _re.search(r"\b(dej[áa]\s+de|par[áa]r?|deten[ée]r?|cort[áa]r?|termin[áa]r?)\b.{0,20}(monitore|vigil|observ|c[áa]mara)", inp) \
+                and _re.search(r"(monitore|vigil|observ)", inp):
+            from core import mobile_cam as _mc
+            return ("👁️ Listo, dejo de monitorear la cámara del celular." if _mc.stop_monitor()
+                    else "👁️ No estaba monitoreando nada.")
+        # Arrancar modo monitoreo (auto-análisis periódico)
+        if _re.search(r"\b(monitore[áa]r?|vigil[áa]r?|observ[áa]r?|control[áa]r?)\b.{0,24}" + _movil_re, inp):
+            from core import mobile_cam as _mc
+            if not _mc.status().get("connected"):
+                return ("📱 Primero conectá la cámara del celular "
+                        "(decí «conectá la cámara del celular»).")
+            if _mc.start_monitor(10):
+                return ("👁️ Monitoreando la cámara del celular cada 10 s — te aviso por el feed "
+                        "lo que vea cambiar. Decí «dejá de monitorear la cámara» para parar.")
+            return "👁️ Ya estaba monitoreando la cámara del celular."
+        if _re.search(r"\b(conect[áa]r?|activ[áa]r?|us[áa]r?|empar[ée]j[áa]?r?|vincul[áa]r?|prend[ée]r?)\b.{0,16}" + _movil_re, inp) \
+                or _re.fullmatch(r"\s*" + _movil_re + r"\s*", inp):
+            from core import mobile_cam as _mc
+            return ("[[MOVILQR]]📱 **Cámara del celular** — escaneá el QR en pantalla con tu cel "
+                    "(misma WiFi). En la advertencia de seguridad tocá «Avanzar igual» y "
+                    "permití la cámara. Después decime «qué ve la cámara del celular».")
 
         # --- VISIÓN DE PANTALLA: Genesis mira el monitor y describe qué hay ---
-        if _re.search(r"\b(mir[áa]\s+(mi\s+)?(pantalla|monitor)|"
-                      r"qu[ée]\s+(hay|ves|tengo)\s+(en\s+)?(mi\s+)?(pantalla|monitor)|"
-                      r"qu[ée]\s+estoy\s+(viendo|mirando)|"
-                      r"describ[íie]r?\s+(mi\s+)?(pantalla|monitor)|"
-                      r"analiz[áa]r?\s+(mi\s+)?(pantalla|monitor)|"
-                      r"qu[ée]\s+pel[íi]cula\s+(es\s+esta|estoy\s+(viendo|mirando)))\b", inp):
+        _det = r"(?:la|el|mi|m[íi]|esta|tu|una?)\s+"
+        _scr_re = (r"\b(?:"
+                   r"(?:mir[áa]r?|v[ée]s|ver|vea[s]?|viendo|mostr[áa](?:me|rme)?|mostrar|"
+                   r"fij[áa]te|observ[áa]|revis[áa]|analiz[áa]r?|describ[íie]r?|le[ée]r?)\s+"
+                   r"(?:" + _det + r")?(?:captura\s+de\s+)?(?:pantalla|monitor|escritorio|desktop)"
+                   r"|pod[ée]s\s+ver\s+(?:" + _det + r")?(?:pantalla|monitor|escritorio)"
+                   r"|qu[ée]\s+(?:hay|ves|v[ée]s|tengo|aparece|se\s+ve)\s+(?:en\s+)?(?:" + _det + r")?(?:pantalla|monitor|escritorio)"
+                   r"|qu[ée]\s+estoy\s+(?:viendo|mirando|haciendo)"
+                   r"|compart(?:ir|o|[íi])\s+(?:" + _det + r")?pantalla"
+                   r"|qu[ée]\s+pel[íi]cula\s+(?:es\s+esta|estoy\s+(?:viendo|mirando))"
+                   r")\b")
+        if _re.search(_scr_re, inp):
             try:
-                import os as _os
-                import tempfile as _tf
+                import os as _os, tempfile as _tf, ctypes as _ct
+                from ctypes import wintypes as _wt
                 from core.device_tools import ScreenCapture
                 from core.image_analyzer import ImageAnalyzer
+                # Títulos REALES de las ventanas abiertas → contexto para que llava NO
+                # invente nombres de apps/juegos/películas (precisión ↑).
+                _u = _ct.windll.user32
+                try:
+                    from core.assistant_identity import get_name as _gn
+                    _self = (_gn() + " ai").lower()
+                except Exception:
+                    _self = "lexus ai"
+                _titles = []
+                def _cb(h, l):
+                    try:
+                        if _u.IsWindowVisible(h):
+                            _ln = _u.GetWindowTextLengthW(h)
+                            if _ln:
+                                _b = _ct.create_unicode_buffer(_ln + 1)
+                                _u.GetWindowTextW(h, _b, _ln + 1)
+                                _t = _b.value.strip(); _tl = _t.lower()
+                                _noise = ("nvidia geforce overlay", "experiencia de entrada",
+                                          "input experience", "program manager", "getgrass",
+                                          "default ime", "msctfime", "shell experience",
+                                          "settings", "configuración del sistema")
+                                if (_t and _self not in _tl and "jarvis core" not in _tl
+                                        and not any(_n in _tl for _n in _noise)
+                                        and _t not in _titles):
+                                    _titles.append(_t)
+                    except Exception:
+                        pass
+                    return True
+                try:
+                    _WP = _ct.WINFUNCTYPE(_ct.c_bool, _wt.HWND, _wt.LPARAM)
+                    _u.EnumWindows(_WP(_cb), 0)
+                except Exception:
+                    pass
+                _ctx = ("(Para tu referencia, las ventanas abiertas son: "
+                        + "; ".join(_titles[:10]) + ". No las repitas ni las listes.) ") if _titles else ""
                 _shot = _os.path.join(_tf.gettempdir(), "gx_screen.png")
                 ScreenCapture.capture(_shot)
                 _r = ImageAnalyzer().analyze(_shot, prompt=(
-                    "Mirá esta captura de pantalla y describí en 1-2 frases qué está "
-                    "haciendo el usuario. Si hay una película, serie o video, decí el "
-                    "título y la app/plataforma si los reconocés."))
-                _d = _r.get("description") if isinstance(_r, dict) else str(_r)
-                return f"👁️ En tu pantalla veo:\n{_d}"
+                    "Esta es una captura de la pantalla del usuario. " + _ctx +
+                    "En UNA o DOS frases breves, decí qué está haciendo el usuario y cuál "
+                    "es la app o el contenido MÁS visible en pantalla. Sé concreto y NO "
+                    "inventes nombres de apps, juegos ni películas: nombrá algo solo si se "
+                    "lee claramente en la imagen o está en esa lista. No enumeres ventanas."))
+                _d = (_r.get("description") if isinstance(_r, dict) else str(_r)) or ""
+                _d = _d.strip().split("\n")[0].strip()      # 1ª línea (llava tiende a listar)
+                _parts = _re.split(r"(?<=[.!?])\s+", _d)
+                _d = (_parts[0] if _parts else _d).strip()  # 1 frase concreta
+                _out = "👁️ En tu pantalla:"
+                if _titles:                                 # dato EXACTO (títulos reales de ventana)
+                    _out += "\n\n🪟 Ventanas abiertas:\n" + "\n".join("· " + _t for _t in _titles[:8])
+                if _d:
+                    _out += "\n\n👁️ Vista (aprox.): " + _d
+                return _out
             except Exception as _e:
                 return f"👁️ No pude analizar la pantalla: {str(_e)[:120]}"
 
@@ -3374,26 +3523,39 @@ class GenesisToolsMixin:
         # Específico: solo dispara con verbo de mover + contexto de pantalla/monitor.
         # Tolerante a typos de STT: verbo mov\w* (movei/mové/move), panta\w*
         # (pantala/pantalla), conector "de" incluido.
-        _VERB = r"(?:mov[ée]\w*|move\w*|pas[áa]\w*|llev[áa]\w*|mand[áa]\w*|sac[áa]\w*|tir[áa]\w*)"
+        _VERB = r"(?:mov[ée]\w*|move\w*|mu[ée]v\w*|pas[áa]\w*|llev[áa]\w*|mand[áa]\w*|sac[áa]\w*|tir[áa]\w*)"
         if (_re.search(r"\b" + _VERB + r"\b", inp)
-                and _re.search(r"\b(?:segunda|2da|otra|secundaria|dos)\s+(?:panta\w*|monitor)\b"
-                               r"|\b(?:panta\w*|monitor)\s*(?:2|dos|secundari\w*|3|tres)\b",
-                               inp)):
+                and (_re.search(r"\b(?:primera|1ra|primer|segunda|2da|otra|secundaria|tercera|3ra)\s+(?:panta\w*|monitor)\b", inp)
+                     or _re.search(r"\b(?:panta\w*|monitor)\s*[123]\b", inp))):
             from core.window_manager import window_manager
             _scr = 2
-            _ms = _re.search(r"(?:panta\w*|monitor)\s*(\d)", inp)
+            _ms = _re.search(r"(?:panta\w*|monitor)\s*([123])", inp)
             if _ms:
                 _scr = int(_ms.group(1))
+            elif _re.search(r"\b(?:primera|1ra|primer)\s+(?:panta\w*|monitor)\b", inp):
+                _scr = 1
+            elif _re.search(r"\b(?:tercera|3ra)\s+(?:panta\w*|monitor)\b", inp):
+                _scr = 3
             _wn = _re.search(
                 _VERB + r"\s+(?:la\s+ventana\s+de\s+|la\s+ventana\s+|la\s+|el\s+|lo\s+)?"
                 r"(.+?)\s+(?:a|en|de|hacia|para)\s+(?:la\s+)?"
-                r"(?:segunda|2da|otra|secundaria|dos|panta\w*|monitor)", inp)
+                r"(?:primera|1ra|segunda|2da|otra|secundaria|tercera|3ra|dos|panta\w*|monitor)", inp)
             _name = _wn.group(1).strip() if _wn else None
-            # Cualquier forma de "la película/esto/la ventana/etc" → primer plano
+            # Cualquier forma de "la película/esto/la ventana/etc" → genérico
             if not _name or _re.match(
                     r"^(esta?|esto|eso|ventana|pelicul\w*|peli|seri\w*|video|pel[íi]\w*|"
                     r"pestañ\w*|lo\s+que|todo|el|la|lo)\b", _name):
                 _name = None
+            # Si NOMBRAN "netflix" → mover SU ventana (perfil de Genesis) por CDP,
+            # sin reabrir. Para cualquier otra ventana (YouTube, Chrome, Grass, etc.)
+            # o un "movela/esto" genérico → window_manager: si nombran la app la
+            # busca por título/proceso; si es genérico mueve la del PRIMER PLANO
+            # (lo que estás mirando). Así no se hijackea a Netflix.
+            if "netflix" in inp:
+                from core import netflix as _nf
+                _nr = _nf.move_to_screen_existing(_scr)
+                if _nr:
+                    return f"🎬 Moví Netflix a **{_nr}** (pantalla completa)."
             return window_manager.move_to_screen(_scr, _name)
 
         # --- RUTINAS JARVIS (todas las versiones de Iron Man) — alta prioridad ---
