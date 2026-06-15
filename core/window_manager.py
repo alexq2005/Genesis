@@ -5,7 +5,53 @@ Usa PowerShell + .NET para manipulación nativa sin dependencias externas.
 """
 import subprocess
 import re
+import ctypes
+from ctypes import wintypes
 from typing import Optional
+
+_U32 = ctypes.windll.user32
+
+
+def _wm_win_list():
+    """[(hwnd, título)] de ventanas top-level VISIBLES con título (ctypes, in-process)."""
+    out = []
+    EP = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def _cb(h, _l):
+        try:
+            if _U32.IsWindowVisible(h):
+                n = _U32.GetWindowTextLengthW(h)
+                if n > 0:
+                    b = ctypes.create_unicode_buffer(n + 1)
+                    _U32.GetWindowTextW(h, b, n + 1)
+                    out.append((h, b.value))
+        except Exception:
+            pass
+        return True
+    try:
+        _U32.EnumWindows(EP(_cb), 0)
+    except Exception:
+        pass
+    return out
+
+
+def _wm_hwnd_by_name(name):
+    """hwnd de la 1ª ventana cuyo título CONTIENE `name` (case-insensitive)."""
+    nl = (name or "").lower()
+    for h, t in _wm_win_list():
+        if nl in t.lower():
+            return h, t
+    return None, None
+
+
+def _wm_title(h):
+    try:
+        n = _U32.GetWindowTextLengthW(h)
+        b = ctypes.create_unicode_buffer(n + 1)
+        _U32.GetWindowTextW(h, b, n + 1)
+        return b.value
+    except Exception:
+        return ""
 
 
 class WindowManager:
@@ -220,7 +266,9 @@ public class WinAPI {
 
     def move_to_screen(self, screen: int = 2, window_name: str = None) -> str:
         """Mueve una ventana a otra pantalla, ocupándola completa. Si no se da
-        `window_name`, mueve la ventana en PRIMER PLANO (lo que estás mirando)."""
+        `window_name`, mueve la ventana en PRIMER PLANO (lo que estás mirando).
+        Usa ctypes IN-PROCESS → INSTANTÁNEO. (Antes lanzaba PowerShell+Add-Type
+        que recompila C# en cada llamada ~2-4s → parecía que «no se movía».)"""
         try:
             from core.system_control import get_monitors
             mons = get_monitors()
@@ -230,48 +278,33 @@ public class WinAPI {
         if idx < 0 or idx >= len(mons):
             return f"🪟 No detecto la pantalla {screen} (hay {len(mons)} monitor/es)."
         x, y, w, h = mons[idx]
-        if window_name:
-            return self.move_window(window_name, x, y, w, h)
-        ps = f'''$sig = @"
-using System;
-using System.Runtime.InteropServices;
-using System.Text;
-public class FgW {{
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h,int x,int y,int w,int t,bool r);
-  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int n);
-  [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h,StringBuilder s,int c);
-}}
-"@
-Add-Type $sig
-$h = [FgW]::GetForegroundWindow()
-$b = New-Object System.Text.StringBuilder 256
-[FgW]::GetWindowText($h,$b,256) | Out-Null
-[FgW]::ShowWindow($h,9) | Out-Null
-[FgW]::MoveWindow($h,{x},{y},{w},{h},$true) | Out-Null
-Write-Output $b.ToString()'''
         try:
-            # CREATE_NO_WINDOW: sin esto, la consola de PowerShell roba el foco y
-            # GetForegroundWindow devuelve la PROPIA consola en vez de tu película.
-            _flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
-            r = subprocess.run(
-                ["powershell", "-NoProfile", "-Command", ps],
-                capture_output=True, text=True, timeout=12,
-                encoding="utf-8", errors="replace", creationflags=_flags)
-            lines = [ln for ln in (r.stdout or "").strip().splitlines() if ln.strip()]
-            title = lines[-1] if lines else "la ventana"
+            _U32.SetProcessDPIAware()   # coords físicas consistentes con get_monitors
+        except Exception:
+            pass
+        if window_name:
+            hwnd, title = _wm_hwnd_by_name(window_name)
+            if not hwnd:
+                return f"🪟 No encontré una ventana con '{window_name}'."
+        else:
+            hwnd = _U32.GetForegroundWindow()
+            title = _wm_title(hwnd)
             _tl = title.lower()
             _skip = ("powershell", "system32", "claude", "genesis", "jarvis",
-                     "cmd.exe", "command prompt", "símbolo del sistema", "windows terminal",
-                     "visual studio code", "consola", "conhost")
+                     "cmd.exe", "command prompt", "símbolo del sistema",
+                     "windows terminal", "visual studio code", "consola",
+                     "conhost", "lexus ai")
             if any(k in _tl for k in _skip) or not title.strip():
                 return ("🪟 La ventana en primer plano es el chat/sistema, no tu "
                         "película. Para moverla: hacé **clic en la peli** y después "
-                        "decí «mové esto a la segunda pantalla» (por voz, sin tocar "
-                        "nada más) — o nombrá la app: «mové vlc/chrome a la pantalla 2».")
-            return f"🪟 Moví «{title[:45]}» a la pantalla {screen} (completa)."
+                        "decí «mové esto a la otra pantalla», o nombrá la app: "
+                        "«mové grass/chrome a la pantalla 2».")
+        try:
+            _U32.ShowWindow(hwnd, 9)    # SW_RESTORE: saca de maximizado para reposicionar
+            _U32.MoveWindow(hwnd, int(x), int(y), int(w), int(h), True)
         except Exception as e:
             return f"🪟 Error moviendo la ventana: {str(e)[:80]}"
+        return f"🪟 Moví «{title[:45]}» a la pantalla {screen} (completa)."
 
     def close_window(self, window_name: str) -> str:
         """Cierra una ventana por nombre."""
