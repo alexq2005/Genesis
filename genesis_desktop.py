@@ -642,19 +642,65 @@ def _get_screen_size():
     except Exception:
         return 1920, 1080
 
+def _get_work_area():
+    """Área de trabajo del monitor primario (pantalla MENOS la barra de tareas).
+    Así la cabina llega EXACTO hasta la barra de tareas, sin hueco ni quedar tapada,
+    sin importar el tamaño/posición de la barra ni el escalado DPI."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        user32.SetProcessDPIAware()
+        r = wintypes.RECT()
+        if user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(r), 0):  # SPI_GETWORKAREA
+            if r.right > r.left and r.bottom > r.top:
+                return r.left, r.top, r.right, r.bottom
+    except Exception:
+        pass
+    sw, sh = _get_screen_size()
+    return 0, 0, sw, sh - 48
+
+
 def _calculate_window_geometry(mode):
-    screen_w, screen_h = _get_screen_size()
-    taskbar_h = 48
-    win_h = screen_h - taskbar_h
+    wl, wt, wr, wb = _get_work_area()
+    work_w, work_h = wr - wl, wb - wt
 
     if mode == "right":
-        return screen_w - SIDEBAR_WIDTH, 0, SIDEBAR_WIDTH, win_h
+        return wr - SIDEBAR_WIDTH, wt, SIDEBAR_WIDTH, work_h
     elif mode == "left":
-        return 0, 0, SIDEBAR_WIDTH, win_h
+        return wl, wt, SIDEBAR_WIDTH, work_h
     else:  # center
-        win_w = min(900, screen_w - 100)
-        win_h = min(750, screen_h - 100)
-        return (screen_w - win_w) // 2, (screen_h - win_h) // 2, win_w, win_h
+        win_w = min(900, work_w - 100)
+        win_h = min(750, work_h - 100)
+        return wl + (work_w - win_w) // 2, wt + (work_h - win_h) // 2, win_w, win_h
+
+
+def _fit_to_workarea():
+    """Estira la cabina (modo lateral) para que el alto llegue EXACTO hasta la barra
+    de tareas. pywebview escala por DPI lo que se pasa a create_window (queda corta),
+    así que fijamos el tamaño en píxeles FÍSICOS con SetWindowPos. Mantiene el ancho
+    y la posición horizontal actuales — solo estira el alto."""
+    if WINDOW_MODE not in ("right", "left"):
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        user32.SetProcessDPIAware()
+        wa = wintypes.RECT()
+        if not user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(wa), 0):  # SPI_GETWORKAREA
+            return
+        hwnd = user32.FindWindowW(None, APP_TITLE)
+        if not hwnd:
+            return
+        cur = wintypes.RECT()
+        user32.GetWindowRect(hwnd, ctypes.byref(cur))
+        cw = cur.right - cur.left                      # conservar ancho actual
+        # SWP_NOZORDER(0x4)|SWP_NOACTIVATE(0x10)
+        user32.SetWindowPos(hwnd, 0, int(cur.left), int(wa.top), int(cw),
+                            int(wa.bottom - wa.top), 0x0014)
+    except Exception:
+        pass
 
 
 def _on_loaded(window):
@@ -671,6 +717,7 @@ def _on_loaded(window):
         window.evaluate_js(INJECTED_JS.replace("Genesis AI", title))
     except Exception:
         pass
+    _fit_to_workarea()
 
 
 def main():
@@ -724,6 +771,12 @@ def main():
     )
     _webview_window._genesis_hidden = False
     api.set_window(_webview_window)
+    # Ajustar al área de trabajo APENAS se muestra la ventana (no después de cargar):
+    # evita que aparezca corta con el splash y luego "se estire" al navegar a /core.
+    try:
+        _webview_window.events.shown += lambda: _fit_to_workarea()
+    except Exception:
+        pass
 
     # 3. Arrancar Flask + navegar cuando este listo (background)
     def _boot_sequence():
@@ -792,6 +845,15 @@ def main():
             except Exception as e:
                 print(f"  [warn] manos libres no arrancó: {str(e)[:80]}")
         threading.Thread(target=_autostart_handsfree, daemon=True).start()
+
+        # Cámara de celular: server HTTPS local (puerto 5443) para que el cel
+        # transmita su cámara a GENESIS por la red local (ver /movil + QR en la cabina).
+        try:
+            from core import mobile_cam
+            if mobile_cam.start_https_server():
+                print(f"  [OK]  Cámara móvil lista — {mobile_cam.pair_url()}")
+        except Exception as e:
+            print(f"  [warn] cámara móvil no arrancó: {str(e)[:80]}")
 
         print()
         print(f"  Genesis Desktop activo — {HOTKEY.upper()} para toggle")
