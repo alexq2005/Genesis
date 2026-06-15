@@ -237,16 +237,40 @@ _FIND_RESULTS = """
 # pelada /watch/<serieID> sólo da la página de descripción, sin video).
 _FIND_PLAY = """
 (function(){
-  // SÓLO el botón de play del título (data-uia con 'play'). El fallback genérico
-  // a[href*="/watch/"] agarraba links stale de 'Seguir viendo' (ej. Vikingos) que
-  // quedaban en el DOM → reproducía el título equivocado. Si aún no renderizó, se
-  // devuelve '' y el poll de _play_chrome reintenta.
-  var pb = document.querySelector('a[data-uia*="play"][href*="/watch/"]');
-  if(!pb){return '';}
-  var name = (document.querySelector('h1,[data-uia="title-card-title"]')||{}).textContent
+  // Botón de play del TÍTULO de esta página, EXCLUYENDO el BILLBOARD (el hero
+  // promocionado de arriba suele ser OTRO título → reproducía 'La ley de los
+  // audaces' al pedir 'el joven sheldon'). Se prefiere el play cuyo tctx apunta
+  // al MISMO id de /title/<id> que estamos viendo.
+  var here=(location.href.match(/\\/title\\/(\\d+)/)||[])[1]||'';
+  function tctxId(h){var m=h.match(/Video(?:%3A|:)(\\d+)/);return m?m[1]:'';}
+  function bb(a){try{return !!a.closest('.billboard-row,.billboard,[data-uia*="billboard"]');}catch(e){return false;}}
+  var as=[].slice.call(document.querySelectorAll('a[data-uia*="play"][href*="/watch/"]'));
+  var pick=null, fallback=null;
+  for(var i=0;i<as.length;i++){
+    var a=as[i], du=(a.getAttribute('data-uia')||''), h=a.getAttribute('href')||'';
+    if(du.indexOf('billboard')>=0 || bb(a)){continue;}     // saltar el banner
+    if(here && tctxId(h)===here){pick=a;break;}             // play del MISMO título
+    if(!fallback){fallback=a;}
+  }
+  pick = pick || fallback;
+  if(!pick){return '';}
+  var name = (document.querySelector('h1,[data-uia="title-card-title"],[data-uia="hero-title"]')||{}).textContent
              || (document.title||'').replace(/\\s*[—|-]\\s*Netflix.*/,'');
-  return JSON.stringify({url: location.origin+pb.getAttribute('href'),
+  return JSON.stringify({url: location.origin+pick.getAttribute('href'),
                          name: (name||'').trim().slice(0,80)});
+})()
+"""
+
+# JS: confirma que el reproductor ARRANCÓ de verdad (video corriendo) y devuelve
+# el título que está sonando. Sirve para NO declarar "reproduciendo" sin que el
+# video haya empezado, y para detectar si Netflix abrió un título equivocado.
+_VERIFY_PLAYING = """
+(function(){
+  var v=document.querySelector('video');
+  var playing = !!(v && !v.paused && !v.ended && v.currentTime>0.2);
+  var t=(document.querySelector('[data-uia="video-title"] h4, [data-uia="video-title"], h1')||{}).textContent
+        || (document.title||'').replace(/\\s*[—\\-·|]\\s*Netflix.*/i,'');
+  return JSON.stringify({playing:playing, title:(t||'').trim().slice(0,80)});
 })()
 """
 
@@ -287,6 +311,64 @@ def _choose_result(results, query):
     if len(starts) == 1:
         return starts[0], False
     return None, False
+
+
+# --------------------------------------------------- SCAN de ventanas ---
+# Antes de abrir NADA: mirar si lo pedido YA está abierto en alguna ventana
+# (Netflix en Chrome —cualquier perfil— o en la app de la Store). Si está, se
+# trae al frente en vez de abrir otra ventana. Resuelve el "abre una de más".
+def _list_windows():
+    """[(hwnd, título)] de todas las ventanas top-level VISIBLES con título."""
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    out = []
+    EnumProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def _cb(hwnd, _lp):
+        try:
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            n = user32.GetWindowTextLengthW(hwnd)
+            if n <= 0:
+                return True
+            buf = ctypes.create_unicode_buffer(n + 1)
+            user32.GetWindowTextW(hwnd, buf, n + 1)
+            out.append((hwnd, buf.value))
+        except Exception:
+            pass
+        return True
+    try:
+        user32.EnumWindows(EnumProc(_cb), 0)
+    except Exception:
+        pass
+    return out
+
+
+def _find_open_title(query, must="netflix"):
+    """hwnd de una ventana de Netflix cuyo título contiene `query` (normalizado),
+    o None. Sólo matchea ventanas con `must` ('netflix') en el título, así no
+    confunde con YouTube u otra app que tenga el mismo nombre de serie."""
+    q = _norm_title(query)
+    if not q:
+        return None
+    for hwnd, title in _list_windows():
+        nt = _norm_title(title)
+        if must in nt and q in nt:
+            return hwnd
+    return None
+
+
+def _focus_window(hwnd):
+    """Restaura (si está minimizada) y trae la ventana al frente."""
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        user32.ShowWindow(hwnd, 9)          # SW_RESTORE
+        user32.SetForegroundWindow(hwnd)
+        return True
+    except Exception:
+        return False
 
 
 # --------------------------------------------------------------- API ---
@@ -470,15 +552,20 @@ def cast_app(device_name: str = None) -> str:
 
 def play(query: str = "", profile: str = None, screen: int = None) -> str:
     """Reproduce en Netflix.
-    - SIN título → abre la app de la Store (lo que el usuario quiere para 'abrí netflix').
-    - CON título → ventana Chrome dedicada (CDP): busca en /search, extrae el primer
-      /watch/<ID> y navega → Netflix auto-reproduce. Es la ÚNICA vía que realmente
-      BUSCA y REPRODUCE sola (la app de la Store no se deja automatizar adentro:
-      verificado 2026-06-14 — sin protocolo, sin app-URI-handler, su WebView2 ignora
-      CDP, y los tiles no exponen nombre a UIA). Misma arquitectura que la música.
-    Cae a la app Store si no hay Chrome."""
+    - SIN título → abre la app de la Store ('abrí netflix').
+    - CON título → ventana Chrome dedicada (CDP): busca en /search y navega a
+      /watch → Netflix AUTO-REPRODUCE (aprieta play solo). Es la única vía que
+      reproduce sola (la app de la Store no se automatiza por dentro).
+    Antes de abrir nada, ESCANEA si el título ya está abierto y lo reusa."""
     if not query:
         return launch_app(profile)
+    # ESCANEAR PRIMERO: ¿lo pedido YA está abierto en una ventana de Netflix?
+    # Si sí → traerla al frente, no abrir otra.
+    _hwnd = _find_open_title(query)
+    if _hwnd:
+        _focus_window(_hwnd)
+        return (f"🎬 «{query}» ya estaba abierto en Netflix — lo traje al frente "
+                f"(no abrí otra ventana).")
     if not _chrome_exe():
         r = launch_app(profile)
         return r + (f"\nℹ️ Buscá **{query}** en la app — no encontré Chrome para "
@@ -702,15 +789,41 @@ def _play_chrome(query: str, profile: str = None, screen: int = None) -> str:
             ws.close()
             return (f"🎬 Encontré «{query}» pero no pude arrancar la reproducción. "
                     f"Dale play vos en la ventana.")
+        # PRE-CHECK: el nombre de la página de título debe coincidir con lo pedido.
+        # Si no, la selección/navegación se desvió → no reproducir a ciegas.
+        _q = _norm_title(query)
+        if _q and name and _q not in _norm_title(name):
+            ws.close()
+            return (f"🎬 Pediste «{query}» pero la página abierta es «{name}». No "
+                    f"reproduje para no poner algo equivocado — fijate en la ventana.")
         _navigate(ws, watch_url, 45)        # → Netflix auto-reproduce el episodio
-        time.sleep(3.5)                     # dejar que el player commitee antes de cerrar
+        # VERIFICAR RUNTIME: que el <video> realmente esté corriendo Y que el título
+        # que suena sea el pedido. Antes se declaraba "reproduciendo" sin comprobar
+        # → falso positivo sobre 'La ley de los audaces'. Ya no.
+        playing, real_title = False, ""
+        for i in range(10):
+            time.sleep(1.0)
+            st = _eval(ws, _VERIFY_PLAYING, 70 + i)
+            try:
+                d2 = json.loads(st)
+            except Exception:
+                d2 = {}
+            if d2.get("playing"):
+                playing, real_title = True, d2.get("title", "")
+                break
         ws.close()
         donde = ""
         if screen:
             scr = _move_to_screen(tid, screen)
             if scr:
                 donde = f" en **{scr}** (pantalla completa)"
-        shown = name or query           # nombre real confirmado del título
+        shown = real_title or name or query
+        if not playing:
+            return (f"🎬 Abrí «{shown}» en Netflix pero el video no arrancó solo. "
+                    f"Dale play en la ventana.")
+        if _q and real_title and _q not in _norm_title(real_title):
+            return (f"🎬 Ojo: pediste «{query}» pero está reproduciendo «{real_title}». "
+                    f"No es lo correcto — fijate en la ventana.")
         return f"🎬 Reproduciendo **{shown}** en Netflix{donde}."
     except Exception as e:
         try:
