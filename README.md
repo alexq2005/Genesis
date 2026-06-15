@@ -1,5 +1,14 @@
 # GENESIS v6.0.0 — IA Auto-Evolutiva 100% Local
 
+![Local](https://img.shields.io/badge/100%25-local-2ea44f)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
+![Platform](https://img.shields.io/badge/OS-Windows%2011-0078D6)
+![GPU](https://img.shields.io/badge/GPU-NVIDIA%208GB%2B%20VRAM-76B900)
+![LLM](https://img.shields.io/badge/LLM-Ollama-black)
+![License](https://img.shields.io/badge/license-Proprietary-red)
+
+📄 ¿Nuevo por acá? Empezá por **[DESCRIPCION_DEL_PROYECTO.md](DESCRIPCION_DEL_PROYECTO.md)** (qué es, recursos, instalación, funcionamiento).
+
 Sistema de IA autónomo que evoluciona, aprende e investiga. Desktop app tipo Copilot con ~150 módulos cognitivos, **interfaz por voz manos-libres** (STT vosk+Whisper, TTS clonable/local), **6 agentes coordinados** y control total del sistema operativo.
 **Desde v6.0 la estrategia de routing es `local_first`** — prioriza Ollama + Qwen + Llama. Nota: si configurás una API key (`GOOGLE_API_KEY`), el provider legacy `auto` puede seleccionar cloud; para 100% local no configures keys o forzá `GENESIS_PROVIDER=ollama`.
 

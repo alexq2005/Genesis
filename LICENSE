@@ -1,0 +1,30 @@
+GENESIS — Proprietary License (All Rights Reserved)
+Copyright (c) 2026 Alex Quiñones
+
+All rights reserved.
+
+GENESIS is proprietary software developed for personal use. The source code,
+architecture, design, and documentation are the property of the author.
+
+The reproduction, distribution, modification, public display, or commercial use
+of this software, in whole or in part, is PROHIBITED without the express written
+authorization of the author.
+
+This repository is published for demonstration and educational reference only.
+Viewing the source does not grant any license to use, copy, or redistribute it.
+
+THIRD-PARTY MODELS AND DEPENDENCIES
+This project USES (but does not redistribute) third-party models and libraries,
+each governed by its own upstream license — for example:
+  - Llama 3.1 (Meta) — Llama Community License
+  - Qwen 2.5 Coder (Alibaba) — Qwen License
+  - llava, and the Python packages listed in requirements.txt
+You must comply with the terms of each model/dependency you download or use.
+
+DISCLAIMER
+GENESIS is an experimental AI assistant for personal and educational use.
+AI-generated outputs may contain errors — always verify critical information.
+The software is provided "AS IS", without warranty of any kind. The author is
+not liable for any damages or decisions made based on its outputs.
+
+For the full legal notice see LEGAL.md.

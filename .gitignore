@@ -17,6 +17,12 @@ dist/
 build/
 *.egg
 
+# --- Temporales de prueba / logs sueltos (no commitear) ---
+/_*.py
+/_*.txt
+@*.txt
+*AutomationLog*
+
 # --- Virtual Environment ---
 venv/
 .venv/

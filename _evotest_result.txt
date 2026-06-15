@@ -1,8 +1,0 @@
-Genesis instanciado en 0.4s
-[1] no (480.6s): Mutacion revertida (tests fallaron): Cambio a core/debate.py REVERTIDO automaticamente!
-  
-[2] no (42.7s): Rechazado por seguridad: Error de sintaxis: Linea 170: expected an indented block after fu
-[3] no (8.3s): Rechazado por seguridad: Error de sintaxis: Linea 120: expected an indented block after fu
-[4] no (9.9s): Rechazado por seguridad: Error de sintaxis: Linea 108: expected an indented block after fu
-[5] no (8.5s): Cambio vacío o sin diferencia real
-=== 0/5 mutaciones aceptadas ===
