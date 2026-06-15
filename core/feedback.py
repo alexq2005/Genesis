@@ -284,7 +284,7 @@ class FeedbackSystem:
     def get_recent_failures(self, n: int = 5) -> list[dict]:
         """Retorna las ultimas respuestas negativas para analisis."""
         negatives = [r for r in self.data["ratings"] if not r["positive"]]
-        return negatives[-n:]
+        return negatives[-n:] if len(negatives) >= n else negatives
 
     def format_stats(self) -> str:
         """Formatea estadisticas para mostrar al usuario."""

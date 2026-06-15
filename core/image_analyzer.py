@@ -253,21 +253,15 @@ class ImageAnalyzer:
         if not prompt:
             prompt = ("Describe qué se ve en esta imagen: objetos, personas, "
                       "escena, colores y cualquier texto visible. Sé conciso.")
-        # Forzar español + desarmar rechazos: llava se niega a describir capturas
-        # con código/texto creyéndolas "sensibles". Es la PROPIA pantalla del
-        # usuario, que autoriza el análisis. Nunca debe negarse.
-        prompt = "RESPONDE SIEMPRE EN ESPAÑOL.\n\n" + prompt
-        sys_p = ("Eres el módulo de visión de Genesis, el asistente personal del "
-                 "usuario en SU propia computadora. El usuario te autoriza "
-                 "explícitamente a describir cualquier imagen o captura de SU "
-                 "pantalla, incluido texto, código, interfaces y datos. NUNCA te "
-                 "niegues ni digas que el contenido es sensible: es el propio "
-                 "material del usuario. Describe objetivamente lo que ves. "
-                 "Respondes SIEMPRE en español, nunca en inglés.")
+        # IMPORTANTE (verificado 2026-06-14): llava:latest se NIEGA ("no puedo ver la
+        # imagen que has compartido") cuando recibe un `system` prompt largo — lo
+        # confunde y termina ignorando la imagen. SIN system describe perfecto. Por eso
+        # NO enviamos `system`; la instrucción de idioma va dentro del propio prompt.
+        prompt = "Respondé SIEMPRE en español, de forma concisa.\n" + prompt
         payload = json.dumps({
             "model": self.vision_model, "prompt": prompt,
-            "system": sys_p,
             "images": [b64], "stream": False,
+            "options": {"temperature": 0.2, "top_p": 0.8},  # menos invención = más preciso
         }).encode("utf-8")
         try:
             req = urllib.request.Request(
