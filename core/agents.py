@@ -57,6 +57,7 @@ class Agent:
         self.tasks_completed = 0
         self.total_time = 0.0
         self.last_used = 0.0
+        self.activity = []  # log de tareas recientes (para la estación/terminal del agente)
 
     def to_dict(self) -> dict:
         return {
@@ -68,6 +69,8 @@ class Agent:
             "enabled": self.enabled,
             "tasks_completed": self.tasks_completed,
             "avg_time": round(self.total_time / max(1, self.tasks_completed), 2),
+            "last_used": round(self.last_used, 0),
+            "activity": list(self.activity[-12:]),
         }
 
 
@@ -351,6 +354,15 @@ class AgentSystem:
         self.history.append(entry)
         if len(self.history) > self.max_history:
             self.history = self.history[-self.max_history:]
+        # Log por-agente para su estación/terminal en la cabina
+        agent.activity.append({
+            "task": (user_input or "")[:90],
+            "preview": (response or "")[:160],
+            "ts": round(time.time(), 0),
+            "ok": bool(response and "[Error" not in response),
+        })
+        if len(agent.activity) > 12:
+            agent.activity = agent.activity[-12:]
 
         return {
             "agent": selected,
