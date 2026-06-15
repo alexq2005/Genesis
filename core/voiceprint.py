@@ -17,6 +17,30 @@ _ENCODER = None
 _SR = 16000
 _THRESHOLD = 0.72  # similitud coseno mínima para considerar "es la misma voz"
 
+# Texto de entrenamiento: ~60-70s leído natural, fonéticamente rico (erres, eñes, ll,
+# ch, vocales abiertas/cerradas, números) para una huella robusta.
+_ENROLL_TEXT = (
+    "Hola, soy yo, y esta es mi voz. La estoy grabando para que el asistente aprenda "
+    "a reconocerme cuando le hable. Voy a leer tranquilo, con mi tono de siempre, sin "
+    "apurarme ni forzar las palabras.\n\n"
+    "El zorro veloz corría por el campo mientras la lluvia caía sobre los techos del "
+    "pueblo. Quiero que distingas mi manera de hablar: las erres, las eñes, los sonidos "
+    "suaves y los fuertes, las vocales largas y las cortas.\n\n"
+    "Hoy es un buen día; son cerca de las tres de la tarde y el cielo está despejado. Me "
+    "gusta la música, los proyectos y armar cosas que funcionen de verdad. Si todo sale "
+    "bien, vas a entender mis órdenes aunque haya ruido alrededor, aunque esté jugando o "
+    "escuchando algo.\n\n"
+    "Repito con calma para darte más audio: uno, dos, tres, cuatro, cinco, seis, siete, "
+    "ocho, nueve, diez. La rana saltó del charco, el barco zarpó del puerto al amanecer y "
+    "el guitarrista afinó las cuerdas en la plaza. Gracias por escucharme; ya casi "
+    "terminamos."
+)
+
+
+def enroll_text():
+    """Texto sugerido para leer durante el entrenamiento (~60s)."""
+    return _ENROLL_TEXT
+
 
 def _encoder():
     global _ENCODER
@@ -37,6 +61,18 @@ def available():
 
 def enrolled():
     return os.path.exists(_VP_PATH)
+
+
+def forget():
+    """Borra la huella de voz entrenada. Devuelve True si había una.
+    Tras esto, enrolled()=False y el manos-libres obedece a cualquier voz."""
+    try:
+        if os.path.exists(_VP_PATH):
+            os.remove(_VP_PATH)
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def _record(seconds):
@@ -83,16 +119,17 @@ def _resume_handsfree(hf):
         pass
 
 
-def start_enroll(genesis, seconds=15):
-    """Entrena la huella de voz del usuario (graba `seconds`, en hilo aparte)."""
+def start_enroll(genesis, seconds=60):
+    """Entrena la huella de voz del usuario (graba `seconds`, en hilo aparte).
+    60s por defecto: más audio = embedding más robusto y verificación más confiable."""
     if not available():
         return "🗣️ Falta resemblyzer/sounddevice para el reconocimiento de voz."
 
     def _job():
         _hf = _pause_handsfree(genesis)
         try:
-            _speak(genesis, f"Voy a grabar tu voz {seconds} segundos. Hablá normal, "
-                            f"contame algo, ya.")
+            _speak(genesis, f"Voy a grabar tu voz {seconds} segundos. Leé en voz alta el "
+                            f"texto que aparece en pantalla, con tu tono normal. Empezá ya.")
             audio = _record(seconds)
             emb = _embed(audio)
             os.makedirs(os.path.dirname(_VP_PATH), exist_ok=True)
@@ -112,8 +149,10 @@ def start_enroll(genesis, seconds=15):
             _resume_handsfree(_hf)
 
     threading.Thread(target=_job, daemon=True).start()
-    return (f"🗣️ **Entrenando tu voz** — grabando {seconds}s. **Hablá normal ahora** "
-            f"(contá cualquier cosa). Te aviso por voz cuando termine.")
+    # [[ENROLL]] = la cabina muestra el texto en un panel grande (NO lo lee el TTS, para
+    # no contaminar la grabación). El texto sale de /api/voice/enroll_text.
+    return (f"[[ENROLL]]🗣️ **Entrenando tu voz {seconds} segundos.** Leé en voz alta el "
+            f"texto que aparece en pantalla, tranquilo y con tu tono normal.")
 
 
 def start_verify(genesis, seconds=4):

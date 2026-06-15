@@ -36,8 +36,8 @@ def _model():
 def transcribe(audio, language: str = "es") -> str:
     """Transcribe audio (bytes int16 PCM 16k, o np.float32) → texto. '' si falla."""
     try:
-        if isinstance(audio, (bytes, bytearray)):
-            a = np.frombuffer(bytes(audio), dtype=np.int16).astype(np.float32) / 32768.0
+        if isinstance(audio, bytes):
+            a = np.frombuffer(audio, dtype=np.int16).astype(np.float32) / 32768.0
         else:
             a = np.asarray(audio, dtype=np.float32)
         if a.size < int(_SR * 0.3):   # <0.3s → muy corto, ignorar

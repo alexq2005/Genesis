@@ -39,6 +39,16 @@ def get_feed(since=0):
     return {"seq": _FEED_SEQ, "events": [e for e in _VOICE_FEED if e["seq"] > since]}
 
 
+def get_status():
+    """Estado de la escucha para el indicador de la cabina: si está corriendo y el
+    nivel de mic en vivo (0..1). level>0 confirma que ENTRA sonido al micrófono."""
+    hf = _listener
+    if hf is None:
+        return {"running": False, "level": 0.0}
+    return {"running": bool(getattr(hf, "running", False)),
+            "level": round(float(getattr(hf, "level", 0.0)), 3)}
+
+
 def _find_vosk_model():
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     mdir = os.path.join(base, "models")
@@ -79,11 +89,13 @@ class HandsFree:
         self._paused = False
         self._owner_only = True   # solo obedecer si la voz coincide con la huella
         self._last = ""
+        self.level = 0.0          # nivel de mic en vivo (0..1) para el indicador de cabina
 
     def status(self):
         modo = " · solo tu voz" if (self._owner_only and self._enrolled()) else ""
+        wk = (self._wake() or ("genesis",))[0]
         return ("🎙️ Escucha manos libres: " + ("ACTIVA" if self.running else "apagada")
-                + (" · esperando «genesis ...»" + modo if self.running else ""))
+                + (f" · esperando «{wk} ...»" + modo if self.running else ""))
 
     @staticmethod
     def _enrolled():
@@ -92,6 +104,14 @@ class HandsFree:
             return voiceprint.enrolled()
         except Exception:
             return False
+
+    def set_owner_only(self, on):
+        """Activa/desactiva el modo «solo tu voz» (verificación de hablante)."""
+        self._owner_only = bool(on)
+        if on:
+            extra = "" if self._enrolled() else " (entrená tu voz con «entrená mi voz»)"
+            return "🔒 Modo «solo tu voz» ACTIVADO." + extra
+        return "🔓 Modo abierto: obedezco cualquier voz."
 
     def pause(self):
         """Suspende el procesamiento (lo usa el enroll/verify para no pisarse)."""
@@ -135,9 +155,19 @@ class HandsFree:
                     data, _ = stream.read(4000)
                     if self._speaking or self._paused:
                         utt = bytearray()  # descartar lo capturado mientras no escucha
+                        self.level = 0.0
                         continue
                     b = bytes(data)
                     utt.extend(b)
+                    # nivel de mic (VU) para el indicador de la cabina: pico con decay
+                    try:
+                        import numpy as _np
+                        _a = _np.frombuffer(b, dtype=_np.int16)
+                        if _a.size:
+                            _pk = float(_np.max(_np.abs(_a))) / 32768.0
+                            self.level = max(self.level * 0.55, min(1.0, _pk * 2.2))
+                    except Exception:
+                        pass
                     if rec.AcceptWaveform(b):
                         txt = json.loads(rec.Result()).get("text", "").strip()
                         audio = bytes(utt)
@@ -160,12 +190,34 @@ class HandsFree:
         except Exception:
             pass
         # ¿está la palabra de activación? (dinámica: el usuario puede renombrar)
+        _wk = list(self._wake())
         wpos = -1
-        for w in self._wake():
+        for w in _wk:
             i = low.find(w)
             if i >= 0:
                 wpos = i + len(w)
                 break
+        if wpos < 0:
+            # MATCH DIFUSO: vosk-es transcribe mal los nombres (ej. "lexus" → "lexis",
+            # "léxus", "nexus", "le sus"). Si no hubo substring exacto, buscar un token
+            # FONÉTICAMENTE parecido a alguna wake-word. El comando luego se re-transcribe
+            # con Whisper, así que basta con detectar la activación de forma tolerante.
+            try:
+                import difflib
+                _acc = str.maketrans("áéíóúüñ", "aeiouun")
+                _wkn = [w.translate(_acc) for w in _wk if len(w) >= 4]
+                for m in re.finditer(r"\w+", low):
+                    tok = m.group().translate(_acc)
+                    if len(tok) < 4:
+                        continue
+                    for w in _wkn:
+                        if difflib.SequenceMatcher(None, tok, w).ratio() >= 0.74:
+                            wpos = m.end()
+                            break
+                    if wpos >= 0:
+                        break
+            except Exception:
+                pass
         if wpos < 0:
             return
         cmd = low[wpos:].strip(" ,.:;")
@@ -199,6 +251,10 @@ class HandsFree:
                     if sim >= 0 and not ok:  # sim<0 = no se pudo verificar → permito
                         self.genesis.log.debug(
                             f"[handsfree] voz ajena (sim={sim:.2f}) — ignoro: {cmd!r}")
+                        # mostrarlo en la cabina (antes era mudo → parecía que "no escucha")
+                        push_feed(cmd, f"🔒 No te reconocí (voz {int(sim*100)}% vs tu huella, "
+                                       f"mín {int(self.OWNER_MIN*100)}%). Si sos vos, decí "
+                                       f"«olvidá mi voz» y volvé a entrenar.")
                         return
             except Exception:
                 pass  # ante cualquier fallo, no bloquear (fail-open)
