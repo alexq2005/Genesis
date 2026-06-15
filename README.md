@@ -93,6 +93,12 @@ python genesis_desktop.py --right
 
 **Vistas web** (puerto 5100 en la app de escritorio): `/core` (cabina JARVIS — núcleo de plasma cian + starfield), `/jarvis` (HUD), `/mission` (Mission Control — agentes), `/plasma-lab` (laboratorio de diseños del núcleo).
 
+<p align="center">
+  <img src="docs/img/mission.png" alt="Mission Control — evolución y estaciones de los 6 agentes" width="680">
+  <br>
+  <em>Mission Control (<code>/mission</code>): estado de evolución (GEN), telemetría y las <strong>estaciones de los 6 agentes</strong> especialistas con su actividad en vivo.</em>
+</p>
+
 ## Arquitectura
 
 ```
