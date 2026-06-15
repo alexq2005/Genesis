@@ -833,6 +833,17 @@ def _play_chrome(query: str, profile: str = None, screen: int = None) -> str:
         return f"[ERROR] Netflix: {str(e)[:140]}"
 
 
+def move_to_screen_existing(screen: int) -> str:
+    """Mueve la ventana de Netflix YA ABIERTA (perfil de Genesis, CDP) al monitor
+    `screen`, pantalla completa. NO abre nada nuevo. Devuelve el nombre de la
+    pantalla, o None si no hay una ventana de Genesis abierta (el caller cae a
+    otra vía)."""
+    t = _target()
+    if not t:
+        return None
+    return _move_to_screen(t.get("id"), screen)
+
+
 def play_pause() -> str:
     """Pausa/reanuda el video de Netflix."""
     ws = _ws()
