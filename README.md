@@ -12,6 +12,12 @@
 Sistema de IA autónomo que evoluciona, aprende e investiga. Desktop app tipo Copilot con ~150 módulos cognitivos, **interfaz por voz manos-libres** (STT vosk+Whisper, TTS clonable/local), **6 agentes coordinados** y control total del sistema operativo.
 **Desde v6.0 la estrategia de routing es `local_first`** — prioriza Ollama + Qwen + Llama. Nota: si configurás una API key (`GOOGLE_API_KEY`), el provider legacy `auto` puede seleccionar cloud; para 100% local no configures keys o forzá `GENESIS_PROVIDER=ollama`.
 
+<p align="center">
+  <img src="docs/img/cabina.png" alt="Cabina de GENESIS — núcleo de plasma reactivo a la voz" width="330">
+  <br>
+  <em>La cabina (<code>/core</code>): núcleo de plasma que reacciona a tu voz · dock de comandos · escucha manos-libres.</em>
+</p>
+
 ## Características
 
 - **Soberanía Digital** — Corre 100% en tu GPU. Sin cloud, sin API keys, sin censura.
